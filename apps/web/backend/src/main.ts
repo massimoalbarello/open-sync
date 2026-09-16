@@ -5,9 +5,7 @@ import { loadAuthSecret } from '#backend/lib/auth/auth-secret.ts';
 import { createAuth } from '#backend/lib/auth/better-auth.ts';
 import { loadEnv } from '#backend/lib/env.ts';
 import { FrontendAssetsRepository } from '#backend/repositories/frontend-assets/repository.ts';
-import { NotesRepository } from '#backend/repositories/notes/repository.ts';
 import { FrontendAssetsService } from '#backend/services/frontend-assets/service.ts';
-import { NotesService } from '#backend/services/notes/service.ts';
 
 const env = loadEnv();
 const secret = await loadAuthSecret({
@@ -24,11 +22,9 @@ try {
       nibrunHostname: env.NIBRUN_HOSTNAME,
       secret: secret.value,
     }),
-    notes: new NotesService(new NotesRepository(database)),
     frontend: new FrontendAssetsService(new FrontendAssetsRepository()),
-    origin: env.BASE_URL.origin,
   }).listen({ port: env.PORT, hostname: '0.0.0.0' });
-  console.log(`Application listening on http://0.0.0.0:${app.server!.port}`);
+  console.log(`Open Sync listening on http://0.0.0.0:${app.server!.port}`);
   let stopping = false;
   const stop = async () => {
     if (stopping) {

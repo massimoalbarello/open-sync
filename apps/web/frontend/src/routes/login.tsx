@@ -22,17 +22,15 @@ function Login() {
   const pending = register.isPending || login.isPending;
   return (
     <main className="mx-auto flex min-h-dvh max-w-lg flex-col justify-center gap-8 px-6 py-16">
-      <p className="font-mono text-muted-foreground text-xs uppercase tracking-widest">
-        Notebook / Your own space
-      </p>
+      <p className="font-mono text-muted-foreground text-xs uppercase tracking-widest">Open Sync</p>
       <div className="space-y-4">
         <h1 className="font-semibold text-5xl tracking-tight">
-          A little room
+          Your data.
           <br />
-          for your thoughts.
+          Kept in sync.
         </h1>
         <p className="text-lg text-muted-foreground">
-          Save what matters. Your notes stay in your account, ready when you need them.
+          One place to manage your providers, follow your syncs, and check delivery.
         </p>
       </div>
       <div className="flex flex-col items-start gap-3">

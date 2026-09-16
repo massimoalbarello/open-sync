@@ -21,7 +21,7 @@ export function createAuth(input: {
     plugins: [
       passkey({
         rpID: rpUrl.hostname,
-        rpName: 'Application',
+        rpName: 'Open Sync',
         origin: trustedOrigins,
         authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
         registration: {
