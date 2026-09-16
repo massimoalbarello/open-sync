@@ -1,0 +1,42 @@
+import { fail } from './error';
+export interface QueueLimits {
+  maxPendingBytes: number;
+  maxPendingRecords: number;
+  maxPageBytes: number;
+  maxPageRecords: number;
+}
+export const defaultLimits: QueueLimits = {
+  maxPendingBytes: 67_108_864,
+  maxPendingRecords: 100_000,
+  maxPageBytes: 1_048_576,
+  maxPageRecords: 1000,
+};
+export const defaultTiming = {
+  pollMs: 1000,
+  leaseMs: 60_000,
+  timeoutMs: 30_000,
+  retryMs: 30_000,
+  maxPages: 100,
+  historyLimit: 1000,
+};
+export type Timing = typeof defaultTiming;
+export function positive(value: number): number {
+  if (!Number.isSafeInteger(value) || value < 1) {
+    fail('invalid_positive_integer');
+  }
+  return value;
+}
+export function retryDelay(input: {
+  attempt: number;
+  retryMs: number;
+  resultDelay?: number;
+}): number {
+  const maxBackoff = 3_600_000;
+  const maxRequestedDelay = 86_400_000;
+  const maxExponent = 10;
+  const factor = 2;
+  if (input.resultDelay !== undefined) {
+    return Math.min(maxRequestedDelay, input.resultDelay);
+  }
+  return Math.min(maxBackoff, input.retryMs * factor ** Math.min(input.attempt - 1, maxExponent));
+}
