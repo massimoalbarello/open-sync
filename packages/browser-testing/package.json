@@ -1,0 +1,19 @@
+{
+  "name": "@repo/browser-testing",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./browser": "./src/browser.ts",
+    "./auth": "./src/auth.ts"
+  },
+  "scripts": {
+    "check:types": "bun run --bun tsc"
+  },
+  "dependencies": {
+    "playwright": "^1.63.0"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "workspace:*",
+    "typescript": "catalog:"
+  }
+}

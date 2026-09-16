@@ -1,0 +1,31 @@
+{
+  "name": "@repo/ui",
+  "type": "module",
+  "private": true,
+  "exports": {
+    "./button": "./src/components/ui/button.tsx",
+    "./class-names": "./src/lib/class-names.ts",
+    "./theme.css": "./src/styles/minimal-neutral.css"
+  },
+  "scripts": {
+    "check:types": "bun run --bun tsc"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.7.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^3.6.0"
+  },
+  "peerDependencies": {
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tailwindcss": "^4.3.3"
+  },
+  "devDependencies": {
+    "@repo/typescript-config": "workspace:*",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "typescript": "catalog:",
+    "vite": "^8.2.2"
+  }
+}

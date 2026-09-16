@@ -1,0 +1,35 @@
+name: build
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  build:
+    name: build:required
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/prepare
+      - run: bun run build:linux
+      - run: bun run test:binary
+      - uses: actions/upload-artifact@v7
+        with:
+          name: nibrun-binary
+          path: apps/web/dist/app
+          if-no-files-found: error
+  browser:
+    name: browser:required
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/prepare
+      - run: bunx playwright install --with-deps chromium
+      - run: bun run test:browser
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: browser-evidence
+          path: artifacts/
+          if-no-files-found: ignore

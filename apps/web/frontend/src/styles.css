@@ -1,0 +1,9 @@
+@import "tailwindcss";
+@import "@repo/ui/theme.css";
+@import "@fontsource-variable/dm-sans";
+@import "@fontsource-variable/geist-mono";
+@source "../../../../packages/ui/src";
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+}
