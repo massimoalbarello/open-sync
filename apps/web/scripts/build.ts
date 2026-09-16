@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { getConnectorAssetDirectory } from '@oomol-lab/open-connector';
 
 const target = process.env.BUILD_TARGET;
 if (target && target !== 'bun-linux-x64') {
@@ -13,9 +14,11 @@ const result = await Bun.build({
     assets: [
       join(import.meta.dir, '../dist/public'),
       join(import.meta.dir, '../backend/src/db/migrations'),
+      getConnectorAssetDirectory(),
     ],
   },
-  bytecode: true,
+  splitting: true,
+  external: ['proxy-agent'],
   format: 'esm',
   naming: { asset: '[dir]/[name].[ext]' },
   define: {

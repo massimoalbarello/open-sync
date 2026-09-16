@@ -5,7 +5,10 @@
   "exports": {
     "./button": "./src/components/ui/button.tsx",
     "./class-names": "./src/lib/class-names.ts",
-    "./theme.css": "./src/styles/minimal-neutral.css"
+    "./theme.css": "./src/styles/minimal-neutral.css",
+    "./input": "./src/components/ui/input.tsx",
+    "./textarea": "./src/components/ui/textarea.tsx",
+    "./checkbox": "./src/components/ui/checkbox.tsx"
   },
   "scripts": {
     "check:types": "bun run --bun tsc"

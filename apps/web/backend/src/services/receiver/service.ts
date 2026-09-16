@@ -1,0 +1,27 @@
+import type { DestinationType } from '@open-sync/core/delivery';
+import type { ReceiverRepository, ReceiverScope } from '#backend/repositories/receiver/contract.ts';
+
+export class ReceiverService {
+  constructor(private readonly repository: ReceiverRepository) {}
+  status(scope: ReceiverScope) {
+    return this.repository.status(scope);
+  }
+  setPaused(input: ReceiverScope & { paused: boolean }) {
+    return this.repository.setPaused(input);
+  }
+  destination(): DestinationType {
+    return {
+      version: '1',
+      configSchema: { type: 'object', additionalProperties: false },
+      create: ({ scope }) => ({
+        deliver: async ({ delivery, signal }) => {
+          signal.throwIfAborted();
+          const accepted = await this.repository.accept({ ...scope, delivery });
+          return accepted
+            ? { status: 'accepted' }
+            : { status: 'retry', retryAfterMs: 1000, code: 'receiver_paused' };
+        },
+      }),
+    };
+  }
+}

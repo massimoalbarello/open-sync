@@ -12,6 +12,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/api': { target: `http://localhost:${process.env.PORT ?? DEFAULT_BACKEND_PORT}` },
+      '/connector': { target: `http://localhost:${process.env.PORT ?? DEFAULT_BACKEND_PORT}` },
       '/openapi': { target: `http://localhost:${process.env.PORT ?? DEFAULT_BACKEND_PORT}` },
     },
   },

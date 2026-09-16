@@ -26,7 +26,10 @@ export function createAuth(input: {
         authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
         registration: {
           requireSession: false,
-          resolveUser: () => {
+          resolveUser: async ({ ctx }) => {
+            if ((await ctx.context.internalAdapter.listUsers(1)).length) {
+              throw registrationClosed();
+            }
             const id = Bun.randomUUIDv7();
             return { id, name: id, displayName: 'My account' };
           },
@@ -46,6 +49,17 @@ export function createAuth(input: {
                 });
               }
               return { userId: session.user.id };
+            }
+            if ((await ctx.context.internalAdapter.listUsers(1)).length) {
+              throw registrationClosed();
+            }
+            // Better Auth wraps user, passkey and session persistence in one transaction only
+            // when createSession is requested. A failed registration must leave no owner.
+            if (ctx.body.createSession !== true) {
+              throw APIError.from('BAD_REQUEST', {
+                code: 'SESSION_REQUIRED',
+                message: 'Owner registration must create a session.',
+              });
             }
             // The challenged identity is server-generated. Create it only after WebAuthn proof.
             await ctx.context.internalAdapter.createUser(
@@ -77,6 +91,16 @@ export function createAuth(input: {
   return {
     handler: (request: Request) => auth.handler(request),
     getSession: (input: { headers: Headers }) => auth.api.getSession(input),
+    async registrationStatus() {
+      const context = await auth.$context;
+      return { ownerRegistered: (await context.internalAdapter.listUsers(1)).length > 0 };
+    },
   };
+}
+function registrationClosed() {
+  return APIError.from('FORBIDDEN', {
+    code: 'OWNER_ALREADY_REGISTERED',
+    message: 'This Open Sync instance already has an owner. Sign in with your passkey.',
+  });
 }
 export type Auth = ReturnType<typeof createAuth>;
