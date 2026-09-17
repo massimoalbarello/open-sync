@@ -1,5 +1,4 @@
 const HTTP_NOT_FOUND = 404;
-const HTTP_UNAUTHORIZED = 401;
 const HTTP_OK = 200;
 
 import { expect, test } from 'bun:test';
@@ -22,7 +21,7 @@ test('standalone binary embeds frontend and migrations and preserves state on re
     expect((await app.request({ path: '/api/health' })).status).toBe(HTTP_OK);
     expect((await app.request({ path: '/api/auth/get-session' })).status).toBe(HTTP_OK);
     const html = await (await app.request({ path: '/' })).text();
-    expect(html).toContain('Notebook');
+    expect(html).toContain('Open Sync');
     const asset = html.match(/src="([^"]+\.js)"/)?.[1];
     expect(asset).toBeDefined();
     const javascript = await app.request({ path: asset! });
@@ -31,12 +30,14 @@ test('standalone binary embeds frontend and migrations and preserves state on re
     expect((await app.request({ path: '/api/missing' })).status).toBe(HTTP_NOT_FOUND);
     expect((await app.request({ path: '/missing.js' })).status).toBe(HTTP_NOT_FOUND);
     expect((await app.request({ path: '/login' })).status).toBe(HTTP_OK);
-    expect((await app.request({ path: '/api/notes' })).status).toBe(HTTP_UNAUTHORIZED);
     await app.stop();
     const secret = await Bun.file(join(dataFolder, '.better-auth-secret')).text();
     const db = new SQL({ adapter: 'sqlite', filename: join(dataFolder, 'app.db') });
     try {
-      expect((await db`select name from __migrations`).length).toBe(2);
+      const migrations = await db<{ name: string }[]>`select name from __migrations`;
+      expect(migrations.map((migration) => migration.name)).toEqual([
+        '0000_better_auth_schema.sql',
+      ]);
     } finally {
       await db.close();
     }

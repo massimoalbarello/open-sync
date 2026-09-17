@@ -19,7 +19,7 @@ export async function startIsolatedApp() {
     frontendPort = availablePort();
   }
   const origin = `http://localhost:${frontendPort}`;
-  const dataFolder = await mkdtemp(join(tmpdir(), 'bun-app-isolated-'));
+  const dataFolder = await mkdtemp(join(tmpdir(), 'open-sync-isolated-'));
   const child = Bun.spawn(['bun', 'run', '--no-orphans', 'dev'], {
     cwd: join(import.meta.dir, '..'),
     stdout: 'inherit',

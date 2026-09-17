@@ -1,8 +1,3 @@
-const HTTP_NOT_FOUND = 404;
-const HTTP_FORBIDDEN = 403;
-const HTTP_UNAUTHORIZED = 401;
-const HTTP_OK = 200;
-
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { virtualPasskeyBrowser } from '@repo/browser-testing/browser';
@@ -15,52 +10,72 @@ try {
   const { page } = browser;
   page.on('pageerror', (error) => console.error(error));
   await page.goto(app.origin);
+  await page.getByRole('button', { name: 'Create account with a passkey' }).waitFor();
+  assert.equal(new URL(page.url()).pathname, '/login');
   await page.getByRole('button', { name: 'Create account with a passkey' }).click();
-  const field = page.getByLabel('What’s on your mind?');
-  await field.waitFor();
-  await page.getByRole('button', { name: 'Save note', exact: true }).click();
-  await page.getByRole('alert').filter({ hasText: 'Write something' }).waitFor();
-  await field.fill('My first private note');
-  await page.getByRole('button', { name: 'Save note', exact: true }).click();
-  await page.getByText('My first private note', { exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'Syncs', exact: true }).waitFor();
+
+  await page.getByRole('link', { name: 'Providers', exact: true }).click();
+  await page.getByRole('heading', { name: 'Providers', exact: true }).waitFor();
+  assert.equal(new URL(page.url()).pathname, '/providers');
+  assert.equal(
+    await page.getByRole('link', { name: 'Providers', exact: true }).getAttribute('aria-current'),
+    'page',
+  );
   await page.reload();
-  await page.getByText('My first private note', { exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'Providers', exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Delivery queue', exact: true }).click();
+  await page.getByRole('heading', { name: 'Delivery queue', exact: true }).waitFor();
+  await page.goBack();
+  await page.getByRole('heading', { name: 'Providers', exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Syncs', exact: true }).click();
+  await page.getByRole('heading', { name: 'Syncs', exact: true }).waitFor();
+
   await mkdir('artifacts', { recursive: true });
-  await page.screenshot({ path: 'artifacts/notebook-desktop.png', fullPage: true });
+  await page.screenshot({ path: 'artifacts/dashboard-desktop.png', fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.screenshot({ path: 'artifacts/notebook-mobile.png', fullPage: true });
-  const before = await page.request.get(`${app.origin}/api/notes`);
-  const notes = (await before.json()) as { id: string }[];
-  assert.equal(notes.length, 1);
-  const noteId = notes[0]!.id;
+  await page.getByRole('button', { name: 'Toggle navigation' }).click();
+  await page.getByRole('link', { name: 'Delivery queue', exact: true }).click();
+  await page.getByRole('heading', { name: 'Delivery queue', exact: true }).waitFor();
+  assert.equal(
+    await page.getByRole('button', { name: 'Toggle navigation' }).getAttribute('aria-expanded'),
+    'false',
+  );
+  await page.screenshot({ path: 'artifacts/dashboard-mobile.png', fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 720 });
+
+  const firstSession = (await (
+    await page.request.get(`${app.origin}/api/auth/get-session`)
+  ).json()) as { user: { id: string } };
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
   await page.getByRole('button', { name: 'Sign in with a passkey' }).waitFor();
-  assert.equal((await page.request.get(`${app.origin}/api/notes`)).status(), HTTP_UNAUTHORIZED);
+  assert.equal(await (await page.request.get(`${app.origin}/api/auth/get-session`)).json(), null);
+  for (const section of ['/providers', '/syncs', '/delivery']) {
+    await page.goto(`${app.origin}${section}`);
+    await page.getByRole('button', { name: 'Sign in with a passkey' }).waitFor();
+    assert.equal(new URL(page.url()).pathname, '/login');
+  }
   await page.getByRole('button', { name: 'Sign in with a passkey' }).click();
-  await page.getByText('My first private note', { exact: true }).waitFor();
-  // A separate authenticator and cookie jar establish a genuinely different account.
+  await page.getByRole('heading', { name: 'Syncs', exact: true }).waitFor();
+  const restored = (await (
+    await page.request.get(`${app.origin}/api/auth/get-session`)
+  ).json()) as { user: { id: string } };
+  assert.equal(restored.user.id, firstSession.user.id);
+
   const second = await virtualPasskeyBrowser({ headless: true });
   try {
     await second.page.goto(app.origin);
     await second.page.getByRole('button', { name: 'Create account with a passkey' }).click();
-    await second.page.getByText('A fresh page. Write your first note above.').waitFor();
-    const denied = await second.page.request.delete(`${app.origin}/api/notes/${noteId}`, {
-      headers: { origin: app.origin },
-    });
-    assert.equal(denied.status(), HTTP_NOT_FOUND);
-    assert.equal((await page.request.get(`${app.origin}/api/notes`)).status(), HTTP_OK);
+    await second.page.getByRole('heading', { name: 'Syncs', exact: true }).waitFor();
+    const another = (await (
+      await second.page.request.get(`${app.origin}/api/auth/get-session`)
+    ).json()) as { user: { id: string } };
+    assert.notEqual(another.user.id, firstSession.user.id);
   } finally {
     await second.close();
   }
-  const csrf = await page.request.post(`${app.origin}/api/notes`, {
-    headers: { origin: 'https://untrusted.invalid' },
-    data: { body: 'Injected' },
-  });
-  assert.equal(csrf.status(), HTTP_FORBIDDEN);
-  await page.getByRole('button', { name: 'Delete note: My first private note' }).click();
-  await page.getByText('A fresh page. Write your first note above.').waitFor();
   console.log(
-    'Browser journey passed: registration, validation, persistence, sign-out, sign-in, owner isolation, CSRF, deletion.',
+    'Browser journey passed: section navigation, deep links, mobile menu, passkey registration and session isolation.',
   );
 } catch (error) {
   console.error(await browser?.page.locator('body').innerText());
