@@ -4,12 +4,15 @@
   "type": "module",
   "private": true,
   "exports": {
-    ".": "./src/runtime.ts",
+    ".": "./src/open-sync.ts",
     "./definition": "./src/models/definition.ts",
     "./delivery": "./src/models/delivery.ts",
     "./json": "./src/models/json.ts",
     "./connector": "./src/connector/client.ts",
-    "./http": "./src/http/controller.ts"
+    "./http": "./src/http/controller.ts",
+    "./engine": "./src/runtime.ts",
+    "./build": "./src/build.ts",
+    "./http/providers": "./src/http/providers.ts"
   },
   "files": [
     "src"
@@ -22,10 +25,10 @@
   },
   "dependencies": {
     "@cfworker/json-schema": "4.1.1",
-    "elysia": "^1.4.30"
+    "elysia": "^1.4.30",
+    "@oomol-lab/open-connector": "1.6.0"
   },
   "devDependencies": {
-    "@oomol-lab/open-connector": "1.6.0",
     "typescript": "catalog:"
   },
   "engines": {

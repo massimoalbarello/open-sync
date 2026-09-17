@@ -1,9 +1,8 @@
 // Copied into an isolated consumer by the package check; imports must resolve from the tarball.
-import { createSyncRuntime } from '@open-sync/core';
-import { createConnectorClient } from '@open-sync/core/connector';
+
+import { createOpenSync } from '@open-sync/core';
 import type { SyncRegistration } from '@open-sync/core/definition';
 import type { Delivery } from '@open-sync/core/delivery';
-import { createSyncController } from '@open-sync/core/http';
 
 const definition: SyncRegistration = {
   definition: {
@@ -30,8 +29,11 @@ const definition: SyncRegistration = {
 };
 const received: Delivery[] = [];
 const scope = { actorId: 'consumer', ownerId: 'consumer' };
-const sync = createSyncRuntime({
-  databasePath: './consumer.db',
+const sync = await createOpenSync({
+  dataDirectory: './consumer-state',
+  publicUrl: 'http://host/embedded',
+  authorize: () => scope,
+  canConfigureProviders: () => Promise.resolve(true),
   definitions: [definition],
   destinationTypes: {
     local: {
@@ -59,12 +61,16 @@ try {
   if (received.length !== 1 || sync.api.status(scope).queue.pendingRecords !== 0) {
     throw new Error('Independent consumer did not receive its record');
   }
+  const catalog = await sync.fetch(new Request('http://host/embedded/providers'));
   if (
-    ![createSyncController, createConnectorClient].every((entry) => typeof entry === 'function')
+    !catalog.ok ||
+    !((await catalog.json()) as { service: string }[]).some((item) => item.service === 'github')
   ) {
-    throw new Error('Missing public entry point');
+    throw new Error('Independent host cannot discover provider authentication through Open Sync');
   }
-  console.log('Installed headless package delivered directly to an independent host.');
+  console.log(
+    'Installed Open Sync manages providers and delivers directly to an independent host.',
+  );
 } finally {
   await sync.close();
 }

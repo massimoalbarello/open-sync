@@ -4,13 +4,28 @@ const core = '^packages/sync/src/';
 export default {
   forbidden: [
     {
+      name: 'only-open-sync-composition-loads-connector',
+      severity: 'error',
+      from: {
+        path: '^(apps/|packages/sync/src/)',
+        pathNot: '^packages/sync/src/(open-sync|build)\\.ts$',
+      },
+      to: { path: 'node_modules/@oomol-lab/open-connector/', dependencyTypesNot: ['type-only'] },
+    },
+    {
+      name: 'host-consumes-open-sync-provider-api',
+      severity: 'error',
+      from: { path: '^apps/' },
+      to: { path: 'node_modules/@oomol-lab/open-connector/' },
+    },
+    {
       name: 'sync-core-is-headless',
       severity: 'error',
       comment:
         'The core cannot depend on a host, dashboard, authentication library, or connector internals.',
       from: { path: core },
       to: {
-        path: '(apps/|^packages/(?!sync/)|node_modules/(react|react-dom|better-auth|@oomol-lab/open-connector)/)',
+        path: '(apps/|^packages/(?!sync/)|node_modules/(react|react-dom|better-auth)/)',
       },
     },
     {
