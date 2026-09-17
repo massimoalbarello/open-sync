@@ -1,4 +1,6 @@
 import { createOpenSync, type OpenSyncRuntime } from '@open-sync/core';
+import { githubPullRequests } from '@open-sync/examples/syncs/github';
+import { sampleSync } from '@open-sync/examples/syncs/sample';
 import { createApp } from '#backend/app.ts';
 import { createSqliteDatabase } from '#backend/db/client.ts';
 import { runMigrations } from '#backend/db/migrate.ts';
@@ -9,11 +11,8 @@ import { FrontendAssetsRepository } from '#backend/repositories/frontend-assets/
 import { SqliteReceiver } from '#backend/repositories/receiver/sqlite.ts';
 import { authorizeSyncRequest } from '#backend/routes/sync-authorization.ts';
 import { FrontendAssetsService } from '#backend/services/frontend-assets/service.ts';
-import { githubPullRequests } from '#backend/services/github-sync/definition.ts';
 import { GithubSyncService } from '#backend/services/github-sync/service.ts';
-import { loggingDestination } from '#backend/services/receiver/logging-destination.ts';
 import { ReceiverService } from '#backend/services/receiver/service.ts';
-import { sampleSync } from '#backend/services/sample-sync/definition.ts';
 import { SampleSyncService } from '#backend/services/sample-sync/service.ts';
 
 const env = loadEnv();
@@ -40,29 +39,20 @@ try {
   const receiver = new ReceiverService(new SqliteReceiver(database));
   sync = await createOpenSync({
     dataDirectory: env.DATA_FOLDER,
-    // Keep the existing public callback URL configured in provider OAuth applications.
-    publicUrl: new URL('/connector', env.BASE_URL).href,
+    publicUrl: new URL('/api/open-sync', env.BASE_URL).href,
     authorize: (request) => authorizeSyncRequest({ auth, origins, request }),
     canConfigureProviders: (scope) => Promise.resolve(scope.actorId === scope.ownerId),
-    authorizationReturnUrl: ({ service, id }) =>
-      new URL(`/api/providers/${encodeURIComponent(service)}/return/${id}`, env.BASE_URL).href,
+    authorizationRedirect: ({ service, outcome }) =>
+      `/providers/${encodeURIComponent(service)}${outcome === 'failed' ? '?authorization=failed&section=authorization' : ''}`,
     definitions: [sampleSync, githubPullRequests],
-    destinationTypes: {
-      local: receiver.destination(),
-      'local-log': loggingDestination({
-        destination: receiver.destination(),
-        log: (delivery) => console.log(JSON.stringify({ event: 'sync.deliverable', ...delivery })),
-      }),
-    },
+    destinationTypes: { local: receiver.destination() },
     onEvent: (event) => console.log(JSON.stringify({ event: 'sync.status', ...event })),
   });
   const app = createApp({
     auth,
     frontend: new FrontendAssetsService(new FrontendAssetsRepository()),
-    sync: sync.api,
     receiver,
     samples: new SampleSyncService(sync.api),
-    providers: sync.providers,
     githubSyncs: new GithubSyncService({ providers: sync.providers, sync: sync.api }),
     syncFetch: sync.fetch,
     origins,

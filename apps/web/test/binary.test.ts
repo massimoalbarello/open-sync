@@ -51,7 +51,7 @@ test('standalone binary embeds frontend and migrations and preserves state on re
     });
     expect((await restarted.request({ path: '/api/health' })).status).toBe(HTTP_OK);
     expect(await Bun.file(join(dataFolder, '.better-auth-secret')).text()).toBe(secret);
-    expect((await restarted.request({ path: '/connector/v1/connections' })).status).toBe(
+    expect((await restarted.request({ path: '/api/open-sync/v1/connections' })).status).toBe(
       HTTP_NOT_FOUND,
     );
     await restarted.stop();

@@ -23,12 +23,12 @@ export async function githubOAuthJourney(input: {
   assert.equal(authorization.searchParams.get('client_id'), 'browser-test-client');
   assert.equal(
     authorization.searchParams.get('redirect_uri'),
-    `${input.origin}/connector/oauth/callback`,
+    `${input.origin}/api/open-sync/oauth/callback`,
   );
   assert.equal(authorization.searchParams.get('scope'), 'read:user repo');
   assert.ok(authorization.searchParams.get('state'));
   await page.goto(
-    `${input.origin}/connector/oauth/callback?error=access_denied&state=${encodeURIComponent(authorization.searchParams.get('state')!)}`,
+    `${input.origin}/api/open-sync/oauth/callback?error=access_denied&state=${encodeURIComponent(authorization.searchParams.get('state')!)}`,
   );
   await page
     .getByRole('alert')

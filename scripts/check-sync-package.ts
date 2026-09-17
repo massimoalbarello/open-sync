@@ -4,7 +4,11 @@ import { join } from 'node:path';
 
 const root = join(import.meta.dir, '..');
 const temporary = await mkdtemp(join(tmpdir(), 'open-sync-package-'));
-const packages = ['sync', 'http-delivery'];
+const packages = [
+  { directory: 'packages/sync', archive: 'sync' },
+  { directory: 'packages/http-delivery', archive: 'http-delivery' },
+  { directory: 'examples/integrations', archive: 'syncs' },
+];
 async function run(input: { cwd: string; command: string[] }) {
   const child = Bun.spawn(input.command, { cwd: input.cwd, stdout: 'inherit', stderr: 'inherit' });
   if (await child.exited) {
@@ -12,10 +16,10 @@ async function run(input: { cwd: string; command: string[] }) {
   }
 }
 try {
-  for (const name of packages) {
+  for (const entry of packages) {
     await run({
-      cwd: join(root, 'packages', name),
-      command: ['bun', 'pm', 'pack', '--filename', join(temporary, `${name}.tgz`)],
+      cwd: join(root, entry.directory),
+      command: ['bun', 'pm', 'pack', '--filename', join(temporary, `${entry.archive}.tgz`)],
     });
   }
   await writeFile(
@@ -28,6 +32,7 @@ try {
       dependencies: {
         '@open-sync/core': './sync.tgz',
         '@open-sync/http-delivery': './http-delivery.tgz',
+        '@open-sync/examples': './syncs.tgz',
       },
     }),
   );
@@ -39,14 +44,17 @@ try {
   await run({ cwd: temporary, command: ['bun', 'consumer.ts'] });
   await writeFile(
     join(temporary, 'adapter.ts'),
-    `import { createHttpDestination } from '@open-sync/http-delivery';
-if (typeof createHttpDestination({ endpoint: 'https://receiver.example' }).create !== 'function') throw new Error('Missing HTTP adapter');
+    `import { githubPullRequests } from '@open-sync/examples/syncs/github';
+import { sampleSync } from '@open-sync/examples/syncs/sample';
+if (typeof githubPullRequests.load !== 'function' || typeof sampleSync.load !== 'function') throw new Error('Missing example syncs');
+import { createHttpDestination } from '@open-sync/http-delivery';
+if (typeof createHttpDestination({ endpoint: 'https://receiver.example' }).deliver !== 'function') throw new Error('Missing HTTP adapter');
 `,
   );
   await run({ cwd: temporary, command: ['bun', 'adapter.ts'] });
 } finally {
   await rm(temporary, { recursive: true, force: true });
-  for (const name of packages) {
-    await rm(join(root, 'packages', name, 'LICENSE'), { force: true });
+  for (const entry of packages) {
+    await rm(join(root, entry.directory, 'LICENSE'), { force: true });
   }
 }

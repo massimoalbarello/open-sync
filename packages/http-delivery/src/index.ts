@@ -33,39 +33,37 @@ export function createHttpDestination(input: {
     // A changed credential may select a different recipient at the same endpoint. Fail closed.
     version: `1:${canonicalJson({ endpoint: endpoint.href, bearerToken: bearerToken ?? null }).sha256}`,
     configSchema: { type: 'object', additionalProperties: false },
-    create: () => ({
-      async deliver({ delivery, signal }) {
-        const headers = new Headers({
-          'content-type': 'application/json',
-          'idempotency-key': delivery.id,
-        });
-        if (bearerToken) {
-          headers.set('authorization', `Bearer ${bearerToken}`);
-        }
-        const response = await transport(endpoint, {
-          method: 'POST',
-          redirect: 'error',
-          headers,
-          body: canonicalJson(delivery).json,
-          signal,
-        });
-        await response.body?.cancel();
-        if (response.ok) {
-          return { status: 'accepted' };
-        }
-        if (
-          response.status === requestTimeout ||
-          response.status === rateLimited ||
-          response.status >= serverError
-        ) {
-          return {
-            status: 'retry',
-            code: `http_${response.status}`,
-            retryAfterMs: retryAfter(response.headers.get('retry-after')),
-          };
-        }
-        return { status: 'rejected', code: `http_${response.status}` };
-      },
-    }),
+    async deliver({ delivery, signal }) {
+      const headers = new Headers({
+        'content-type': 'application/json',
+        'idempotency-key': delivery.id,
+      });
+      if (bearerToken) {
+        headers.set('authorization', `Bearer ${bearerToken}`);
+      }
+      const response = await transport(endpoint, {
+        method: 'POST',
+        redirect: 'error',
+        headers,
+        body: canonicalJson(delivery).json,
+        signal,
+      });
+      await response.body?.cancel();
+      if (response.ok) {
+        return { status: 'accepted' };
+      }
+      if (
+        response.status === requestTimeout ||
+        response.status === rateLimited ||
+        response.status >= serverError
+      ) {
+        return {
+          status: 'retry',
+          code: `http_${response.status}`,
+          retryAfterMs: retryAfter(response.headers.get('retry-after')),
+        };
+      }
+      return { status: 'rejected', code: `http_${response.status}` };
+    },
   };
 }

@@ -36,21 +36,19 @@ test('GitHub pages resume after failure and restart, deliver once, and detect ed
       await resumed.tick();
       const allRecords = 3;
       expect((await f.receiver.status(owner)).records).toBe(allRecords);
-      expect(f.logs.flatMap((log) => log.deliverable.records).map((record) => record.id)).toEqual([
-        'a',
-        'b',
-        'c',
-      ]);
-      const before = f.logs.length;
+      expect(
+        f.delivered.flatMap((log) => log.deliverable.records).map((record) => record.id),
+      ).toEqual(['a', 'b', 'c']);
+      const before = f.delivered.length;
       resumed.api.queueRun(resource);
       await resumed.tick();
       await resumed.tick();
-      expect(f.logs).toHaveLength(before);
+      expect(f.delivered).toHaveLength(before);
       f.provider.respond = (after) => graphPage({ after, changed: !after });
       resumed.api.queueRun(resource);
       await resumed.tick();
       await resumed.tick();
-      expect(f.logs.at(-1)!.deliverable.records).toMatchObject([
+      expect(f.delivered.at(-1)!.deliverable.records).toMatchObject([
         { id: 'a', revision: 2, data: { body: 'Edited years later' } },
       ]);
       expect(resumed.api.status(owner).queue.pendingRecords).toBe(0);

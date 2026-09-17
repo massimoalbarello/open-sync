@@ -1,5 +1,5 @@
 import { queryOptions } from '@tanstack/react-query';
-import { api } from '../lib/api';
+import { api, syncApi } from '../lib/api';
 
 const refreshMs = 1000;
 export const syncKeys = { owner: (userId: string) => ['sync', userId] as const };
@@ -9,9 +9,9 @@ export function syncOptions(userId: string) {
     refetchInterval: refreshMs,
     queryFn: async () => {
       const [syncs, queue, deliveries, receiver] = await Promise.all([
-        api.api.sync.installations.get(),
-        api.api.sync.status.get(),
-        api.api.sync.deliveries.get(),
+        syncApi.sync.installations.get(),
+        syncApi.sync.status.get(),
+        syncApi.sync.deliveries.get(),
         api.api.receiver.status.get(),
       ]);
       if (syncs.error || queue.error || deliveries.error || receiver.error) {
@@ -34,7 +34,7 @@ export async function createSampleSync() {
   return result.data;
 }
 export async function setEnabled(input: { id: string; enabled: boolean }) {
-  const result = await api.api.sync
+  const result = await syncApi.sync
     .installations({ id: input.id })
     .patch({ enabled: input.enabled });
   if (result.error) {
@@ -42,7 +42,7 @@ export async function setEnabled(input: { id: string; enabled: boolean }) {
   }
 }
 export async function runSync(input: { id: string; backfill: boolean }) {
-  const result = await api.api.sync
+  const result = await syncApi.sync
     .installations({ id: input.id })
     .run.post({ backfill: input.backfill });
   if (result.error) {
@@ -56,7 +56,7 @@ export async function setReceiverPaused(paused: boolean) {
   }
 }
 export async function retryDelivery(id: string) {
-  const result = await api.api.sync.deliveries({ id }).retry.post();
+  const result = await syncApi.sync.deliveries({ id }).retry.post();
   if (result.error) {
     throw new Error('Could not retry this delivery.');
   }

@@ -76,7 +76,9 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Sync pull requests' }).count(), 0);
   await page.getByRole('link', { name: 'Authorization', exact: true }).click();
   await page.getByRole('button', { name: 'API key', exact: true }).click();
-  const provider = await (await page.request.get(`${app.origin}/api/providers/github`)).json();
+  const provider = await (
+    await page.request.get(`${app.origin}/api/open-sync/providers/github`)
+  ).json();
   const keyLabel = provider.setup.auth.find((method: { type: string }) => method.type === 'api_key')
     .fields[0].label;
   const credential = page.getByLabel(keyLabel, { exact: true });
@@ -106,17 +108,19 @@ try {
   await page.getByRole('link', { name: 'All providers', exact: true }).click();
   const notFoundStatus = 404;
   assert.equal(
-    (await page.request.get(`${app.origin}/connector/v1/connections`)).status(),
+    (await page.request.get(`${app.origin}/api/open-sync/v1/connections`)).status(),
     notFoundStatus,
   );
   assert.equal(
-    (await page.request.get(`${app.origin}/connector/api/oauth/configs`)).status(),
+    (await page.request.get(`${app.origin}/api/open-sync/api/oauth/configs`)).status(),
     notFoundStatus,
   );
   const unauthorizedStatus = 401;
   const forbiddenStatus = 403;
   assert.equal(
-    (await page.request.post(`${app.origin}/api/providers/github/connect`, { data: {} })).status(),
+    (
+      await page.request.post(`${app.origin}/api/open-sync/providers/github/connect`, { data: {} })
+    ).status(),
     unauthorizedStatus,
   );
   assert.equal(
@@ -153,7 +157,9 @@ try {
   await page.getByRole('button', { name: 'Add sample sync' }).click();
   await page.getByText('succeeded · 12 / 12 records acquired').waitFor();
   await page.screenshot({ path: 'artifacts/dashboard-desktop.png', fullPage: true });
-  const saved = (await (await page.request.get(`${app.origin}/api/sync/installations`)).json()) as {
+  const saved = (await (
+    await page.request.get(`${app.origin}/api/open-sync/sync/installations`)
+  ).json()) as {
     installations: { id: string }[];
   };
   const installationId = saved.installations[0]!.id;
@@ -224,7 +230,7 @@ try {
     );
     assert.equal(
       (
-        await second.page.request.put(`${app.origin}/api/providers/github/oauth-client`, {
+        await second.page.request.put(`${app.origin}/api/open-sync/providers/github/oauth-client`, {
           headers: { origin: app.origin },
           data: { values: { clientId: 'forbidden', clientSecret: 'must-not-save' } },
         })
@@ -233,7 +239,9 @@ try {
     );
     assert.equal(
       (
-        await second.page.request.get(`${app.origin}/api/sync/installations/${installationId}`)
+        await second.page.request.get(
+          `${app.origin}/api/open-sync/sync/installations/${installationId}`,
+        )
       ).status(),
       unauthorizedStatus,
     );
