@@ -1,9 +1,8 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createSyncRuntime } from '@open-sync/core';
-import { createConnectorClient } from '@open-sync/core/connector';
 import type { Delivery } from '@open-sync/core/delivery';
+import { createSyncRuntime } from '@open-sync/core/engine';
 import type { JsonValue } from '@open-sync/core/json';
 import { SQL } from 'bun';
 import { runMigrations } from '#backend/db/migrate.ts';
@@ -65,30 +64,22 @@ export async function fixture() {
   const provider = {
     respond: (after: string | null): JsonValue => graphPage({ after }),
   };
-  const gateway = createConnectorClient({
-    baseUrl: 'http://host/connector',
-    adminToken: 'admin',
-    runtimeToken: 'runtime',
-    authorizeConnection: (input) => Promise.resolve(input.ownerId === owner.ownerId),
-    fetch: async (request) => {
-      if (request.method === 'GET') {
-        return Response.json({
-          success: true,
-          data: {
-            id: 'github-connection',
-            service: 'github',
-            alias: 'alice-github',
-            status: 'active',
-            scopes: ['read:user', 'repo'],
-          },
-        });
+  const gateway = {
+    bind: (input: { ownerId: string }) => {
+      if (input.ownerId !== owner.ownerId) {
+        throw new Error('Not found');
       }
-      const body = (await request.json()) as { body: { variables: { after: string | null } } };
-      const after = body.body.variables.after;
-      requests.push(after);
-      return Response.json({ success: true, data: provider.respond(after) });
+      return Promise.resolve({
+        action: () => Promise.reject(new Error('Unexpected action')),
+        get: () => Promise.reject(new Error('Unexpected GET')),
+        post: (input: { body: import('@open-sync/core/json').JsonObject }) => {
+          const after = (input.body.variables as { after: string | null }).after;
+          requests.push(after);
+          return Promise.resolve(provider.respond(after));
+        },
+      });
     },
-  });
+  };
   const options = {
     limits: { maxPageRecords: 1 },
     databasePath: join(dir, 'sync.db'),

@@ -1,5 +1,7 @@
 import { join } from 'node:path';
-import { getConnectorAssetDirectory } from '@oomol-lab/open-connector';
+import { getOpenSyncBuildOptions } from '@open-sync/core/build';
+
+const syncBuild = getOpenSyncBuildOptions();
 
 const target = process.env.BUILD_TARGET;
 if (target && target !== 'bun-linux-x64') {
@@ -14,11 +16,11 @@ const result = await Bun.build({
     assets: [
       join(import.meta.dir, '../dist/public'),
       join(import.meta.dir, '../backend/src/db/migrations'),
-      getConnectorAssetDirectory(),
+      ...syncBuild.assets,
     ],
   },
   splitting: true,
-  external: ['proxy-agent'],
+  external: syncBuild.external,
   format: 'esm',
   naming: { asset: '[dir]/[name].[ext]' },
   define: {
