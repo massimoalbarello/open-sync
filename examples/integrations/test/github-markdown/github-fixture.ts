@@ -1,7 +1,7 @@
 // Adapted for Open Sync from massimoalbarello/open-connector.
 import type { SyncContext, SyncPage } from '@open-sync/core/definition';
 import type { JsonObject, JsonValue } from '@open-sync/core/json';
-import { githubPullRequests } from '@open-sync/example-integrations/github';
+import { githubPullRequests } from '@open-sync/examples/syncs/github-markdown';
 
 const timestamp = '2026-09-01T00:00:00Z';
 const actor = { id: 'U_1', login: 'octocat', url: 'https://github.com/octocat' };

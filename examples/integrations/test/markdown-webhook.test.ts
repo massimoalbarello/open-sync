@@ -4,9 +4,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Delivery } from '@open-sync/core/delivery';
-import { githubPullRequests } from '@open-sync/example-integrations/github';
-import { createMarkdownWebhook } from '@open-sync/example-integrations/webhook';
-import { engineFixture, owner } from './engine-fixture';
+import { createMarkdownWebhook } from '@open-sync/examples/destinations/markdown-webhook';
+import { githubPullRequests } from '@open-sync/examples/syncs/github-markdown';
+import { engineFixture, owner } from './github-markdown/engine-fixture';
 
 test('receiver commit followed by a failed acknowledgement retries identical content after restart', async () => {
   const unavailable = 503;
@@ -79,10 +79,7 @@ test('the Markdown example rejects an incompatible whole deliverable before HTTP
     },
   });
   try {
-    const handler = createMarkdownWebhook({ endpoint: server.url.href }).create({
-      scope: owner,
-      config: {},
-    });
+    const handler = createMarkdownWebhook({ endpoint: server.url.href });
     const delivery: Delivery = {
       version: 1,
       id: 'stable-delivery',
@@ -113,7 +110,14 @@ test('the Markdown example rejects an incompatible whole deliverable before HTTP
         ],
       },
     };
-    expect(await handler.deliver({ delivery, signal: new AbortController().signal })).toEqual({
+    expect(
+      await handler.deliver({
+        scope: owner,
+        config: {},
+        delivery,
+        signal: new AbortController().signal,
+      }),
+    ).toEqual({
       status: 'rejected',
       code: 'invalid_markdown_record',
     });
@@ -128,7 +132,14 @@ test('the Markdown example rejects an incompatible whole deliverable before HTTP
         contentHash: 'hash-3',
       },
     ];
-    expect(await handler.deliver({ delivery, signal: new AbortController().signal })).toEqual({
+    expect(
+      await handler.deliver({
+        scope: owner,
+        config: {},
+        delivery,
+        signal: new AbortController().signal,
+      }),
+    ).toEqual({
       status: 'accepted',
     });
     expect(received).toHaveLength(1);

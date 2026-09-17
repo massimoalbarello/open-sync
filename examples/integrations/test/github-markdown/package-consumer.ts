@@ -1,7 +1,7 @@
 // Executed outside the workspace against three installed tarballs, with no default app imports.
 import { createSyncRuntime } from '@open-sync/core/engine';
-import { githubPullRequests } from '@open-sync/example-integrations/github';
-import { createMarkdownWebhook } from '@open-sync/example-integrations/webhook';
+import { createMarkdownWebhook } from '@open-sync/examples/destinations/markdown-webhook';
+import { githubPullRequests } from '@open-sync/examples/syncs/github-markdown';
 import { githubFixture } from './github-fixture';
 
 const scope = { actorId: 'independent-host', ownerId: 'independent-host' };
