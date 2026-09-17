@@ -12,17 +12,15 @@ export async function request(input: {
 }): Promise<Record<string, unknown>> {
   const { context } = input;
   context.signal.throwIfAborted();
-  const response = object(
-    await context.provider.post({
-      path: '/graphql',
-      body: { query: input.query, variables: input.variables ?? {} },
-    }),
-  );
+  const response = await context.provider.post({
+    path: '/graphql',
+    body: { query: input.query, variables: input.variables ?? {} },
+  });
   const ok = 200;
   if (response.status !== ok) {
     throw new Error('GitHub request failed.');
   }
-  const body = object(response.data);
+  const body = object(response.body);
   if (
     Array.isArray(body.errors) &&
     body.errors.some((entry) => {
