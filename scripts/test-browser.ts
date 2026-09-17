@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { virtualPasskeyBrowser } from '@repo/browser-testing/browser';
+import { deliveryPaginationJourney } from './delivery-pagination-journey';
 import { githubOAuthJourney } from './github-oauth-journey';
 import { startIsolatedApp } from './isolated-app';
 import { ownerRegistrationJourney } from './owner-registration-journey';
@@ -223,6 +224,8 @@ try {
   await page.getByRole('heading', { name: 'Providers', exact: true }).waitFor();
   await page.screenshot({ path: 'artifacts/providers-mobile.png', animations: 'disabled' });
   await page.setViewportSize({ width: 1280, height: 720 });
+
+  await deliveryPaginationJourney({ page, origin: app.origin });
 
   const firstSession = (await (
     await page.request.get(`${app.origin}/api/auth/get-session`)

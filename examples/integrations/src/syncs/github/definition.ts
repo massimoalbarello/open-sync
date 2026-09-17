@@ -12,7 +12,6 @@ export const githubPullRequests = {
     artifactId: 'open-sync/github-pull-requests/1',
     provider: {
       service: 'github',
-      requiredScopes: ['read:user', 'repo'],
       actions: [],
       proxyPostPaths: ['/graphql'],
     },

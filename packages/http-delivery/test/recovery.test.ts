@@ -94,7 +94,7 @@ test('an HTTP receiver commit followed by failed acknowledgement is safely repla
     await engine.close();
     const resumed = createSyncRuntime(options);
     try {
-      resumed.api.retryDelivery({ ...alpha, id: resumed.api.deliveries(alpha)[0]!.id });
+      resumed.api.retryDelivery({ ...alpha, id: resumed.api.deliveries(alpha).deliveries[0]!.id });
       await resumed.tick();
       await resumed.tick();
       await resumed.tick();
@@ -149,7 +149,7 @@ test('changing HTTP credentials blocks old queued work at an unchanged URL', asy
       },
     });
     try {
-      changed.api.retryDelivery({ ...alpha, id: changed.api.deliveries(alpha)[0]!.id });
+      changed.api.retryDelivery({ ...alpha, id: changed.api.deliveries(alpha).deliveries[0]!.id });
       await changed.tick();
       expect(requests).toBe(previousRequests);
       expect(changed.api.status(alpha).queue.blockedDeliveries).toBe(1);
