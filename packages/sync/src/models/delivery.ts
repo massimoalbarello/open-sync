@@ -27,15 +27,17 @@ export type DeliveryResult =
   | { status: 'accepted' }
   | { status: 'retry'; retryAfterMs?: number; code?: string }
   | { status: 'rejected'; code: string };
-export interface DeliveryHandler {
-  /** Accepted means durable acceptance of the whole delivery. Receivers must tolerate retries. */
-  deliver(input: { delivery: Delivery; signal: AbortSignal }): Promise<DeliveryResult>;
-}
 export interface DestinationType {
   /** Pin endpoint/interpretation changes to a new version. Existing work is never rerouted. */
   version: string;
   configSchema: Schema;
-  create(input: { scope: Scope; config: JsonObject }): DeliveryHandler;
+  /** Accepted means durable acceptance of the whole delivery. Receivers must tolerate retries. */
+  deliver(input: {
+    scope: Scope;
+    config: JsonObject;
+    delivery: Delivery;
+    signal: AbortSignal;
+  }): Promise<DeliveryResult>;
 }
 export interface Destination {
   id: string;

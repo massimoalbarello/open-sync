@@ -28,12 +28,10 @@ test('SIGKILL recovery reclaims expired acquisition and delivery without changin
       destinationTypes: {
         local: {
           ...accepted,
-          create: () => ({
-            deliver: ({ delivery }) => {
-              delivered.push(delivery);
-              return Promise.resolve({ status: 'accepted' });
-            },
-          }),
+          deliver: ({ delivery }) => {
+            delivered.push(delivery);
+            return Promise.resolve({ status: 'accepted' });
+          },
         },
       },
     });

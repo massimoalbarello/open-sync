@@ -6,9 +6,12 @@ import { createConnectorRuntime } from '@oomol-lab/open-connector';
 import { loadProviderKey } from '../src/connector/encryption-key';
 import { connectorManagement } from '../src/connector/management';
 import { openProviderDatabase } from '../src/db/providers';
+import { createProviderController } from '../src/http/providers';
 import { SqliteProviders } from '../src/repositories/providers/sqlite';
 import { ProviderService } from '../src/services/providers/service';
 
+const httpNotFound = 404;
+const httpRedirect = 302;
 const alice = { actorId: 'alice', ownerId: 'alice', service: 'github' };
 const bob = { actorId: 'bob', ownerId: 'bob', service: 'github' };
 
@@ -104,7 +107,7 @@ test('only the owner of an active attempt can claim its public connection refere
   try {
     const repository = new SqliteProviders(db);
     const connection = {
-      id: 'connection_alice',
+      id: `connection_${crypto.randomUUID()}`,
       connectorId: 'connector_alice',
       account: 'alice-github',
       service: 'github',
@@ -142,8 +145,20 @@ test('only the owner of an active attempt can claim its public connection refere
       service.complete({ ...alice, service: 'other', id: connection.id }),
     ).rejects.toThrow('not found');
     expect(calls).toEqual([]);
-    await service.complete({ ...alice, id: connection.id });
-    await service.complete({ ...alice, id: connection.id });
+    const http = createProviderController({
+      providers: service,
+      authorize: (request) => (request.headers.get('owner') === 'alice' ? alice : bob),
+      authorizationRedirect: ({ outcome }) => `http://host/ui?authorization=${outcome}`,
+    });
+    const url = `http://host/providers/github/return/${connection.id}`;
+    const forbidden = await http.handle(new Request(url));
+    expect(forbidden.status).toBe(httpNotFound);
+    expect(forbidden.headers.get('location')).toBeNull();
+    for (const attempt of [1, 2]) {
+      const response = await http.handle(new Request(url, { headers: { owner: 'alice' } }));
+      expect(response.status, `completion ${attempt}`).toBe(httpRedirect);
+      expect(response.headers.get('location')).toBe('http://host/ui?authorization=connected');
+    }
     expect(calls).toEqual([
       '/v1/connection-requests/request2',
       '/v1/connections/by-id/connector_alice',

@@ -1,21 +1,29 @@
 import { join } from 'node:path';
-import { Elysia } from 'elysia';
+import { type ProviderApi, providerApi, type SyncApi, syncApi } from './api';
 import { createConnectorClient } from './connector/client';
 import { loadProviderKey } from './connector/encryption-key';
 import { connectorManagement } from './connector/management';
 import { openProviderDatabase } from './db/providers';
-import { createSyncController, syncErrorResponse } from './http/controller';
-import { createProviderController } from './http/providers';
+import type { Logger } from './execution/diagnostics';
+import { createHttpApp } from './http/app';
+import type { SyncRegistration } from './models/definition';
+import type { DestinationType } from './models/delivery';
 import { fail } from './models/error';
 import type { Scope } from './models/identity';
+import { defaultTiming, type QueueLimits } from './models/limits';
 import { SqliteProviders } from './repositories/providers/sqlite';
-import { createSyncRuntime, type SyncRuntimeOptions } from './runtime';
+import { createSyncRuntime } from './runtime';
 import { ProviderService } from './services/providers/service';
 
 export type { Scope } from './models/identity';
 export type { ProviderCatalogEntry, ProviderSetup } from './models/providers';
 
-export interface OpenSyncOptions extends Omit<SyncRuntimeOptions, 'databasePath' | 'connector'> {
+export interface OpenSyncOptions {
+  definitions: readonly SyncRegistration[];
+  destinationTypes: Readonly<Record<string, DestinationType>>;
+  limits?: Partial<QueueLimits>;
+  executionTimeoutMs?: number;
+  onEvent?: Logger;
   dataDirectory: string;
   /** Absolute URL where the host mounts fetch(), including its path prefix. */
   publicUrl: string;
@@ -23,12 +31,12 @@ export interface OpenSyncOptions extends Omit<SyncRuntimeOptions, 'databasePath'
   authorize(request: Request): Scope | null | Promise<Scope | null>;
   /** OAuth application settings are instance-wide, so require the host's administrator policy. */
   canConfigureProviders(scope: Scope): Promise<boolean>;
-  /** The host may finish authorization on its own authenticated route and call providers.complete(). */
-  authorizationReturnUrl?(input: { service: string; id: string }): string;
+  /** Final host UI location after Open Sync completes authorization. */
+  authorizationRedirect?(input: { service: string; outcome: 'connected' | 'failed' }): string;
 }
 
 /** Headless application boundary. The host owns its listener; Open Sync owns provider and worker lifecycles. */
-export async function createOpenSync(options: OpenSyncOptions) {
+export async function createOpenSync(options: OpenSyncOptions): Promise<OpenSyncRuntime> {
   const base = new URL(options.publicUrl);
   if (
     !['http:', 'https:'].includes(base.protocol) ||
@@ -76,7 +84,14 @@ export async function createOpenSync(options: OpenSyncOptions) {
         repository.owns({ ...input, connectorId: input.connection.id }),
     });
     engine = createSyncRuntime({
-      ...options,
+      definitions: options.definitions,
+      destinationTypes: options.destinationTypes,
+      limits: options.limits,
+      onEvent: options.onEvent,
+      timing: {
+        timeoutMs: options.executionTimeoutMs ?? defaultTiming.timeoutMs,
+        leaseMs: (options.executionTimeoutMs ?? defaultTiming.timeoutMs) + defaultTiming.timeoutMs,
+      },
       databasePath: join(options.dataDirectory, 'sync.db'),
       connector: {
         async bind(input) {
@@ -96,23 +111,24 @@ export async function createOpenSync(options: OpenSyncOptions) {
       connector: management,
       signal: lifetime.signal,
       canConfigure: options.canConfigureProviders,
-      returnUrl:
-        options.authorizationReturnUrl ??
-        ((input) =>
-          `${publicUrl}/providers/${encodeURIComponent(input.service)}/return/${input.id}`),
+      returnUrl: (input) =>
+        `${publicUrl}/providers/${encodeURIComponent(input.service)}/return/${input.id}`,
     });
-    const http = new Elysia({ prefix })
-      .onError(({ error }) => syncErrorResponse(error))
-      .use(createSyncController({ api: engine.api, authorize: options.authorize }))
-      .use(createProviderController({ providers, authorize: options.authorize }));
+    const api = syncApi(engine.api);
+    const http = createHttpApp({
+      prefix,
+      api,
+      providers,
+      authorize: options.authorize,
+      authorizationRedirect: options.authorizationRedirect,
+    });
     let closing: Promise<void> | undefined;
     const runtime = engine;
     const database = references;
     return {
-      api: runtime.api,
-      providers,
+      api,
+      providers: providerApi(providers),
       start: () => runtime.start(),
-      tick: () => runtime.tick(),
       async fetch(request: Request): Promise<Response> {
         if (lifetime.signal.aborted) {
           return new Response(null, { status: 503 });
@@ -156,4 +172,11 @@ export async function createOpenSync(options: OpenSyncOptions) {
     throw error;
   }
 }
-export type OpenSyncRuntime = Awaited<ReturnType<typeof createOpenSync>>;
+export interface OpenSyncRuntime {
+  api: SyncApi;
+  providers: ProviderApi;
+  fetch(request: Request): Promise<Response>;
+  start(): void;
+  close(): Promise<void>;
+}
+export type { ProviderApi, SyncApi } from './api';

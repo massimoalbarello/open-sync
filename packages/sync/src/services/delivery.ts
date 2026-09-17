@@ -22,12 +22,12 @@ export class DeliveryService {
         result = { status: 'rejected', code: 'destination_unavailable' };
       } else {
         result = validateResult(
-          await type
-            .create({
-              scope: { actorId: lease.actorId, ownerId: lease.ownerId },
-              config: structuredClone(lease.destination.config),
-            })
-            .deliver({ delivery: structuredClone(lease.delivery), signal }),
+          await type.deliver({
+            scope: { actorId: lease.actorId, ownerId: lease.ownerId },
+            config: structuredClone(lease.destination.config),
+            delivery: structuredClone(lease.delivery),
+            signal,
+          }),
         );
       }
       signal.throwIfAborted();

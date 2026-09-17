@@ -3,7 +3,14 @@ import { createOpenSync } from '../src/open-sync';
 import { fixture, storage } from './support';
 
 const alice = { actorId: 'alice', ownerId: 'alice' };
-const http = { unauthorized: 401, ok: 200, notFound: 404, badRequest: 400, unavailable: 503 };
+const http = {
+  redirect: 302,
+  unauthorized: 401,
+  ok: 200,
+  notFound: 404,
+  badRequest: 400,
+  unavailable: 503,
+};
 const bob = { actorId: 'bob', ownerId: 'bob' };
 
 test('one public runtime owns provider configuration, consent, HTTP authorization and restart', async () => {
@@ -15,6 +22,8 @@ test('one public runtime owns provider configuration, consent, HTTP authorizatio
     definitions: [],
     destinationTypes: {},
     authorize: (request: Request) => (request.headers.has('test-owner') ? alice : null),
+    authorizationRedirect: ({ service, outcome }: { service: string; outcome: string }) =>
+      `http://host/ui/${service}?authorization=${outcome}`,
     canConfigureProviders: (scope: typeof alice) =>
       Promise.resolve(scope.ownerId === alice.ownerId),
   };
@@ -59,13 +68,11 @@ test('one public runtime owns provider configuration, consent, HTTP authorizatio
     );
     const returned = new URL(response.headers.get('location')!);
     expect(returned.pathname).toMatch(/^\/embedded\/providers\/github\/return\/connection_/);
-    const id = returned.pathname.split('/').at(-1)!;
-    await expect(runtime.providers.complete({ ...bob, service: 'github', id })).rejects.toThrow(
-      'not found',
-    );
-    expect((await request(returned.pathname.slice('/embedded'.length))).status).toBe(
-      http.badRequest,
-    );
+    expect('complete' in runtime.providers).toBe(false);
+    expect('tick' in runtime).toBe(false);
+    const completed = await request(returned.pathname.slice('/embedded'.length));
+    expect(completed.status).toBe(http.redirect);
+    expect(completed.headers.get('location')).toBe('http://host/ui/github?authorization=failed');
     expect(await runtime.providers.connections(alice)).toEqual([]);
     await runtime.close();
     expect((await request('/providers')).status).toBe(http.unavailable);

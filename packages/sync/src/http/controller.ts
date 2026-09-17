@@ -1,8 +1,8 @@
-import { Elysia, status, t } from 'elysia';
-import { SyncError } from '../models/error';
+import { Elysia, t } from 'elysia';
+import type { SyncApi } from '../api';
 import type { Scope } from '../models/identity';
 import type { JsonObject } from '../models/json';
-import type { SyncManagement } from '../services/management';
+import { syncErrorResponse } from './index';
 
 const identifier = t.String({ minLength: 1, maxLength: 1024 });
 const config = t.Record(t.String(), t.Unknown());
@@ -16,25 +16,9 @@ const installationBody = t.Object({
   enabled: t.Optional(t.Boolean()),
 });
 const resourceParams = { params: t.Object({ id: identifier }) };
-const notFound = 404;
-const conflict = 409;
-const unauthorized = 401;
-const forbidden = 403;
-const invalidInput = 400;
-export function syncErrorResponse(error: unknown) {
-  if (error instanceof SyncError) {
-    return status(
-      ({ not_found: notFound, busy: conflict, unauthorized, forbidden } as Record<string, number>)[
-        error.code
-      ] ?? invalidInput,
-      { error: error.code },
-    );
-  }
-}
-
 /** Optional management transport. The host owns authentication, owner authorization and CSRF policy. */
 export function createSyncController(input: {
-  api: SyncManagement;
+  api: SyncApi;
   authorize(request: Request): Scope | null | Promise<Scope | null>;
 }) {
   return new Elysia({ prefix: '/sync' })

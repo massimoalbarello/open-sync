@@ -12,15 +12,13 @@ test('local delivery drains independently and unblocks bounded acquisition', asy
     maxPendingRecords: 1,
     destination: {
       ...accepted,
-      create: () => ({
-        deliver: ({ delivery }) => {
-          if (!accept) {
-            return Promise.resolve({ status: 'retry', retryAfterMs: 0 });
-          }
-          received.push(delivery.id);
-          return Promise.resolve({ status: 'accepted' });
-        },
-      }),
+      deliver: ({ delivery }) => {
+        if (!accept) {
+          return Promise.resolve({ status: 'retry', retryAfterMs: 0 });
+        }
+        received.push(delivery.id);
+        return Promise.resolve({ status: 'accepted' });
+      },
     },
   });
   try {
@@ -128,7 +126,7 @@ test('changing a destination implementation cannot reroute its queued deliveries
   const f = runtime({
     destination: {
       ...accepted,
-      create: () => ({ deliver: () => Promise.resolve({ status: 'retry', retryAfterMs: 0 }) }),
+      deliver: () => Promise.resolve({ status: 'retry', retryAfterMs: 0 }),
     },
   });
   try {
@@ -142,12 +140,10 @@ test('changing a destination implementation cannot reroute its queued deliveries
         local: {
           ...accepted,
           version: '2',
-          create: () => ({
-            deliver: () => {
-              called = true;
-              return Promise.resolve({ status: 'accepted' });
-            },
-          }),
+          deliver: () => {
+            called = true;
+            return Promise.resolve({ status: 'accepted' });
+          },
         },
       },
     });

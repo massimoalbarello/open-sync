@@ -61,7 +61,7 @@ export const fixture: SyncRegistration = {
 export const accepted: DestinationType = {
   version: '1',
   configSchema: { type: 'object', additionalProperties: false },
-  create: () => ({ deliver: () => Promise.resolve({ status: 'accepted' }) }),
+  deliver: () => Promise.resolve({ status: 'accepted' }),
 };
 export const page = {
   deliverable: {

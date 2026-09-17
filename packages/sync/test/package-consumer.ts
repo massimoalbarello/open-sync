@@ -50,12 +50,10 @@ const sync = await createOpenSync({
     local: {
       version: '1',
       configSchema: { type: 'object' },
-      create: () => ({
-        deliver: ({ delivery }) => {
-          received.push(delivery);
-          return Promise.resolve({ status: 'accepted' });
-        },
-      }),
+      deliver: ({ delivery }) => {
+        received.push(delivery);
+        return Promise.resolve({ status: 'accepted' });
+      },
     },
   },
 });
@@ -67,8 +65,16 @@ try {
     config: {},
     definition: definition.definition,
   });
-  await sync.tick();
-  await sync.tick();
+  sync.start();
+  const timeoutMs = 5000;
+  const pollMs = 20;
+  const deadline = Date.now() + timeoutMs;
+  while (
+    (!received.length || sync.api.status(scope).queue.pendingRecords) &&
+    Date.now() < deadline
+  ) {
+    await Bun.sleep(pollMs);
+  }
   if (received.length !== 1 || sync.api.status(scope).queue.pendingRecords !== 0) {
     throw new Error('Independent consumer did not receive its record');
   }

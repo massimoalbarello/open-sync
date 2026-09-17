@@ -8,10 +8,9 @@
     "./definition": "./src/models/definition.ts",
     "./delivery": "./src/models/delivery.ts",
     "./json": "./src/models/json.ts",
-    "./http": "./src/http/controller.ts",
+    "./http": "./src/http/index.ts",
     "./engine": "./src/runtime.ts",
-    "./build": "./src/build.ts",
-    "./http/providers": "./src/http/providers.ts"
+    "./build": "./src/build.ts"
   },
   "files": [
     "src"

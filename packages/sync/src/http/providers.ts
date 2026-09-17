@@ -2,7 +2,7 @@ import { Elysia, t } from 'elysia';
 import { fail, SyncError } from '../models/error';
 import type { Scope } from '../models/identity';
 import type { ProviderService } from '../services/providers/service';
-import { syncErrorResponse } from './controller';
+import { syncErrorResponse } from './index';
 
 export function createProviderController(input: {
   providers: ProviderService;
