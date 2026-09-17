@@ -1,9 +1,9 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { ProviderResponse } from '@open-sync/core/definition';
 import type { Delivery } from '@open-sync/core/delivery';
 import { createSyncRuntime } from '@open-sync/core/engine';
-import type { JsonValue } from '@open-sync/core/json';
 import { SQL } from 'bun';
 import { runMigrations } from '#backend/db/migrate.ts';
 import { SqliteReceiver } from '#backend/repositories/receiver/sqlite.ts';
@@ -37,7 +37,7 @@ export function graphPage(input: { after: string | null; accountId?: string; cha
   return {
     status: 200,
     headers: {},
-    data: {
+    body: {
       data: {
         viewer: {
           id: input.accountId ?? 'github-native-user-1',
@@ -62,7 +62,7 @@ export async function fixture() {
   const logs: Delivery[] = [];
   const requests: (string | null)[] = [];
   const provider = {
-    respond: (after: string | null): JsonValue => graphPage({ after }),
+    respond: (after: string | null): ProviderResponse => graphPage({ after }),
   };
   const gateway = {
     bind: (input: { ownerId: string }) => {

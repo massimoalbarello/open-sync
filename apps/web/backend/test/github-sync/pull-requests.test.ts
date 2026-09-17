@@ -68,7 +68,11 @@ test('partial GraphQL results, repeated cursors, and a changed account cannot ad
   try {
     f.provider.respond = (after) =>
       after
-        ? { status: 200, data: { errors: [{ type: 'RATE_LIMITED' }], data: { viewer: null } } }
+        ? {
+            status: 200,
+            headers: {},
+            body: { errors: [{ type: 'RATE_LIMITED' }], data: { viewer: null } },
+          }
         : graphPage({ after });
     await f.engine.tick();
     const committed = f.engine.api.installation(resource).checkpoint;
