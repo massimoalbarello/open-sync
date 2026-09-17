@@ -1,4 +1,4 @@
-import type { RuntimeProviderSetup } from '@oomol-lab/open-connector';
+import type { ProviderSetup as RuntimeProviderSetup } from '@open-sync/core';
 
 export const authLabels: Record<RuntimeProviderSetup['auth'][number]['type'], string> = {
   oauth2: 'OAuth',

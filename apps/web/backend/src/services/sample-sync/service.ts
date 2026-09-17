@@ -1,4 +1,4 @@
-import type { SyncRuntime } from '@open-sync/core';
+import type { OpenSyncRuntime as SyncRuntime } from '@open-sync/core';
 import { sampleSync } from './definition';
 export class SampleSyncService {
   constructor(private readonly sync: SyncRuntime['api']) {}

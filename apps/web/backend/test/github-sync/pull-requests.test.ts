@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { createSyncRuntime } from '@open-sync/core';
+import { createSyncRuntime } from '@open-sync/core/engine';
 import { fixture, graphPage, owner } from './fixture';
 
 test('GitHub pages resume after failure and restart, deliver once, and detect edits on a full rescan', async () => {

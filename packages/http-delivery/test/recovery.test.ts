@@ -3,8 +3,8 @@ import { expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createSyncRuntime } from '@open-sync/core';
 import type { SyncRegistration } from '@open-sync/core/definition';
+import { createSyncRuntime } from '@open-sync/core/engine';
 import { createHttpDestination } from '../src';
 
 const targetCount = 3;

@@ -1,4 +1,4 @@
-import type { RuntimeProviderSetup } from '@oomol-lab/open-connector';
+import type { ProviderSetup as RuntimeProviderSetup } from '@open-sync/core';
 import { Button } from '@repo/ui/button';
 import { Input } from '@repo/ui/input';
 import { Textarea } from '@repo/ui/textarea';

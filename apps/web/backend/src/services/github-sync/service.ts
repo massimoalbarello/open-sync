@@ -1,20 +1,18 @@
-import type { SyncRuntime } from '@open-sync/core';
+import type { Scope as ProviderScope, OpenSyncRuntime as SyncRuntime } from '@open-sync/core';
 import { NotFoundError } from '#backend/lib/errors.ts';
-import type { ProviderScope } from '#backend/models/providers.ts';
-import type { ProviderRepository } from '#backend/repositories/providers/contract.ts';
 import { githubPullRequests } from './definition';
 
 export class GithubSyncService {
   constructor(
-    private readonly input: { repository: ProviderRepository; sync: SyncRuntime['api'] },
+    private readonly input: { providers: SyncRuntime['providers']; sync: SyncRuntime['api'] },
   ) {}
   async connections(scope: ProviderScope) {
-    return (await this.input.repository.list(scope))
+    return (await this.input.providers.connections(scope))
       .filter((connection) => connection.service === 'github')
       .map(({ id, account }) => ({ id, account }));
   }
   async create(input: ProviderScope & { id: string }) {
-    const connection = await this.input.repository.connection(input);
+    const connection = await this.input.providers.connection(input);
     if (connection?.service !== 'github') {
       throw new NotFoundError();
     }
@@ -28,7 +26,7 @@ export class GithubSyncService {
       ...input,
       destinationId: destination.id,
       definition: githubPullRequests.definition,
-      connection: { id: connection.connectorId, service: connection.service },
+      connection: { id: connection.id, service: connection.service },
       config: {},
       intervalMs,
     });
