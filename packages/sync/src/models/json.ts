@@ -14,7 +14,7 @@ interface Visit {
   ancestors: Set<object>;
 }
 
-// Adapted from open-connector's record-hash.ts; see the repository LICENSE attribution.
+// Adapted from massimoalbarello/open-connector's src/sync/record-hash.ts.
 export function canonicalJson(value: unknown): CanonicalJson {
   const normalized = normalize({ value, ancestors: new Set() });
   const json = JSON.stringify(normalized);
