@@ -24,7 +24,7 @@ export function GithubSync(input: { userId: string; onCreated(): void }) {
       </h2>
       <p className="text-muted-foreground text-sm">
         Sync authored pull request descriptions and metadata every 15 minutes. Deliverables are
-        saved locally and printed to the server log.
+        saved locally in SQLite.
       </p>
       {error && (
         <p role="alert" className="text-destructive text-sm">

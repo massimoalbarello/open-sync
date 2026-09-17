@@ -1,6 +1,6 @@
 import type { Scope as ProviderScope, OpenSyncRuntime as SyncRuntime } from '@open-sync/core';
+import { githubPullRequests } from '@open-sync/examples/syncs/github';
 import { NotFoundError } from '#backend/lib/errors.ts';
-import { githubPullRequests } from './definition';
 
 export class GithubSyncService {
   constructor(
@@ -18,7 +18,7 @@ export class GithubSyncService {
     }
     const destination = this.input.sync.createDestination({
       ...input,
-      type: 'local-log',
+      type: 'local',
       config: {},
     });
     const intervalMs = 900_000;

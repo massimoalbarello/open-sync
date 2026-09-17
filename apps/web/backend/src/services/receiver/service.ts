@@ -13,15 +13,13 @@ export class ReceiverService {
     return {
       version: '1',
       configSchema: { type: 'object', additionalProperties: false },
-      create: ({ scope }) => ({
-        deliver: async ({ delivery, signal }) => {
-          signal.throwIfAborted();
-          const accepted = await this.repository.accept({ ...scope, delivery });
-          return accepted
-            ? { status: 'accepted' }
-            : { status: 'retry', retryAfterMs: 1000, code: 'receiver_paused' };
-        },
-      }),
+      deliver: async ({ scope, delivery, signal }) => {
+        signal.throwIfAborted();
+        const accepted = await this.repository.accept({ ...scope, delivery });
+        return accepted
+          ? { status: 'accepted' }
+          : { status: 'retry', retryAfterMs: 1000, code: 'receiver_paused' };
+      },
     };
   }
 }

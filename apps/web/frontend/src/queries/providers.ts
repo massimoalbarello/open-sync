@@ -1,5 +1,5 @@
 import { queryOptions } from '@tanstack/react-query';
-import { api } from '../lib/api';
+import { syncApi } from '../lib/api';
 
 export const providerKeys = {
   owner: (userId: string) => ['providers', userId] as const,
@@ -14,7 +14,7 @@ export function providerOptions(userId: string) {
   });
 }
 async function loadProviders() {
-  const result = await api.api.providers.get();
+  const result = await syncApi.providers.get();
   if (result.error) {
     throw new Error('Could not load providers.');
   }
@@ -29,7 +29,7 @@ export function providerSetupOptions(input: { userId: string; service: string })
   });
 }
 export async function loadProvider(service: string) {
-  const result = await api.api.providers({ service }).get();
+  const result = await syncApi.providers({ service }).get();
   if (result.error) {
     throw new Error('Could not load this provider.');
   }
@@ -37,7 +37,7 @@ export async function loadProvider(service: string) {
 }
 
 export async function configureOAuth(input: { service: string; values: Record<string, string> }) {
-  const result = await api.api
+  const result = await syncApi
     .providers({ service: input.service })
     ['oauth-client'].put({ values: input.values });
   if (result.error) {
@@ -49,7 +49,7 @@ export async function connectProvider(input: {
   service: string;
   authorizationOptionIds?: string[];
 }) {
-  const result = await api.api
+  const result = await syncApi
     .providers({ service: input.service })
     .connect.post({ authorizationOptionIds: input.authorizationOptionIds });
   if (result.error) {
@@ -63,7 +63,7 @@ export async function saveCredentials(input: {
   values: Record<string, string>;
 }) {
   const { service, ...body } = input;
-  const result = await api.api.providers({ service }).credentials.post(body);
+  const result = await syncApi.providers({ service }).credentials.post(body);
   if (result.error) {
     throw new Error('Could not connect. Check the credentials and try again.');
   }

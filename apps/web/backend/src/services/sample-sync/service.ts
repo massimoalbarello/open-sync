@@ -1,5 +1,5 @@
 import type { OpenSyncRuntime as SyncRuntime } from '@open-sync/core';
-import { sampleSync } from './definition';
+import { sampleSync } from '@open-sync/examples/syncs/sample';
 export class SampleSyncService {
   constructor(private readonly sync: SyncRuntime['api']) {}
   async create(scope: { actorId: string; ownerId: string }) {

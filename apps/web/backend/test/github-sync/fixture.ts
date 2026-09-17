@@ -4,11 +4,10 @@ import { join } from 'node:path';
 import type { ProviderResponse } from '@open-sync/core/definition';
 import type { Delivery } from '@open-sync/core/delivery';
 import { createSyncRuntime } from '@open-sync/core/engine';
+import { githubPullRequests } from '@open-sync/examples/syncs/github';
 import { SQL } from 'bun';
 import { runMigrations } from '#backend/db/migrate.ts';
 import { SqliteReceiver } from '#backend/repositories/receiver/sqlite.ts';
-import { githubPullRequests } from '#backend/services/github-sync/definition.ts';
-import { loggingDestination } from '#backend/services/receiver/logging-destination.ts';
 import { ReceiverService } from '#backend/services/receiver/service.ts';
 
 export const owner = { actorId: 'alice', ownerId: 'alice' };
@@ -59,7 +58,8 @@ export async function fixture() {
   const db = new SQL({ adapter: 'sqlite', filename: join(dir, 'host.db') });
   await runMigrations({ db });
   const receiver = new ReceiverService(new SqliteReceiver(db));
-  const logs: Delivery[] = [];
+  const delivered: Delivery[] = [];
+  const destinationType = receiver.destination();
   const requests: (string | null)[] = [];
   const provider = {
     respond: (after: string | null): ProviderResponse => graphPage({ after }),
@@ -86,14 +86,20 @@ export async function fixture() {
     definitions: [githubPullRequests],
     connector: gateway,
     destinationTypes: {
-      'local-log': loggingDestination({
-        destination: receiver.destination(),
-        log: (delivery) => logs.push(delivery),
-      }),
+      local: {
+        ...destinationType,
+        async deliver(input: Parameters<typeof destinationType.deliver>[0]) {
+          const result = await destinationType.deliver(input);
+          if (result.status === 'accepted') {
+            delivered.push(input.delivery);
+          }
+          return result;
+        },
+      },
     },
   };
   const engine = createSyncRuntime(options);
-  const destination = engine.api.createDestination({ ...owner, type: 'local-log', config: {} });
+  const destination = engine.api.createDestination({ ...owner, type: 'local', config: {} });
   const installation = await engine.api.createInstallation({
     ...owner,
     destinationId: destination.id,
@@ -105,7 +111,7 @@ export async function fixture() {
     engine,
     options,
     receiver,
-    logs,
+    delivered,
     requests,
     provider,
     installation,
