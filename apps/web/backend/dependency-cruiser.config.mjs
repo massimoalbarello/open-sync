@@ -33,7 +33,7 @@ export default {
         'The core cannot depend on a host, dashboard, authentication library, or connector internals.',
       from: { path: core },
       to: {
-        path: '(apps/|^packages/(?!sync/)|node_modules/(react|react-dom|better-auth)/)',
+        path: '(apps/|^examples/|^packages/(?!sync/)|node_modules/(react|react-dom|better-auth)/)',
       },
     },
     {

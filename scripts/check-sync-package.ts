@@ -28,7 +28,10 @@ try {
       name: 'independent-host',
       private: true,
       type: 'module',
-      overrides: { '@open-sync/core': './sync.tgz' },
+      overrides: {
+        '@open-sync/core': './sync.tgz',
+        '@open-sync/http-delivery': './http-delivery.tgz',
+      },
       dependencies: {
         '@open-sync/core': './sync.tgz',
         '@open-sync/http-delivery': './http-delivery.tgz',
@@ -52,6 +55,13 @@ if (typeof createHttpDestination({ endpoint: 'https://receiver.example' }).deliv
 `,
   );
   await run({ cwd: temporary, command: ['bun', 'adapter.ts'] });
+  for (const name of ['package-consumer.ts', 'github-fixture.ts']) {
+    await writeFile(
+      join(temporary, name),
+      await readFile(join(root, 'examples/integrations/test/github-markdown', name)),
+    );
+  }
+  await run({ cwd: temporary, command: ['bun', 'package-consumer.ts'] });
 } finally {
   await rm(temporary, { recursive: true, force: true });
   for (const entry of packages) {

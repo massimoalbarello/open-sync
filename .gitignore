@@ -50,3 +50,5 @@ artifacts/
 /packages/sync/LICENSE
 
 /packages/http-delivery/LICENSE
+
+/examples/*/LICENSE

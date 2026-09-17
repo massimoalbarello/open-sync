@@ -66,11 +66,17 @@
       },
       "devDependencies": {
         "@open-sync/core": "workspace:*",
+        "@open-sync/http-delivery": "workspace:*",
+        "mdast-util-from-markdown": "^2.0.3",
         "typescript": "catalog:",
       },
       "peerDependencies": {
         "@open-sync/core": "0.1.0",
+        "@open-sync/http-delivery": "0.1.0",
       },
+      "optionalPeers": [
+        "@open-sync/http-delivery",
+      ],
     },
     "packages/browser-testing": {
       "name": "@repo/browser-testing",
