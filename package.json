@@ -23,13 +23,14 @@
     "check:types": "bun run --bun turbo check:types && bun run --bun tsc -p tsconfig.json",
     "check:codestyle": "bun run --bun biome check",
     "check:frontend": "node node_modules/eslint/bin/eslint.js apps/web/frontend/src",
-    "check:backend": "node node_modules/dependency-cruiser/bin/dependency-cruiser.mjs --config apps/web/backend/dependency-cruiser.config.mjs apps/web/backend/src",
+    "check:backend": "node node_modules/dependency-cruiser/bin/dependency-cruiser.mjs --config apps/web/backend/dependency-cruiser.config.mjs apps/web/backend/src packages/sync/src",
     "check:all": "bun run --parallel check:types check:codestyle check:frontend check:backend",
     "check:commit-message": "bun run --bun commitlint",
     "fix:codestyle": "bun run --bun biome check --write",
     "test": "bun run --bun turbo test",
     "test:browser": "bun run scripts/test-browser.ts",
-    "test:binary": "bun --filter @repo/web test:binary"
+    "test:binary": "bun --filter @repo/web test:binary",
+    "check:package": "bun run scripts/check-sync-package.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.11",

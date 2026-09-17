@@ -1,0 +1,35 @@
+{
+  "name": "@open-sync/core",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": "./src/open-sync.ts",
+    "./definition": "./src/models/definition.ts",
+    "./delivery": "./src/models/delivery.ts",
+    "./json": "./src/models/json.ts",
+    "./http": "./src/http/index.ts",
+    "./engine": "./src/runtime.ts",
+    "./build": "./src/build.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "check:types": "tsc --noEmit",
+    "test": "bun test test",
+    "prepack": "cp ../../LICENSE ./LICENSE",
+    "postpack": "rm ./LICENSE"
+  },
+  "dependencies": {
+    "@cfworker/json-schema": "4.1.1",
+    "elysia": "^1.4.30",
+    "@oomol-lab/open-connector": "1.6.0"
+  },
+  "devDependencies": {
+    "typescript": "catalog:"
+  },
+  "engines": {
+    "bun": ">=1.4.0"
+  }
+}

@@ -120,7 +120,12 @@
         "apps/web/backend/src/services/**/*.ts",
         "apps/web/backend/src/routes/**/*.ts",
         "apps/web/backend/src/app.ts",
-        "apps/web/backend/src/types.ts"
+        "apps/web/backend/src/types.ts",
+        "packages/sync/src/models/**/*.ts",
+        "packages/sync/src/services/**/*.ts",
+        "packages/sync/src/execution/**/*.ts",
+        "packages/sync/src/http/**/*.ts",
+        "packages/sync/src/connector/**/*.ts"
       ],
       "linter": {
         "rules": {

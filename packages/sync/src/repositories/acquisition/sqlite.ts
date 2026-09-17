@@ -1,0 +1,60 @@
+import type { Database } from 'bun:sqlite';
+import { definitionKey, type SyncDefinition, type SyncPage } from '../../models/definition';
+import type { DeliveredRecord } from '../../models/delivery';
+import { fail } from '../../models/error';
+import { canonicalJson } from '../../models/json';
+import type { QueueLimits } from '../../models/limits';
+import { preparePage } from '../../models/page';
+import { hasQueueCapacity } from '../queue-usage';
+import type { AcquisitionRepository, RunLease } from './contract';
+import { assertRun, claimRun, finishRun } from './lease';
+import { enqueue } from './outbox';
+import { writeRecord } from './records';
+
+export class SqliteAcquisition implements AcquisitionRepository {
+  constructor(
+    private readonly input: { db: Database; limits: QueueLimits; historyLimit: number },
+  ) {}
+  claim(leaseMs: number) {
+    return claimRun({ ...this.input, leaseMs });
+  }
+  hasCapacity() {
+    return hasQueueCapacity(this.input);
+  }
+  commit(input: { lease: RunLease; page: SyncPage; definition: SyncDefinition }): void {
+    const { db, limits } = this.input;
+    const page = preparePage({ ...input, limits });
+    db.transaction(() => {
+      const installation = assertRun({ db, lease: input.lease });
+      if (definitionKey(input.definition) !== definitionKey(installation.definition)) {
+        fail('definition_conflict');
+      }
+      const records: DeliveredRecord[] = [];
+      for (const record of page.deliverable.records) {
+        const changed = writeRecord({ db, installation, record });
+        if (changed) {
+          records.push(changed);
+        }
+      }
+      enqueue({ db, installation, records, limits });
+      db.query(
+        'UPDATE installations SET checkpoint=?,checkpoint_revision=checkpoint_revision+1 WHERE owner_id=? AND id=?',
+      ).run(canonicalJson(page.checkpoint).json, installation.ownerId, installation.id);
+      db.query(
+        'UPDATE runs SET checkpoint_revision=checkpoint_revision+1,pages=pages+1 WHERE owner_id=? AND id=?',
+      ).run(input.lease.ownerId, input.lease.id);
+      if (page.complete) {
+        finishRun({ db, lease: input.lease, state: 'succeeded', delay: installation.intervalMs });
+      }
+    }).immediate();
+    input.lease.checkpointRevision++;
+  }
+  finish(input: { lease: RunLease; state: string; delay: number }): void {
+    this.input.db
+      .transaction(() => {
+        assertRun({ db: this.input.db, lease: input.lease });
+        finishRun({ db: this.input.db, ...input });
+      })
+      .immediate();
+  }
+}

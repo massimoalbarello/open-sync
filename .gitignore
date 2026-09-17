@@ -45,3 +45,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .env.*
 !.env.example
 artifacts/
+
+# License copied into the independent package only while verifying its tarball.
+/packages/sync/LICENSE

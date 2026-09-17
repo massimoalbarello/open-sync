@@ -1,7 +1,64 @@
 const backend = '^apps/web/backend/src/';
+const core = '^packages/sync/src/';
 
 export default {
   forbidden: [
+    {
+      name: 'only-open-sync-composition-loads-connector',
+      severity: 'error',
+      from: {
+        path: '^(apps/|packages/sync/src/)',
+        pathNot: '^packages/sync/src/(open-sync|build)\\.ts$',
+      },
+      to: { path: 'node_modules/@oomol-lab/open-connector/', dependencyTypesNot: ['type-only'] },
+    },
+    {
+      name: 'host-consumes-open-sync-provider-api',
+      severity: 'error',
+      from: { path: '^apps/' },
+      to: { path: 'node_modules/@oomol-lab/open-connector/' },
+    },
+    {
+      name: 'sync-core-is-headless',
+      severity: 'error',
+      comment:
+        'The core cannot depend on a host, dashboard, authentication library, or connector internals.',
+      from: { path: core },
+      to: {
+        path: '(apps/|^packages/(?!sync/)|node_modules/(react|react-dom|better-auth)/)',
+      },
+    },
+    {
+      name: 'sync-models-stay-independent',
+      severity: 'error',
+      from: { path: `${core}models/` },
+      to: { path: `${core}(db|repositories|services|execution|http|connector)/` },
+    },
+    {
+      name: 'sync-services-use-persistence-contracts',
+      severity: 'error',
+      from: { path: `${core}services/` },
+      to: { path: `${core}repositories/`, dependencyTypesNot: ['type-only'] },
+    },
+    {
+      name: 'sync-services-do-not-coordinate-services',
+      severity: 'error',
+      from: { path: `${core}services/` },
+      to: { path: `${core}(services|db|http|connector)/` },
+    },
+    {
+      name: 'sync-persistence-stays-independent',
+      severity: 'error',
+      from: { path: `${core}(db|repositories)/` },
+      to: { path: `${core}(services|execution|http|connector)/` },
+    },
+    {
+      name: 'sync-transport-has-no-database-access',
+      severity: 'error',
+      from: { path: `${core}(http|connector|execution)/` },
+      to: { path: `${core}(db|repositories)/` },
+    },
+
     {
       name: 'resolve-backend-imports',
       severity: 'error',
