@@ -1,8 +1,8 @@
 // Adapted for Open Sync from massimoalbarello/open-connector.
 import type { SyncContext } from '@open-sync/core/definition';
+import { object, request } from '../github/acquisition/response';
 import { actorSelection, collectNodes, pageSelection } from './graphql';
 import { renderPullRequest } from './render';
-import { object, request } from './response';
 
 const commentsSelection = `id body url createdAt updatedAt author { ${actorSelection} }`;
 const reviewsSelection = `id body url submittedAt state author { ${actorSelection} }`;

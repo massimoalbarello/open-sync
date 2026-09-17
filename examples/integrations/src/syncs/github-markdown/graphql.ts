@@ -1,7 +1,7 @@
 // Adapted for Open Sync from massimoalbarello/open-connector.
 import type { SyncContext } from '@open-sync/core/definition';
 import { z } from 'zod';
-import { object, request } from './response';
+import { object, request } from '../github/acquisition/response';
 
 export const actorSelection =
   'login url ... on User { id } ... on Bot { id } ... on Organization { id }';

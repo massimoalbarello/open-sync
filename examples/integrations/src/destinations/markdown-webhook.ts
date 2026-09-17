@@ -9,6 +9,8 @@ export function createMarkdownWebhook(
   const transport = createHttpDestination(input);
   return {
     ...transport,
+    name: 'Markdown webhook',
+    description: 'Accepts Markdown document records only; incompatible records block the delivery.',
     version: `markdown-1:${transport.version}`,
     deliver(attempt) {
       attempt.signal.throwIfAborted();
