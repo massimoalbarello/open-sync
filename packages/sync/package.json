@@ -8,7 +8,6 @@
     "./definition": "./src/models/definition.ts",
     "./delivery": "./src/models/delivery.ts",
     "./json": "./src/models/json.ts",
-    "./connector": "./src/connector/client.ts",
     "./http": "./src/http/controller.ts",
     "./engine": "./src/runtime.ts",
     "./build": "./src/build.ts",

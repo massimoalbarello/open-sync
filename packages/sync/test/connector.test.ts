@@ -72,7 +72,13 @@ test('provider access authorizes ownership before metadata, scopes and declared 
         ? { id: 'connection', service: 'synthetic', alias: 'named', status, scopes }
         : request.method === 'GET'
           ? { service: actionService }
-          : { values: [1] };
+          : request.url.includes('/v1/proxy/')
+            ? {
+                status: 200,
+                headers: { 'content-type': 'application/json' },
+                data: { values: [1] },
+              }
+            : { values: [1] };
       return Promise.resolve(Response.json({ success: true, data }));
     },
   });
@@ -106,14 +112,24 @@ test('provider access authorizes ownership before metadata, scopes and declared 
   expect(action.headers.get('authorization')).toBe('Bearer backend-runtime');
   expect(action.headers.get('x-oo-connector-alias')).toBe('named');
   expect(await action.json()).toEqual({ input: {} });
-  await provider.get({ path: '/items', query: { page: 1 } });
+  expect(await provider.get({ path: '/items', query: { page: 1 } })).toEqual({
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+    body: { values: [1] },
+  });
   expect(await requests.at(-1)!.json()).toEqual({
     endpoint: '/items',
     method: 'GET',
     query: { page: 1 },
   });
   expect(() => provider.get({ path: 'https://elsewhere.test' })).toThrow('operation denied');
-  await provider.post({ path: '/graphql', body: { query: 'query { viewer { id } }' } });
+  expect(
+    await provider.post({ path: '/graphql', body: { query: 'query { viewer { id } }' } }),
+  ).toEqual({
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+    body: { values: [1] },
+  });
   expect(await requests.at(-1)!.json()).toEqual({
     endpoint: '/graphql',
     method: 'POST',

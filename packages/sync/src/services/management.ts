@@ -88,17 +88,6 @@ export class SyncManagement {
     await this.input.worker.cancel(input);
     return result;
   }
-  /** Fence existing work before credential mutation. The host must serialize creation/resume with this barrier. */
-  async suspendConnection(input: Scope & { connectionId: string }): Promise<void> {
-    this.guard(input);
-    const affected = this.input.catalog
-      .installations(input)
-      .filter((item) => item.connection?.id === input.connectionId);
-    for (const item of affected) {
-      this.input.catalog.setEnabled({ ...input, id: item.id, enabled: false });
-    }
-    await Promise.all(affected.map((item) => this.input.worker.cancel({ ...input, id: item.id })));
-  }
   queueRun(input: Resource & { backfill?: boolean }): void {
     this.guard(input);
     const installation = this.input.catalog.installation(input);

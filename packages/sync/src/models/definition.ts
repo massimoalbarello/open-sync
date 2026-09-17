@@ -18,10 +18,16 @@ export interface ProviderRequirements {
   proxyPaths?: readonly string[];
   proxyPostPaths?: readonly string[];
 }
+/** JSON or text response from the provider, including non-success HTTP statuses. */
+export interface ProviderResponse {
+  status: number;
+  headers: Readonly<Record<string, string>>;
+  body: JsonValue;
+}
 export interface ProviderOperations {
   action(input: { id: string; input: JsonObject }): Promise<JsonValue>;
-  get(input: { path: string; query?: JsonObject }): Promise<JsonValue>;
-  post(input: { path: string; body: JsonObject }): Promise<JsonValue>;
+  get(input: { path: string; query?: JsonObject }): Promise<ProviderResponse>;
+  post(input: { path: string; body: JsonObject }): Promise<ProviderResponse>;
 }
 export interface SyncDefinition extends DefinitionRef {
   configSchema: Schema;

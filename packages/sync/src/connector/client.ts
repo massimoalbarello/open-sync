@@ -3,6 +3,7 @@ import type { ConnectionRef, ProviderOperations, ProviderRequirements } from '..
 import { fail } from '../models/error';
 import type { Scope } from '../models/identity';
 import { canonicalJson, type JsonObject, type JsonValue } from '../models/json';
+import { providerResponse } from './response';
 
 interface RequestInput {
   path: string;
@@ -11,13 +12,13 @@ interface RequestInput {
   alias?: string;
   signal: AbortSignal;
 }
-export interface ConnectorClientOptions {
-  /** Borrowed public runtime.fetch or host-owned HTTP transport. Open Sync never closes it. */
+interface ConnectorClientOptions {
+  /** Borrowed embedded Connector transport; the Open Sync facade owns its lifetime. */
   fetch(request: Request): Promise<Response>;
   baseUrl: string;
   adminToken: string;
   runtimeToken: string;
-  /** The host maps opaque Connector references to its owners before any privileged metadata read. */
+  /** The facade checks ownership before any privileged metadata read. */
   authorizeConnection(input: Scope & { connection: ConnectionRef }): Promise<boolean>;
 }
 
@@ -138,7 +139,7 @@ function operations(input: {
         body: { endpoint: path, method: 'GET', query: operation.query ?? {} },
         alias,
         signal,
-      });
+      }).then(providerResponse);
     },
     post(operation) {
       const { path } = operation;
@@ -155,7 +156,7 @@ function operations(input: {
         body: { endpoint: path, method: 'POST', body: operation.body },
         alias,
         signal,
-      });
+      }).then(providerResponse);
     },
   };
 }

@@ -4,6 +4,17 @@ import { createOpenSync } from '@open-sync/core';
 import type { SyncRegistration } from '@open-sync/core/definition';
 import type { Delivery } from '@open-sync/core/delivery';
 
+let connectorExported = false;
+try {
+  import.meta.resolve('@open-sync/core/connector');
+  connectorExported = true;
+} catch {
+  // Connector composition is private, including when installed from the published package.
+}
+if (connectorExported) {
+  throw new Error('The installed package exposes Connector internals');
+}
+
 const definition: SyncRegistration = {
   definition: {
     id: 'package-test',
