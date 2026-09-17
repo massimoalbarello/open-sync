@@ -1,5 +1,5 @@
 // Executed outside the workspace against three installed tarballs, with no default app imports.
-import { createSyncRuntime } from '@open-sync/core';
+import { createSyncRuntime } from '@open-sync/core/engine';
 import { githubPullRequests } from '@open-sync/example-integrations/github';
 import { createMarkdownWebhook } from '@open-sync/example-integrations/webhook';
 import { githubFixture } from './github-fixture';
