@@ -61,6 +61,9 @@
     "examples/integrations": {
       "name": "@open-sync/examples",
       "version": "0.1.0",
+      "dependencies": {
+        "zod": "^4.4.3",
+      },
       "devDependencies": {
         "@open-sync/core": "workspace:*",
         "typescript": "catalog:",

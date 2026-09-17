@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { ProviderResponse } from '@open-sync/core/definition';
 import type { Delivery } from '@open-sync/core/delivery';
 import { createSyncRuntime } from '@open-sync/core/engine';
+import type { JsonObject } from '@open-sync/core/json';
 import { githubPullRequests } from '@open-sync/examples/syncs/github';
 import { SQL } from 'bun';
 import { runMigrations } from '#backend/db/migrate.ts';
@@ -11,6 +12,10 @@ import { SqliteReceiver } from '#backend/repositories/receiver/sqlite.ts';
 import { ReceiverService } from '#backend/services/receiver/service.ts';
 
 export const owner = { actorId: 'alice', ownerId: 'alice' };
+export interface GraphRequest {
+  query: string;
+  variables: JsonObject;
+}
 export function pull(id: string) {
   return {
     id,
@@ -28,31 +33,6 @@ export function pull(id: string) {
     author: { login: 'alice' },
   };
 }
-export function graphPage(input: { after: string | null; accountId?: string; changed?: boolean }) {
-  const nodes = input.after ? [pull('c')] : [pull('a'), pull('b')];
-  if (input.changed) {
-    nodes[0]!.body = 'Edited years later';
-  }
-  return {
-    status: 200,
-    headers: {},
-    body: {
-      data: {
-        viewer: {
-          id: input.accountId ?? 'github-native-user-1',
-          pullRequests: {
-            edges: nodes.map((node) => ({
-              node,
-              cursor: input.after ? 'end' : node.id === 'a' ? 'first' : 'next',
-            })),
-            totalCount: 3,
-            pageInfo: { hasNextPage: !input.after, endCursor: input.after ? 'end' : 'next' },
-          },
-        },
-      },
-    },
-  };
-}
 export async function fixture() {
   const dir = await mkdtemp(join(tmpdir(), 'github-sync-test-'));
   const db = new SQL({ adapter: 'sqlite', filename: join(dir, 'host.db') });
@@ -60,10 +40,44 @@ export async function fixture() {
   const receiver = new ReceiverService(new SqliteReceiver(db));
   const delivered: Delivery[] = [];
   const destinationType = receiver.destination();
-  const requests: (string | null)[] = [];
-  const provider = {
-    respond: (after: string | null): ProviderResponse => graphPage({ after }),
-  };
+  const requests: GraphRequest[] = [];
+  const pulls = [pull('a'), pull('b'), pull('c')];
+  const provider = { accountId: 'github-native-user-1', respond: reply };
+  function reply(input: GraphRequest): ProviderResponse {
+    let data: JsonObject;
+    if (input.query.includes('SyncIdentity')) {
+      data = { viewer: { id: provider.accountId } };
+    } else if (input.query.includes('SyncPullSummary')) {
+      data = { node: pulls.find((item) => item.id === input.variables.id) ?? null };
+    } else if (input.query.includes('SyncDiscover')) {
+      const updates = input.query.includes('UPDATED_AT');
+      const ordered = updates
+        ? [...pulls].sort(
+            // biome-ignore lint/complexity/useMaxParams: Array.sort requires a two-value comparator.
+            (a, b) => b.updatedAt.localeCompare(a.updatedAt),
+          )
+        : pulls;
+      const start = input.variables.after
+        ? ordered.findIndex((item) => `cursor-${item.id}` === input.variables.after) + 1
+        : 0;
+      const pageSize = 2;
+      const nodes = ordered.slice(start, start + pageSize);
+      data = {
+        viewer: {
+          pullRequests: {
+            edges: nodes.map((item) => ({
+              cursor: `cursor-${item.id}`,
+              node: { id: item.id, updatedAt: item.updatedAt },
+            })),
+            pageInfo: { hasNextPage: start + nodes.length < ordered.length },
+          },
+        },
+      };
+    } else {
+      throw new Error(`Unexpected query: ${input.query}`);
+    }
+    return { status: 200, headers: {}, body: { data } };
+  }
   const gateway = {
     bind: (input: { ownerId: string }) => {
       if (input.ownerId !== owner.ownerId) {
@@ -72,10 +86,13 @@ export async function fixture() {
       return Promise.resolve({
         action: () => Promise.reject(new Error('Unexpected action')),
         get: () => Promise.reject(new Error('Unexpected GET')),
-        post: (input: { body: import('@open-sync/core/json').JsonObject }) => {
-          const after = (input.body.variables as { after: string | null }).after;
-          requests.push(after);
-          return Promise.resolve(provider.respond(after));
+        post: (input: { body: JsonObject }) => {
+          const request = {
+            query: String(input.body.query),
+            variables: input.body.variables as JsonObject,
+          };
+          requests.push(request);
+          return Promise.resolve(provider.respond(request));
         },
       });
     },
@@ -98,7 +115,7 @@ export async function fixture() {
       },
     },
   };
-  const engine = createSyncRuntime(options);
+  let engine = createSyncRuntime(options);
   const destination = engine.api.createDestination({ ...owner, type: 'local', config: {} });
   const installation = await engine.api.createInstallation({
     ...owner,
@@ -108,13 +125,19 @@ export async function fixture() {
     config: {},
   });
   return {
-    engine,
-    options,
+    get engine() {
+      return engine;
+    },
     receiver,
     delivered,
     requests,
     provider,
+    pulls,
     installation,
+    async restart() {
+      await engine.close();
+      engine = createSyncRuntime(options);
+    },
     async close() {
       await engine.close();
       await db.close();

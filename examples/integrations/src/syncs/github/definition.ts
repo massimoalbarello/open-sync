@@ -1,11 +1,12 @@
 import type { SyncRegistration } from '@open-sync/core/definition';
+import { checkpointSchema, initialCheckpoint, jsonSchema } from './acquisition/state';
 import { run } from './pull-requests';
 
 export const githubPullRequests = {
   definition: {
     name: 'GitHub pull requests',
     description:
-      'Authored pull request descriptions and metadata as structured JSON. Each poll scans all PRs; unchanged records are not delivered again.',
+      'Authored pull requests as structured JSON. Initial backfill, then incremental polls from the saved watermark with a five-minute overlap and daily reconciliation.',
     id: 'github.pull-requests',
     version: '1',
     artifactId: 'open-sync/github-pull-requests/1',
@@ -16,18 +17,8 @@ export const githubPullRequests = {
       proxyPostPaths: ['/graphql'],
     },
     configSchema: { type: 'object', additionalProperties: false },
-    checkpointSchema: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        cursor: { type: ['string', 'null'] },
-        accountId: { type: ['string', 'null'] },
-        scanned: { type: 'integer', minimum: 0 },
-        total: { type: 'integer', minimum: 0 },
-      },
-      required: ['cursor', 'accountId', 'scanned', 'total'],
-    },
-    initialCheckpoint: { cursor: null, accountId: null, scanned: 0, total: 0 },
+    checkpointSchema: jsonSchema(checkpointSchema),
+    initialCheckpoint,
     kinds: {
       'pull-request': {
         type: 'object',

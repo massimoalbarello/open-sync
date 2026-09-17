@@ -51,8 +51,7 @@ export function record(value: JsonValue): SyncRecord {
   };
 }
 
-export const githubPageSize = 25;
-export function readPage(response: ProviderResponse) {
+export function readPull(response: ProviderResponse) {
   const ok = 200;
   if (response.status !== ok) {
     throw new Error('GitHub request failed.');
@@ -61,30 +60,5 @@ export function readPage(response: ProviderResponse) {
   if (body.errors !== undefined) {
     throw new Error('GitHub returned an incomplete GraphQL result.');
   }
-  const viewer = object(object(body.data).viewer);
-  const accountId = identity(viewer.id);
-  const pulls = object(viewer.pullRequests);
-  const page = object(pulls.pageInfo);
-  if (
-    !Array.isArray(pulls.edges) ||
-    pulls.edges.length > githubPageSize ||
-    !Number.isSafeInteger(pulls.totalCount) ||
-    Number(pulls.totalCount) < 0 ||
-    typeof page.hasNextPage !== 'boolean'
-  ) {
-    throw new Error('Incomplete GitHub page.');
-  }
-  const cursor = page.hasNextPage ? identity(page.endCursor) : null;
-  const edges = pulls.edges.map((value) => {
-    const edge = object(value);
-    return { cursor: identity(edge.cursor), record: record(edge.node!) };
-  });
-  if (
-    new Set(edges.map((edge) => edge.cursor)).size !== edges.length ||
-    new Set(edges.map((edge) => edge.record.id)).size !== edges.length ||
-    (cursor && cursor !== edges.at(-1)?.cursor)
-  ) {
-    throw new Error('Invalid GitHub pagination.');
-  }
-  return { accountId, cursor, edges, total: Number(pulls.totalCount) };
+  return record(object(body.data).node!);
 }
