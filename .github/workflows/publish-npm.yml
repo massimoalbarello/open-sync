@@ -1,0 +1,62 @@
+name: publish-npm
+
+on:
+  push:
+    tags: ['open-sync-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-open-sync
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/open-sync-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Verify release ref
+        run: |
+          git merge-base --is-ancestor HEAD origin/main
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            version=$(node -p 'require("./packages/sync/package.json").version')
+            test "$GITHUB_REF_NAME" = "open-sync-v$version"
+          fi
+      - uses: ./.github/actions/prepare
+      - run: bun run --cwd packages/sync check:types
+      - run: bun run --cwd packages/sync test
+      - run: bun run check:package
+      - name: Pack release
+        run: bun pm pack --cwd packages/sync --filename "$RUNNER_TEMP/open-sync.tgz"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: open-sync-package
+          path: ${{ runner.temp }}/open-sync.tgz
+          if-no-files-found: error
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - run: npm install --global npm@11.19.1
+      - uses: actions/download-artifact@v8
+        with:
+          name: open-sync-package
+          path: release
+      - name: Publish verified package with OIDC
+        run: node scripts/publish-sync-package.mjs release/open-sync.tgz
