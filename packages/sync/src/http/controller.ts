@@ -31,6 +31,7 @@ export function createSyncController(input: {
       return { scope };
     })
     .get('/definitions', ({ scope }) => ({ definitions: input.api.definitions(scope) }))
+    .get('/destination-types', ({ scope }) => ({ types: input.api.destinationTypes(scope) }))
     .get('/destinations', ({ scope }) => ({ destinations: input.api.destinations(scope) }))
     .post(
       '/destinations',
@@ -51,6 +52,15 @@ export function createSyncController(input: {
       '/installations/:id',
       ({ scope, params }) => input.api.installation({ ...scope, id: params.id }),
       resourceParams,
+    )
+    .get(
+      '/installations/:id/runs',
+      ({ scope, params, query }) =>
+        input.api.runs({ ...scope, id: params.id, offset: query.offset }),
+      {
+        ...resourceParams,
+        query: t.Object({ offset: t.Optional(t.Integer({ minimum: 0, maximum: 1000000 })) }),
+      },
     )
     .patch(
       '/installations/:id',

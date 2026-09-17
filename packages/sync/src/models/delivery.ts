@@ -28,6 +28,8 @@ export type DeliveryResult =
   | { status: 'retry'; retryAfterMs?: number; code?: string }
   | { status: 'rejected'; code: string };
 export interface DestinationType {
+  name?: string;
+  description?: string;
   /** Pin endpoint/interpretation changes to a new version. Existing work is never rerouted. */
   version: string;
   configSchema: Schema;

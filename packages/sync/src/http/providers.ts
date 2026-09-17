@@ -23,6 +23,10 @@ export function createProviderController(input: {
   });
   return new Elysia({ prefix: '/providers' })
     .onError(({ error }) => syncErrorResponse(error))
+    .get(
+      '/connections',
+      async ({ request }) => await input.providers.connections(await scope(request)),
+    )
     .get('/', async ({ request }) => await input.providers.catalog(await scope(request)))
     .get(
       '/:service',

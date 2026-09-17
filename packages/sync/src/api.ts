@@ -5,6 +5,8 @@ import type { ProviderService } from './services/providers/service';
 export type SyncApi = Pick<
   SyncManagement,
   | 'definitions'
+  | 'destinationTypes'
+  | 'runs'
   | 'destinations'
   | 'createDestination'
   | 'createInstallation'
@@ -25,6 +27,8 @@ export function syncApi(service: SyncManagement): SyncApi {
   return {
     definitions: service.definitions.bind(service),
     destinations: service.destinations.bind(service),
+    destinationTypes: service.destinationTypes.bind(service),
+    runs: service.runs.bind(service),
     createDestination: service.createDestination.bind(service),
     createInstallation: service.createInstallation.bind(service),
     installations: service.installations.bind(service),

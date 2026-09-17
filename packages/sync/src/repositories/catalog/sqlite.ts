@@ -82,6 +82,37 @@ export class SqliteCatalog implements CatalogRepository {
       .all(scope.ownerId)
       .map(({ id }) => this.installation({ ...scope, id }));
   }
+  runs(input: Resource & { offset: number }) {
+    this.installation(input);
+    const limit = 50;
+    const rows = this.db
+      .query<
+        {
+          id: string;
+          state: string;
+          started_at: number;
+          completed_at: number | null;
+          pages: number;
+          checkpoint_revision: number;
+        },
+        [string, string, number, number]
+      >(
+        'SELECT id,state,started_at,completed_at,pages,checkpoint_revision FROM runs WHERE owner_id=? AND installation_id=? ORDER BY started_at DESC,rowid DESC LIMIT ? OFFSET ?',
+      )
+      .all(input.ownerId, input.id, limit + 1, input.offset);
+    return {
+      runs: rows.slice(0, limit).map((row) => ({
+        id: row.id,
+        state: row.state,
+        startedAt: row.started_at,
+        completedAt: row.completed_at,
+        pages: row.pages,
+        checkpointRevision: row.checkpoint_revision,
+      })),
+      hasMore: rows.length > limit,
+      pageSize: limit,
+    };
+  }
   setEnabled(input: Resource & { enabled: boolean }) {
     return this.db
       .transaction(() => {
