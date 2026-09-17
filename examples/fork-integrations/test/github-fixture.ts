@@ -152,7 +152,7 @@ export function githubFixture() {
           variables: (input.body.variables ?? {}) as JsonObject,
         };
         fixture.requests.push(request);
-        return Promise.resolve({ status: 200, data: fixture.reply(request) });
+        return Promise.resolve({ status: 200, headers: {}, body: fixture.reply(request) });
       },
     },
   };
