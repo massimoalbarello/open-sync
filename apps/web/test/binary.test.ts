@@ -1,5 +1,6 @@
 const HTTP_NOT_FOUND = 404;
 const HTTP_OK = 200;
+const MAX_NIBRUN_BINARY_BYTES = 256_000_000;
 
 import { expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -12,6 +13,7 @@ test('standalone binary embeds frontend and migrations and preserves state on re
   const folder = await mkdtemp(join(tmpdir(), 'binary-test-'));
   try {
     const executable = join(import.meta.dir, '../dist/app');
+    expect(Bun.file(executable).size).toBeLessThanOrEqual(MAX_NIBRUN_BINARY_BYTES);
     const dataFolder = join(folder, 'data');
     await using app = await startBinary({
       executable,
@@ -37,6 +39,7 @@ test('standalone binary embeds frontend and migrations and preserves state on re
       const migrations = await db<{ name: string }[]>`select name from __migrations`;
       expect(migrations.map((migration) => migration.name)).toEqual([
         '0000_better_auth_schema.sql',
+        '0001_receiver_schema.sql',
       ]);
     } finally {
       await db.close();
@@ -48,6 +51,9 @@ test('standalone binary embeds frontend and migrations and preserves state on re
     });
     expect((await restarted.request({ path: '/api/health' })).status).toBe(HTTP_OK);
     expect(await Bun.file(join(dataFolder, '.better-auth-secret')).text()).toBe(secret);
+    expect((await restarted.request({ path: '/api/open-sync/v1/connections' })).status).toBe(
+      HTTP_NOT_FOUND,
+    );
     await restarted.stop();
   } finally {
     await rm(folder, { recursive: true, force: true });

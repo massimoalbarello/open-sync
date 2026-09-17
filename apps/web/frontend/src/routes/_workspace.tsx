@@ -2,7 +2,17 @@ import { Button } from '@repo/ui/button';
 import { cn } from '@repo/ui/class-names';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, Link, Outlet, redirect, useNavigate } from '@tanstack/react-router';
-import { ArrowRightLeft, ListChecks, LogOut, Menu, Plug, RefreshCw } from 'lucide-react';
+import {
+  ArrowRightLeft,
+  Database,
+  Download,
+  ListChecks,
+  LogOut,
+  Menu,
+  Plug,
+  RefreshCw,
+  Upload,
+} from 'lucide-react';
 import { useState } from 'react';
 import { sessionOptions, signOut } from '../queries/session';
 
@@ -19,6 +29,9 @@ export const Route = createFileRoute('/_workspace')({
 
 const sections = [
   { to: '/providers', label: 'Providers', icon: Plug },
+  { to: '/sources', label: 'Sources', icon: Download },
+  { to: '/destinations', label: 'Destinations', icon: Upload },
+  { to: '/records', label: 'Records', icon: Database },
   { to: '/syncs', label: 'Syncs', icon: RefreshCw },
   { to: '/delivery', label: 'Delivery queue', icon: ListChecks },
 ] as const;

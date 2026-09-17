@@ -1,5 +1,16 @@
 import { queryOptions } from '@tanstack/react-query';
+import { api } from '../lib/api';
 import { authClient } from '../lib/auth';
+export const registrationOptions = queryOptions({
+  queryKey: ['registration'],
+  queryFn: async () => {
+    const result = await api.api.registration.get();
+    if (result.error) {
+      throw new Error('Could not check instance setup.');
+    }
+    return result.data;
+  },
+});
 export const sessionOptions = queryOptions({
   queryKey: ['session'],
   queryFn: async () => {

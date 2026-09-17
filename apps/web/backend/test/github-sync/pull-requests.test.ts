@@ -1,0 +1,204 @@
+import { expect, test } from 'bun:test';
+import { fixture, owner } from './fixture';
+
+const discover = 'SyncDiscover';
+const summary = 'SyncPullSummary';
+
+test('GitHub resumes committed pages after restart, then polls only updates since its saved watermark', async () => {
+  const f = await fixture();
+  const resource = { ...owner, id: f.installation.id };
+  try {
+    const reply = f.provider.respond;
+    f.provider.respond = (input) => {
+      if (input.query.includes(discover) && input.variables.after) {
+        throw new Error('Provider unavailable');
+      }
+      return reply(input);
+    };
+    await f.engine.tick();
+    const partial = f.engine.api.installation(resource).checkpoint;
+    expect(partial).toMatchObject({
+      cursor: 'cursor-b',
+      accountId: 'github-native-user-1',
+      watermark: null,
+    });
+    await f.restart();
+    f.provider.respond = reply;
+    f.requests.length = 0;
+    f.engine.api.queueRun(resource);
+    await f.engine.tick();
+    await f.engine.tick();
+    await f.engine.tick();
+    expect(
+      f.requests
+        .filter((request) => request.query.includes(discover))
+        .map((request) => request.variables.after),
+    ).toEqual(['cursor-b']);
+    const completed = f.engine.api.installation(resource).checkpoint;
+    expect(completed).toMatchObject({
+      cursor: null,
+      phase: 'updates',
+      watermark: (partial as { cycleStartedAt: string }).cycleStartedAt,
+    });
+    const allRecords = 3;
+    expect((await f.receiver.status(owner)).records).toBe(allRecords);
+    expect(
+      f.delivered.flatMap((batch) => batch.deliverable.records).map((record) => record.id),
+    ).toEqual(['a', 'b', 'c']);
+
+    // An unchanged next poll stops at the timestamp boundary without hydrating old PRs.
+    const before = f.delivered.length;
+    f.requests.length = 0;
+    f.engine.api.queueRun(resource);
+    await f.engine.tick();
+    await f.engine.tick();
+    const discovery = f.requests.filter((request) => request.query.includes(discover));
+    expect(discovery).toHaveLength(1);
+    expect(discovery[0]!.query).toContain('UPDATED_AT');
+    expect(f.requests.filter((request) => request.query.includes(summary))).toEqual([]);
+    expect(f.delivered).toHaveLength(before);
+
+    // An old PR edited now is returned by updated ordering and replaces the same stable record.
+    f.pulls[0]!.body = 'Edited years later';
+    f.pulls[0]!.updatedAt = new Date().toISOString();
+    f.requests.length = 0;
+    f.engine.api.queueRun(resource);
+    await f.engine.tick();
+    await f.engine.tick();
+    expect(
+      f.requests
+        .filter((request) => request.query.includes(summary))
+        .map((request) => request.variables.id),
+    ).toEqual(['a']);
+    expect(f.delivered.at(-1)!.deliverable.records).toMatchObject([
+      { id: 'a', revision: 2, data: { body: 'Edited years later' } },
+    ]);
+
+    // Safety overlap may re-read a recent PR; the engine still emits no duplicate change.
+    const afterEdit = f.delivered.length;
+    f.engine.api.queueRun(resource);
+    await f.engine.tick();
+    await f.engine.tick();
+    expect(f.delivered).toHaveLength(afterEdit);
+    expect(f.engine.api.status(owner).queue.pendingRecords).toBe(0);
+  } finally {
+    await f.close();
+  }
+});
+
+test('partial results, repeated cursors and changed accounts cannot advance GitHub progress', async () => {
+  const f = await fixture();
+  const resource = { ...owner, id: f.installation.id };
+  try {
+    const reply = f.provider.respond;
+    f.provider.respond = (input) =>
+      input.query.includes(discover) && input.variables.after
+        ? {
+            status: 200,
+            headers: {},
+            body: { errors: [{ type: 'RATE_LIMITED' }], data: { viewer: null } },
+          }
+        : reply(input);
+    await f.engine.tick();
+    const committed = f.engine.api.installation(resource).checkpoint;
+    f.provider.respond = (input) =>
+      reply(input.query.includes(discover) ? { ...input, variables: { after: null } } : input);
+    f.engine.api.queueRun(resource);
+    await f.engine.tick();
+    expect(f.engine.api.installation(resource)).toMatchObject({
+      checkpoint: committed,
+      status: 'execution_failed',
+    });
+    f.provider.respond = reply;
+    f.provider.accountId = 'different-account';
+    f.engine.api.queueRun(resource);
+    await f.engine.tick();
+    expect(f.engine.api.installation(resource)).toMatchObject({
+      checkpoint: committed,
+      status: 'execution_failed',
+    });
+    expect((await f.receiver.status(owner)).records).toBe(2);
+  } finally {
+    await f.close();
+  }
+});
+
+test('cursor recovery preserves account and cycle identity after a committed record', async () => {
+  const f = await fixture();
+  const resource = { ...owner, id: f.installation.id };
+  try {
+    const reply = f.provider.respond;
+    f.provider.respond = (input) =>
+      input.query.includes(discover) && input.variables.after
+        ? { status: 200, headers: {}, body: { errors: [{ type: 'INVALID_CURSOR_ARGUMENTS' }] } }
+        : reply(input);
+    await f.engine.tick();
+    expect(f.engine.api.installation(resource).checkpoint).toMatchObject({
+      cursor: null,
+      accountId: 'github-native-user-1',
+      watermark: null,
+    });
+    await f.restart();
+    f.provider.respond = reply;
+    f.provider.accountId = 'different-account';
+    const checkpoint = f.engine.api.installation(resource).checkpoint;
+    f.engine.api.queueRun(resource);
+    await f.engine.tick();
+    expect(f.engine.api.installation(resource)).toMatchObject({
+      checkpoint,
+      status: 'execution_failed',
+    });
+  } finally {
+    await f.close();
+  }
+});
+
+test('an interrupted incremental poll retains its old watermark and resumes the pending record', async () => {
+  const f = await fixture();
+  const resource = { ...owner, id: f.installation.id };
+  try {
+    await f.engine.tick();
+    await f.engine.tick();
+    await f.engine.tick();
+    const baseline = f.engine.api.installation(resource).checkpoint as { watermark: string };
+    const updatedAt = new Date().toISOString();
+    f.pulls[0]!.updatedAt = updatedAt;
+    f.pulls[1]!.updatedAt = updatedAt;
+    f.pulls[0]!.body = 'Updated A';
+    f.pulls[1]!.body = 'Updated B';
+    const reply = f.provider.respond;
+    f.provider.respond = (input) => {
+      if (input.query.includes(summary) && input.variables.id === 'b') {
+        throw new Error('Interrupted');
+      }
+      return reply(input);
+    };
+    f.engine.api.queueRun(resource);
+    await f.engine.tick();
+    const partial = f.engine.api.installation(resource).checkpoint as { cycleStartedAt: string };
+    expect(partial).toMatchObject({ cursor: 'cursor-a', watermark: baseline.watermark });
+    await f.restart();
+    f.provider.respond = reply;
+    f.requests.length = 0;
+    f.engine.api.queueRun(resource);
+    await f.engine.tick();
+    await f.engine.tick();
+    expect(
+      f.requests
+        .filter((request) => request.query.includes(summary))
+        .map((request) => request.variables.id),
+    ).toEqual(['b']);
+    expect(f.engine.api.installation(resource).checkpoint).toMatchObject({
+      cursor: null,
+      watermark: partial.cycleStartedAt,
+    });
+    expect(
+      f.delivered
+        .flatMap((batch) => batch.deliverable.records)
+        .filter((record) => record.revision === 2)
+        .map((record) => record.id),
+    ).toEqual(['a', 'b']);
+  } finally {
+    await f.close();
+  }
+});

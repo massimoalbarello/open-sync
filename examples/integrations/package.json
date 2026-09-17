@@ -1,0 +1,31 @@
+{
+  "name": "@open-sync/examples",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "exports": {
+    "./syncs/github": "./src/syncs/github/definition.ts",
+    "./syncs/sample": "./src/syncs/sample/definition.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "check:types": "tsc --noEmit",
+    "prepack": "cp ../../LICENSE ./LICENSE",
+    "postpack": "rm ./LICENSE"
+  },
+  "peerDependencies": {
+    "@open-sync/core": "0.1.0"
+  },
+  "devDependencies": {
+    "@open-sync/core": "workspace:*",
+    "typescript": "catalog:"
+  },
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  }
+}

@@ -12,6 +12,18 @@ function availablePort() {
   server.stop(true);
   return port;
 }
+async function stopProcess(child: ReturnType<typeof Bun.spawn>) {
+  if (child.exitCode !== null) {
+    return;
+  }
+  child.kill('SIGTERM');
+  const timer = setTimeout(() => child.kill('SIGKILL'), STOP_TIMEOUT_MS);
+  try {
+    await child.exited;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 export async function startIsolatedApp() {
   const port = availablePort();
   let frontendPort = availablePort();
@@ -20,53 +32,67 @@ export async function startIsolatedApp() {
   }
   const origin = `http://localhost:${frontendPort}`;
   const dataFolder = await mkdtemp(join(tmpdir(), 'open-sync-isolated-'));
-  const child = Bun.spawn(['bun', 'run', '--no-orphans', 'dev'], {
-    cwd: join(import.meta.dir, '..'),
-    stdout: 'inherit',
-    stderr: 'inherit',
-    env: {
-      ...process.env,
-      PORT: String(port),
-      FRONTEND_PORT: String(frontendPort),
-      BASE_URL: origin,
-      DATA_FOLDER: dataFolder,
-      BETTER_AUTH_SECRET: crypto.randomUUID(),
-    },
-  });
+  const environment = {
+    ...process.env,
+    PORT: String(port),
+    FRONTEND_PORT: String(frontendPort),
+    BASE_URL: origin,
+    DATA_FOLDER: dataFolder,
+    BETTER_AUTH_SECRET: crypto.randomUUID(),
+  };
+  const spawn = (script: string) =>
+    Bun.spawn(['bun', 'run', '--no-orphans', script], {
+      cwd: join(import.meta.dir, '../apps/web'),
+      stdout: 'inherit',
+      stderr: 'inherit',
+      env: environment,
+    });
+  let child = spawn('dev:server');
+  const frontend = spawn('dev:client');
+  async function ready() {
+    const deadline = Date.now() + START_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      if (child.exitCode !== null || frontend.exitCode !== null) {
+        throw new Error('Isolated application exited before startup.');
+      }
+      const healthy = await fetch(`${origin}/api/health`, {
+        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+      })
+        .then((response) => response.ok)
+        .catch(() => false);
+      if (healthy) {
+        return;
+      }
+      await Bun.sleep(PROBE_INTERVAL_MS);
+    }
+    throw new Error('Isolated application startup timed out.');
+  }
   let stopped = false;
   const stop = async () => {
     if (stopped) {
       return;
     }
     stopped = true;
-    if (child.exitCode === null) {
-      child.kill('SIGTERM');
-      const timer = setTimeout(() => child.kill('SIGKILL'), STOP_TIMEOUT_MS);
-      try {
-        await child.exited;
-      } finally {
-        clearTimeout(timer);
-      }
-    }
+    await stopProcess(child);
+    await stopProcess(frontend);
     await rm(dataFolder, { recursive: true, force: true });
   };
   try {
-    const deadline = Date.now() + START_TIMEOUT_MS;
-    while (Date.now() < deadline) {
-      if (child.exitCode !== null) {
-        throw new Error('Isolated application exited before startup.');
-      }
-      const ready = await fetch(`${origin}/api/health`, {
-        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
-      })
-        .then((response) => response.ok)
-        .catch(() => false);
-      if (ready) {
-        return { origin, dataFolder, child, stop };
-      }
-      await Bun.sleep(PROBE_INTERVAL_MS);
-    }
-    throw new Error('Isolated application startup timed out.');
+    await ready();
+    return {
+      origin,
+      dataFolder,
+      get child() {
+        return child;
+      },
+      stop,
+      async restartServer(input?: { beforeStart(): Promise<void> }) {
+        await stopProcess(child);
+        await input?.beforeStart();
+        child = spawn('dev:server');
+        await ready();
+      },
+    };
   } catch (error) {
     await stop();
     throw error;

@@ -1,23 +1,29 @@
 import { Button } from '@repo/ui/button';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router';
-import { registerAccount, sessionOptions, signIn } from '../queries/session';
+import { registerAccount, registrationOptions, sessionOptions, signIn } from '../queries/session';
 export const Route = createFileRoute('/login')({
   beforeLoad: async ({ context }) => {
     if (await context.queryClient.fetchQuery(sessionOptions)) {
       throw redirect({ to: '/' });
     }
   },
+  loader: ({ context }) => context.queryClient.fetchQuery(registrationOptions),
   component: Login,
 });
 function Login() {
   const client = useQueryClient();
   const navigate = useNavigate();
+  const { data: registration } = useSuspenseQuery(registrationOptions);
   const completed = async () => {
     client.clear();
     await navigate({ to: '/' });
   };
-  const register = useMutation({ mutationFn: registerAccount, onSuccess: completed });
+  const register = useMutation({
+    mutationFn: registerAccount,
+    onSuccess: completed,
+    onError: () => client.invalidateQueries({ queryKey: registrationOptions.queryKey }),
+  });
   const login = useMutation({ mutationFn: signIn, onSuccess: completed });
   const pending = register.isPending || login.isPending;
   return (
@@ -34,12 +40,20 @@ function Login() {
         </p>
       </div>
       <div className="flex flex-col items-start gap-3">
-        <Button size="lg" disabled={pending} onClick={() => register.mutate()}>
-          {register.isPending ? 'Creating your account…' : 'Create account with a passkey'}
-        </Button>
-        <Button variant="ghost" disabled={pending} onClick={() => login.mutate()}>
-          {login.isPending ? 'Signing in…' : 'Sign in with a passkey'}
-        </Button>
+        {registration.ownerRegistered ? (
+          <Button size="lg" disabled={pending} onClick={() => login.mutate()}>
+            {login.isPending ? 'Signing in…' : 'Sign in with a passkey'}
+          </Button>
+        ) : (
+          <>
+            <Button size="lg" disabled={pending} onClick={() => register.mutate()}>
+              {register.isPending ? 'Creating your account…' : 'Create account with a passkey'}
+            </Button>
+            <p className="text-muted-foreground text-sm">
+              Your passkey will make you the owner of this Open Sync instance.
+            </p>
+          </>
+        )}
       </div>
       {(register.error || login.error) && (
         <p role="alert" className="text-destructive">

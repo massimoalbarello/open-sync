@@ -1,5 +1,6 @@
 import { virtualPasskeyBrowser } from '@repo/browser-testing/browser';
 import { startIsolatedApp } from './isolated-app';
+import { sampleSyncJourney } from './sample-sync-journey';
 
 const app = await startIsolatedApp();
 let browser: Awaited<ReturnType<typeof virtualPasskeyBrowser>> | undefined;
@@ -12,6 +13,10 @@ try {
   if (Bun.argv.includes('--seed')) {
     await browser.page.getByRole('button', { name: 'Create account with a passkey' }).click();
     await browser.page.getByRole('heading', { name: 'Syncs', exact: true }).waitFor();
+    await sampleSyncJourney(browser.page);
+    await browser.page.getByRole('link', { name: 'Delivery queue', exact: true }).click();
+    await browser.page.getByText('12 records received', { exact: true }).waitFor();
+    await browser.page.getByRole('link', { name: 'Syncs', exact: true }).click();
   }
   console.log(`Isolated application: ${app.origin} (data: ${app.dataFolder})`);
   await app.child.exited;
