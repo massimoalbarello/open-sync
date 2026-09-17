@@ -30,6 +30,9 @@ export function createHttpDestination(input: {
   const transport = input.fetch ?? fetch;
   const bearerToken = input.bearerToken;
   return {
+    name: 'HTTP',
+    description:
+      'Sends JSON deliveries to a receiver that owns durable acceptance and deduplication.',
     // A changed credential may select a different recipient at the same endpoint. Fail closed.
     version: `1:${canonicalJson({ endpoint: endpoint.href, bearerToken: bearerToken ?? null }).sha256}`,
     configSchema: { type: 'object', additionalProperties: false },

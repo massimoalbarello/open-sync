@@ -5,6 +5,26 @@ import type { ReceiverRepository, ReceiverScope } from './contract';
 
 export class SqliteReceiver implements ReceiverRepository {
   constructor(private readonly db: SQL) {}
+  async records(input: ReceiverScope & { sourceId?: string; offset: number }) {
+    const limit = 50;
+    const sourceId = input.sourceId ?? null;
+    const rows = await this.db<
+      { source_id: string; kind: string; record_id: string; revision: number; data: string }[]
+    >`SELECT source_id,kind,record_id,revision,data FROM receiver_records
+      WHERE owner_id=${input.ownerId} AND deleted=0 AND (${sourceId} IS NULL OR source_id=${sourceId})
+      ORDER BY source_id,kind,record_id LIMIT ${limit + 1} OFFSET ${input.offset}`;
+    return {
+      records: rows.slice(0, limit).map((row) => ({
+        sourceId: String(row.source_id),
+        kind: String(row.kind),
+        id: String(row.record_id),
+        revision: Number(row.revision),
+        data: JSON.parse(String(row.data)) as import('@open-sync/core/json').JsonObject,
+      })),
+      hasMore: rows.length > limit,
+      pageSize: limit,
+    };
+  }
   async status(scope: ReceiverScope) {
     const [status] = await this.db`SELECT
       coalesce((SELECT paused FROM receiver_settings WHERE owner_id=${scope.ownerId}),0) AS paused,

@@ -16,6 +16,21 @@ export function receiverController(input: {
       }
       return { scope };
     })
+    .get(
+      '/records',
+      ({ scope, query }) =>
+        input.receiver.records({
+          ...scope,
+          sourceId: query.sourceId,
+          offset: query.offset ?? 0,
+        }),
+      {
+        query: t.Object({
+          sourceId: t.Optional(t.String({ minLength: 1, maxLength: 1024 })),
+          offset: t.Optional(t.Integer({ minimum: 0, maximum: 1000000 })),
+        }),
+      },
+    )
     .get('/status', ({ scope }) => input.receiver.status(scope))
     .patch(
       '/settings',

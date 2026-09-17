@@ -3,6 +3,9 @@ import { run } from './pull-requests';
 
 export const githubPullRequests = {
   definition: {
+    name: 'GitHub pull requests',
+    description:
+      'Authored pull request descriptions and metadata as structured JSON. Each poll scans all PRs; unchanged records are not delivered again.',
     id: 'github.pull-requests',
     version: '1',
     artifactId: 'open-sync/github-pull-requests/1',

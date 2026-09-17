@@ -11,9 +11,7 @@ import { FrontendAssetsRepository } from '#backend/repositories/frontend-assets/
 import { SqliteReceiver } from '#backend/repositories/receiver/sqlite.ts';
 import { authorizeSyncRequest } from '#backend/routes/sync-authorization.ts';
 import { FrontendAssetsService } from '#backend/services/frontend-assets/service.ts';
-import { GithubSyncService } from '#backend/services/github-sync/service.ts';
 import { ReceiverService } from '#backend/services/receiver/service.ts';
-import { SampleSyncService } from '#backend/services/sample-sync/service.ts';
 
 const env = loadEnv();
 const secret = await loadAuthSecret({
@@ -52,8 +50,6 @@ try {
     auth,
     frontend: new FrontendAssetsService(new FrontendAssetsRepository()),
     receiver,
-    samples: new SampleSyncService(sync.api),
-    githubSyncs: new GithubSyncService({ providers: sync.providers, sync: sync.api }),
     syncFetch: sync.fetch,
     origins,
   }).listen({ port: env.PORT, hostname: '0.0.0.0' });

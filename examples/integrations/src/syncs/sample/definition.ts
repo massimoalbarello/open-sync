@@ -4,6 +4,9 @@ const maxCount = 100;
 const maxPageSize = 10;
 export const sampleSync: SyncRegistration = {
   definition: {
+    name: 'Sample data',
+    description:
+      'Synthetic numbered records for testing checkpoints and destinations without a provider. Once complete, later polls produce no new records.',
     id: 'sample',
     version: '1',
     artifactId: 'open-sync.sample/1',
