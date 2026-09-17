@@ -87,14 +87,16 @@ export class SqliteDeliveries implements DeliveryRepository {
   status(scope: Scope) {
     return queueUsage({ db: this.db, ownerId: scope.ownerId });
   }
-  pending(scope: Scope) {
-    return this.db
+  pending(input: Scope & { offset: number }) {
+    const limit = 50;
+    const rows = this.db
       .query<
         PendingDelivery,
-        [string]
+        [string, number, number]
       >(`SELECT id,installation_id AS installationId,destination_id AS destinationId,state,bytes,
-      record_count AS recordCount,attempt,due_at AS nextAttemptAt,error_code AS errorCode FROM deliveries WHERE owner_id=? ORDER BY sequence`)
-      .all(scope.ownerId);
+      record_count AS recordCount,attempt,due_at AS nextAttemptAt,error_code AS errorCode FROM deliveries WHERE owner_id=? ORDER BY sequence LIMIT ? OFFSET ?`)
+      .all(input.ownerId, limit + 1, input.offset);
+    return { deliveries: rows.slice(0, limit), hasMore: rows.length > limit, pageSize: limit };
   }
   retry(input: Resource): void {
     const updated = this.db

@@ -1,8 +1,8 @@
 import type {
   Delivery,
+  DeliveryPage,
   DeliveryResult,
   Destination,
-  PendingDelivery,
   QueueStatus,
 } from '../../models/delivery';
 import type { Resource, Scope } from '../../models/identity';
@@ -18,6 +18,6 @@ export interface DeliveryRepository {
   claim(leaseMs: number): DeliveryLease | undefined;
   complete(input: { lease: DeliveryLease; result: DeliveryResult; delay: number }): void;
   status(scope: Scope): QueueStatus;
-  pending(scope: Scope): PendingDelivery[];
+  pending(input: Scope & { offset: number }): DeliveryPage;
   retry(input: Resource): void;
 }

@@ -163,7 +163,7 @@ test('owner filtering applies to reads, mutations, destination assignment and qu
     f.acquisition.commit({ lease, page, definition: fixture.definition });
     const delivery = f.deliveries.claim(leaseMs)!;
     expect(delivery.delivery.ownerId).toBe(alpha.ownerId);
-    expect(f.deliveries.pending(beta)).toEqual([]);
+    expect(f.deliveries.pending({ ...beta, offset: 0 }).deliveries).toEqual([]);
     expect(() => f.deliveries.retry({ ...beta, id: delivery.delivery.id })).toThrow('not found');
   } finally {
     f.close();

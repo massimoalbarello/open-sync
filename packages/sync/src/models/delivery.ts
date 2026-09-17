@@ -65,3 +65,9 @@ export interface PendingDelivery {
   nextAttemptAt: number;
   errorCode: string | null;
 }
+
+export interface DeliveryPage {
+  deliveries: PendingDelivery[];
+  hasMore: boolean;
+  pageSize: number;
+}

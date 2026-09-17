@@ -111,9 +111,11 @@ export class SyncManagement {
     this.guard(scope);
     return { queue: this.input.deliveries.status(scope), limits: { ...this.input.limits } };
   }
-  deliveries(scope: Scope) {
-    this.guard(scope);
-    return this.input.deliveries.pending(scope);
+  deliveries(input: Scope & { offset?: number }) {
+    this.guard(input);
+    const offset = input.offset ?? 0;
+    positive(offset + 1);
+    return this.input.deliveries.pending({ ...input, offset });
   }
   retryDelivery(input: Resource): void {
     this.guard(input);

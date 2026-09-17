@@ -77,7 +77,13 @@ export function createSyncController(input: {
       { ...resourceParams, body: t.Object({ backfill: t.Optional(t.Boolean()) }) },
     )
     .get('/status', ({ scope }) => input.api.status(scope))
-    .get('/deliveries', ({ scope }) => ({ deliveries: input.api.deliveries(scope) }))
+    .get(
+      '/deliveries',
+      ({ scope, query }) => input.api.deliveries({ ...scope, offset: query.offset }),
+      {
+        query: t.Object({ offset: t.Optional(t.Integer({ minimum: 0, maximum: 1000000 })) }),
+      },
+    )
     .post(
       '/deliveries/:id/retry',
       ({ scope, params }) => {
