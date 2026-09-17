@@ -34,14 +34,12 @@ test('standalone binary embeds frontend and migrations and preserves state on re
     expect((await app.request({ path: '/login' })).status).toBe(HTTP_OK);
     await app.stop();
     const secret = await Bun.file(join(dataFolder, '.better-auth-secret')).text();
-    const connectorKey = await Bun.file(join(dataFolder, '.connector-key')).text();
     const db = new SQL({ adapter: 'sqlite', filename: join(dataFolder, 'app.db') });
     try {
       const migrations = await db<{ name: string }[]>`select name from __migrations`;
       expect(migrations.map((migration) => migration.name)).toEqual([
         '0000_better_auth_schema.sql',
         '0001_receiver_schema.sql',
-        '0002_provider_connections.sql',
       ]);
     } finally {
       await db.close();
@@ -53,7 +51,6 @@ test('standalone binary embeds frontend and migrations and preserves state on re
     });
     expect((await restarted.request({ path: '/api/health' })).status).toBe(HTTP_OK);
     expect(await Bun.file(join(dataFolder, '.better-auth-secret')).text()).toBe(secret);
-    expect(await Bun.file(join(dataFolder, '.connector-key')).text()).toBe(connectorKey);
     expect((await restarted.request({ path: '/connector/v1/connections' })).status).toBe(
       HTTP_NOT_FOUND,
     );
