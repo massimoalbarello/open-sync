@@ -9,8 +9,14 @@ export class ReceiverService {
   setPaused(input: ReceiverScope & { paused: boolean }) {
     return this.repository.setPaused(input);
   }
+  records(input: ReceiverScope & { sourceId?: string; offset: number }) {
+    return this.repository.records(input);
+  }
   destination(): DestinationType {
     return {
+      name: 'Local SQLite',
+      description:
+        'Stores each record as JSON in this application. Accepts all record kinds and schemas.',
       version: '1',
       configSchema: { type: 'object', additionalProperties: false },
       deliver: async ({ scope, delivery, signal }) => {

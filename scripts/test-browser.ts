@@ -4,6 +4,7 @@ import { virtualPasskeyBrowser } from '@repo/browser-testing/browser';
 import { githubOAuthJourney } from './github-oauth-journey';
 import { startIsolatedApp } from './isolated-app';
 import { ownerRegistrationJourney } from './owner-registration-journey';
+import { sampleSyncJourney } from './sample-sync-journey';
 
 const app = await startIsolatedApp();
 let browser: Awaited<ReturnType<typeof virtualPasskeyBrowser>> | undefined;
@@ -125,8 +126,8 @@ try {
   );
   assert.equal(
     (
-      await page.request.post(`${app.origin}/api/syncs/github`, {
-        data: { connectionId: `connection_${crypto.randomUUID()}` },
+      await page.request.post(`${app.origin}/api/open-sync/sync/destinations`, {
+        data: { type: 'local', config: {} },
       })
     ).status(),
     unauthorizedStatus,
@@ -144,18 +145,25 @@ try {
   await page.getByRole('heading', { name: 'Providers', exact: true }).waitFor();
   await page.getByRole('link', { name: 'Syncs', exact: true }).click();
   await page.getByRole('heading', { name: 'Syncs', exact: true }).waitFor();
-  await page.getByRole('button', { name: 'Add GitHub sync', exact: true }).click();
-  await page.getByText('Connect a GitHub account to create this sync.', { exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'Syncs', exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Sources', exact: true }).click();
+  await page.getByRole('heading', { name: 'GitHub pull requests', exact: true }).waitFor();
+  await page.screenshot({ path: 'artifacts/sources-catalog.png', fullPage: true });
+  await page.getByRole('link', { name: 'Syncs', exact: true }).click();
+  await page.getByRole('heading', { name: 'Syncs', exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Create sync', exact: true }).click();
+  await page.getByLabel('Source', { exact: true }).click();
+  await page.getByRole('option', { name: 'GitHub pull requests · 1', exact: true }).click();
+  await page.getByRole('link', { name: 'Manage provider connections', exact: true }).waitFor();
   await page.screenshot({ path: 'artifacts/syncs-create.png', fullPage: true });
-  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
 
   await mkdir('artifacts', { recursive: true });
   await page.getByRole('link', { name: 'Delivery queue', exact: true }).click();
   await page.getByRole('button', { name: 'Pause delivery', exact: true }).click();
   await page.getByRole('button', { name: 'Resume delivery', exact: true }).waitFor();
   await page.getByRole('link', { name: 'Syncs', exact: true }).click();
-  await page.getByRole('button', { name: 'Add sample sync' }).click();
-  await page.getByText('succeeded · 12 / 12 records acquired').waitFor();
+  await page.getByRole('heading', { name: 'Syncs', exact: true }).waitFor();
+  await sampleSyncJourney(page);
   await page.screenshot({ path: 'artifacts/dashboard-desktop.png', fullPage: true });
   const saved = (await (
     await page.request.get(`${app.origin}/api/open-sync/sync/installations`)
@@ -163,6 +171,14 @@ try {
     installations: { id: string }[];
   };
   const installationId = saved.installations[0]!.id;
+  await page.getByRole('link', { name: 'Polling history', exact: true }).click();
+  await page.getByRole('cell', { name: 'succeeded', exact: true }).waitFor();
+  await page.screenshot({ path: 'artifacts/sync-history.png', fullPage: true });
+  await page.getByRole('link', { name: 'Checkpoint', exact: true }).click();
+  await page.locator('pre').first().getByText('12', { exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Record schemas', exact: true }).click();
+  await page.getByRole('heading', { name: 'item', exact: true }).waitFor();
+  await page.screenshot({ path: 'artifacts/sync-schema.png', fullPage: true });
   await page.getByRole('link', { name: 'Delivery queue', exact: true }).click();
   await page
     .getByText('12 records waiting · 0 deliveries blocked · Delivery paused', { exact: true })
@@ -171,15 +187,28 @@ try {
   await page.getByRole('button', { name: 'Resume delivery', exact: true }).click();
   await page.getByText('12 records received', { exact: true }).waitFor();
   await page.getByText('Nothing waiting for delivery', { exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Records', exact: true }).click();
+  await page.getByText('item · 0', { exact: true }).click();
+  await page.locator('pre').getByText('"value": 0', { exact: false }).waitFor();
+  await page.screenshot({ path: 'artifacts/received-records.png', fullPage: true });
   await page.getByRole('link', { name: 'Syncs', exact: true }).click();
+  await page.getByRole('heading', { name: 'Syncs', exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Sample data → Local SQLite', exact: false }).click();
   await page.getByRole('button', { name: 'Pause', exact: true }).click();
   await page.getByRole('button', { name: 'Resume', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Resume', exact: true }).click();
-  await page.getByText('succeeded · 12 / 12 records acquired').waitFor();
+  await page.getByText('succeeded → Local SQLite', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Reprocess', exact: true }).click();
-  await page.getByText('succeeded · 12 / 12 records acquired').waitFor();
+  await page.getByText('succeeded → Local SQLite', { exact: true }).waitFor();
   const unauthorized = 401;
-  assert.equal((await page.request.post(`${app.origin}/api/sample-syncs`)).status(), unauthorized);
+  assert.equal(
+    (
+      await page.request.post(`${app.origin}/api/open-sync/sync/destinations`, {
+        data: { type: 'local', config: {} },
+      })
+    ).status(),
+    unauthorized,
+  );
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: 'Toggle navigation' }).click();
   await page.getByRole('link', { name: 'Delivery queue', exact: true }).click();
@@ -201,7 +230,14 @@ try {
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
   await page.getByRole('button', { name: 'Sign in with a passkey' }).waitFor();
   assert.equal(await (await page.request.get(`${app.origin}/api/auth/get-session`)).json(), null);
-  for (const section of ['/providers', '/syncs', '/delivery']) {
+  for (const section of [
+    '/providers',
+    '/sources',
+    '/destinations',
+    '/syncs',
+    '/records',
+    '/delivery',
+  ]) {
     await page.goto(`${app.origin}${section}`);
     await page.getByRole('button', { name: 'Sign in with a passkey' }).waitFor();
     assert.equal(new URL(page.url()).pathname, '/login');

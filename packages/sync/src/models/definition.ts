@@ -30,6 +30,8 @@ export interface ProviderOperations {
   post(input: { path: string; body: JsonObject }): Promise<ProviderResponse>;
 }
 export interface SyncDefinition extends DefinitionRef {
+  name?: string;
+  description?: string;
   configSchema: Schema;
   checkpointSchema: Schema;
   initialCheckpoint: JsonValue;

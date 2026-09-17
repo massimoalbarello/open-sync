@@ -1,7 +1,7 @@
 import type { SyncDefinition } from '../../models/definition';
 import type { Destination } from '../../models/delivery';
 import type { Resource, Scope } from '../../models/identity';
-import type { CreateInstallation, Installation } from '../../models/installation';
+import type { CreateInstallation, Installation, SyncRun } from '../../models/installation';
 import type { JsonObject, JsonValue } from '../../models/json';
 
 export interface CatalogRepository {
@@ -13,6 +13,11 @@ export interface CatalogRepository {
   createInstallation(input: CreateInstallation & { initialCheckpoint: JsonValue }): Installation;
   installation(input: Resource): Installation;
   installations(scope: Scope): Installation[];
+  runs(input: Resource & { offset: number }): {
+    runs: SyncRun[];
+    hasMore: boolean;
+    pageSize: number;
+  };
   setEnabled(input: Resource & { enabled: boolean }): Installation;
   queue(input: Resource & { checkpoint?: JsonValue }): void;
 }

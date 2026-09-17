@@ -26,13 +26,6 @@ export function syncOptions(userId: string) {
     },
   });
 }
-export async function createSampleSync() {
-  const result = await api.api['sample-syncs'].post();
-  if (result.error) {
-    throw new Error('Could not create the sample sync.');
-  }
-  return result.data;
-}
 export async function setEnabled(input: { id: string; enabled: boolean }) {
   const result = await syncApi.sync
     .installations({ id: input.id })
@@ -62,24 +55,20 @@ export async function retryDelivery(id: string) {
   }
 }
 
-export function githubConnectionsOptions(userId: string) {
+export function syncDetailOptions(input: { userId: string; id: string; offset: number }) {
   return queryOptions({
-    queryKey: [...syncKeys.owner(userId), 'github-connections'],
+    queryKey: [...syncKeys.owner(input.userId), input.id, 'runs', input.offset],
+    refetchInterval: refreshMs,
     queryFn: async () => {
-      const result = await api.api.syncs.github.connections.get();
-      if (result.error) {
-        throw new Error('Could not load GitHub accounts.');
+      const resource = syncApi.sync.installations({ id: input.id });
+      const [installation, history] = await Promise.all([
+        resource.get(),
+        resource.runs.get({ query: { offset: input.offset } }),
+      ]);
+      if (installation.error || history.error) {
+        throw new Error('Could not load this sync.');
       }
-      return result.data;
+      return { installation: installation.data, ...history.data };
     },
   });
-}
-export async function createGithubSync(connectionId: string) {
-  const result = await api.api.syncs.github.post({ connectionId });
-  if (result.error) {
-    throw new Error(
-      'Could not create the GitHub sync. Check the account authorization in Providers.',
-    );
-  }
-  return result.data;
 }

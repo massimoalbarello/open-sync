@@ -26,3 +26,12 @@ export interface CreateInstallation extends Scope {
   intervalMs?: number;
   enabled?: boolean;
 }
+
+export interface SyncRun {
+  id: string;
+  state: string;
+  startedAt: number;
+  completedAt: number | null;
+  pages: number;
+  checkpointRevision: number;
+}

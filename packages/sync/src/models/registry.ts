@@ -55,6 +55,15 @@ export class Registry {
       load: () => registration.load(),
     };
   }
+  destinationTypes() {
+    return [...this.#destinations].map(([type, entry]) => ({
+      type,
+      version: entry.version,
+      name: entry.name,
+      description: entry.description,
+      configSchema: structuredClone(entry.configSchema),
+    }));
+  }
   destination(name: string): DestinationType {
     const type = this.#destinations.get(name);
     if (!type) {
