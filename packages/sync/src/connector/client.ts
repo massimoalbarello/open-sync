@@ -98,12 +98,6 @@ function checkConnection(input: {
   ) {
     fail('connection_unavailable');
   }
-  if (
-    !Array.isArray(metadata.scopes) ||
-    !requirements.requiredScopes.every((scope) => (metadata.scopes as JsonValue[]).includes(scope))
-  ) {
-    fail('missing_scopes');
-  }
 }
 function operations(input: {
   request(input: RequestInput): Promise<JsonValue>;

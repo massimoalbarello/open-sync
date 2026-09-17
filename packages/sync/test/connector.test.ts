@@ -45,7 +45,7 @@ test('the installed Connector package owns auth, metadata and storage under a ho
       client.bind({
         ...alpha,
         connection: { id: 'missing', service: 'github' },
-        requirements: { service: 'github', actions: [], requiredScopes: [] },
+        requirements: { service: 'github', actions: [] },
         signal: new AbortController().signal,
       }),
     ).rejects.toThrow('connector request failed');
@@ -55,11 +55,10 @@ test('the installed Connector package owns auth, metadata and storage under a ho
   }
 });
 
-test('provider access authorizes ownership before metadata, scopes and declared operations', async () => {
+test('provider access authorizes ownership and declared operations without requiring scope metadata', async () => {
   const requests: Request[] = [];
   let authorized = false;
   let status = 'reauth_required';
-  let scopes: string[] = [];
   let actionService = 'other';
   const client = createConnectorClient({
     baseUrl: 'http://host/connector',
@@ -69,7 +68,7 @@ test('provider access authorizes ownership before metadata, scopes and declared 
     fetch: (request) => {
       requests.push(request);
       const data = request.url.includes('by-id')
-        ? { id: 'connection', service: 'synthetic', alias: 'named', status, scopes }
+        ? { id: 'connection', service: 'synthetic', alias: 'named', status }
         : request.method === 'GET'
           ? { service: actionService }
           : request.url.includes('/v1/proxy/')
@@ -88,7 +87,6 @@ test('provider access authorizes ownership before metadata, scopes and declared 
       connection: { id: 'connection', service: 'synthetic' },
       requirements: {
         service: 'synthetic',
-        requiredScopes: ['read'],
         actions: ['synthetic.list'],
         proxyPaths: ['/items'],
         proxyPostPaths: ['/graphql'],
@@ -100,8 +98,6 @@ test('provider access authorizes ownership before metadata, scopes and declared 
   authorized = true;
   await expect(bind()).rejects.toThrow('connection unavailable');
   status = 'active';
-  await expect(bind()).rejects.toThrow('missing scopes');
-  scopes = ['read'];
   const provider = await bind();
   await expect(provider.action({ id: 'synthetic.list', input: {} })).rejects.toThrow(
     'operation denied',

@@ -4,6 +4,17 @@ import { createOpenSync } from '@open-sync/core';
 import type { SyncRegistration } from '@open-sync/core/definition';
 import type { Delivery } from '@open-sync/core/delivery';
 
+// Keep the installed provider runtime and credential persistence real; simulate only GitHub.
+const providerFetch = globalThis.fetch;
+const okStatus = 200;
+globalThis.fetch = Object.assign((input: RequestInfo | URL) => {
+  const url = input instanceof Request ? input.url : String(input);
+  if (url !== 'https://api.github.com/user') {
+    return Promise.reject(new Error(`Unexpected provider request: ${url}`));
+  }
+  return Promise.resolve(Response.json({ id: 123, login: 'package-test' }));
+}, providerFetch);
+
 let connectorExported = false;
 try {
   import.meta.resolve('@open-sync/core/connector');
@@ -24,15 +35,19 @@ const definition: SyncRegistration = {
     checkpointSchema: { type: 'integer' },
     initialCheckpoint: 0,
     kinds: { item: { type: 'object' } },
+    provider: { service: 'github', actions: [], proxyPaths: ['/user'] },
   },
   load: () => ({
-    // biome-ignore lint/suspicious/useAwait: Trusted package-consumer fixture emits a single asynchronous page.
-    async *run() {
+    async *run({ provider }) {
+      const user = await provider.get({ path: '/user' });
+      if (user.status !== okStatus) {
+        throw new Error('Provider request failed');
+      }
       yield {
         checkpoint: 1,
         complete: true,
         deliverable: {
-          records: [{ operation: 'upsert', kind: 'item', id: 'one', data: { value: 1 } }],
+          records: [{ operation: 'upsert', kind: 'item', id: 'one', data: { user: user.body } }],
         },
       };
     },
@@ -58,12 +73,23 @@ const sync = await createOpenSync({
   },
 });
 try {
+  await sync.providers.credentials({
+    ...scope,
+    service: 'github',
+    authType: 'api_key',
+    values: { apiKey: 'synthetic-token' },
+  });
+  const [connection] = await sync.providers.connections(scope);
+  if (!connection) {
+    throw new Error('Provider connection was not created');
+  }
   const destination = sync.api.createDestination({ ...scope, type: 'local', config: {} });
   await sync.api.createInstallation({
     ...scope,
     destinationId: destination.id,
     config: {},
     definition: definition.definition,
+    connection: { id: connection.id, service: connection.service },
   });
   sync.start();
   const timeoutMs = 5000;
@@ -90,4 +116,5 @@ try {
   );
 } finally {
   await sync.close();
+  globalThis.fetch = providerFetch;
 }

@@ -13,7 +13,6 @@ export interface ConnectionRef {
 }
 export interface ProviderRequirements {
   service: string;
-  requiredScopes: readonly string[];
   actions: readonly string[];
   proxyPaths?: readonly string[];
   proxyPostPaths?: readonly string[];
