@@ -32,10 +32,11 @@ shared primitives, build tools and browser test support live in `packages`.
 The host owns HTTP routing, user authentication, configuration and lifecycle.
 
 `@open-sync/core` in `packages/sync` accepts trusted definitions and destination handlers through
-`createSyncRuntime()`. The host calls `start()` and `close()`, or `tick()` for an explicit pump.
-Management HTTP routes are optional; the typed API works without a listener. The default app's
-sample definition and idempotent local receiver live outside the core. The independent package
-consumer in `packages/sync/test/package-consumer.ts` exercises embedding from an installed tarball.
+`createOpenSync()`. The host mounts `fetch()`, supplies its authorization policy, and calls
+`start()` and `close()`. Open Sync completes provider authorization before redirecting to the host UI.
+The default app imports its GitHub and sample definitions from `@open-sync/examples` and delivers
+records to its own idempotent SQLite receiver. The independent package consumer in
+`packages/sync/test/package-consumer.ts` exercises embedding from an installed tarball.
 
 This first version delivers records only. Assets, snapshot deletion, dry runs,
 in-place definition upgrades and uploaded code execution are not implemented yet. Definitions
@@ -43,9 +44,6 @@ and destinations are pinned to immutable versions; reprocessing resets the check
 record hashes. Trusted functions must honor cancellation. User-uploaded code will need isolation
 and resource limits before it can be executed.
 
-The Connector adapter uses public APIs verified against `@oomol-lab/open-connector@1.6.0`.
-Hosts authorize connection references and serialize connection creation, resumption and credential
-changes, suspending affected syncs before a change. Reconnection or account changes require a new
-installation unless the host independently verifies that the stable source is unchanged.
-Connector does not currently provide an atomic credential-generation check across its database
-and Open Sync's database; changes made outside that host barrier cannot be fenced by this adapter.
+Open Sync uses `@oomol-lab/open-connector@1.6.0` internally for provider authentication and requests.
+Connector storage is opaque, and hosts use Open Sync connection references. Reconnecting existing
+installations is not implemented; a new connection requires a new installation.
