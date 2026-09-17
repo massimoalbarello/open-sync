@@ -1,7 +1,7 @@
 // Adapted for Open Sync from massimoalbarello/open-connector.
 import type { SyncRecord } from '@open-sync/core/delivery';
 import { z } from 'zod';
-import { markdownRecord, type Participant as SyncParticipant } from '../record';
+import { markdownRecord, type Participant as SyncParticipant } from '../../formats/markdown';
 
 const actorSchema = z
   .object({ login: z.string(), url: z.string(), id: z.string().optional() })

@@ -5,7 +5,9 @@
   "private": true,
   "exports": {
     "./syncs/github": "./src/syncs/github/definition.ts",
-    "./syncs/sample": "./src/syncs/sample/definition.ts"
+    "./syncs/sample": "./src/syncs/sample/definition.ts",
+    "./syncs/github-markdown": "./src/syncs/github-markdown/definition.ts",
+    "./destinations/markdown-webhook": "./src/destinations/markdown-webhook.ts"
   },
   "files": [
     "src"
@@ -13,19 +15,28 @@
   "scripts": {
     "check:types": "tsc --noEmit",
     "prepack": "cp ../../LICENSE ./LICENSE",
-    "postpack": "rm ./LICENSE"
+    "postpack": "rm ./LICENSE",
+    "test": "bun test test"
   },
   "peerDependencies": {
-    "@open-sync/core": "0.1.0"
+    "@open-sync/core": "0.1.0",
+    "@open-sync/http-delivery": "0.1.0"
   },
   "devDependencies": {
     "@open-sync/core": "workspace:*",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "@open-sync/http-delivery": "workspace:*",
+    "mdast-util-from-markdown": "^2.0.3"
   },
   "engines": {
     "bun": ">=1.4.0"
   },
   "dependencies": {
     "zod": "^4.4.3"
+  },
+  "peerDependenciesMeta": {
+    "@open-sync/http-delivery": {
+      "optional": true
+    }
   }
 }

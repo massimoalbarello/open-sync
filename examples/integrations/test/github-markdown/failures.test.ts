@@ -114,12 +114,10 @@ for (const fault of faults) {
     const harness = await engineFixture({
       version: '1',
       configSchema: { type: 'object' },
-      create: () => ({
-        deliver: ({ delivery }) => {
-          received.push(delivery);
-          return Promise.resolve({ status: 'accepted' });
-        },
-      }),
+      deliver: ({ delivery }) => {
+        received.push(delivery);
+        return Promise.resolve({ status: 'accepted' });
+      },
     });
     try {
       const reply = harness.fixture.reply;
@@ -151,12 +149,10 @@ test('a provider failure after a committed PR resumes without duplicate changes'
   const harness = await engineFixture({
     version: '1',
     configSchema: { type: 'object' },
-    create: () => ({
-      deliver: ({ delivery }) => {
-        received.push(delivery);
-        return Promise.resolve({ status: 'accepted' });
-      },
-    }),
+    deliver: ({ delivery }) => {
+      received.push(delivery);
+      return Promise.resolve({ status: 'accepted' });
+    },
   });
   try {
     const reply = harness.fixture.reply;

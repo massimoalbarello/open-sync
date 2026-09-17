@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DestinationType } from '@open-sync/core/delivery';
 import { createSyncRuntime } from '@open-sync/core/engine';
-import { githubPullRequests } from '@open-sync/example-integrations/github';
+import { githubPullRequests } from '@open-sync/examples/syncs/github-markdown';
 import { githubFixture } from './github-fixture';
 
 export const owner = { actorId: 'author', ownerId: 'author' };

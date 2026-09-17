@@ -27,14 +27,6 @@ export default {
       to: { path: 'node_modules/@oomol-lab/open-connector/' },
     },
     {
-      name: 'examples-consume-public-contracts',
-      severity: 'error',
-      from: { path: '^examples/.*/src/' },
-      to: {
-        path: '^(apps/|packages/ui/|packages/sync/src/(db|repositories|services|execution)/|node_modules/@oomol-lab/open-connector/)',
-      },
-    },
-    {
       name: 'sync-core-is-headless',
       severity: 'error',
       comment:

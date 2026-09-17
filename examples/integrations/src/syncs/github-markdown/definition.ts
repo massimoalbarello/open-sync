@@ -1,6 +1,6 @@
 import type { SyncRegistration } from '@open-sync/core/definition';
 import { z } from 'zod';
-import { markdownRecord } from '../record';
+import { markdownRecord } from '../../formats/markdown';
 import { run } from './pull-requests';
 import { checkpointSchema, initialCheckpoint, jsonSchema } from './state';
 

@@ -44,7 +44,7 @@ test('hydrates all discussion pages and keeps authored headings inside quoted Ma
 test('accessible scope resumes within a repository, then advances to the next repository', async () => {
   const { fixture, context } = githubFixture();
   context.config = { scope: 'accessible' };
-  const iterator = (await import('@open-sync/example-integrations/github')).githubPullRequests
+  const iterator = (await import('@open-sync/examples/syncs/github-markdown')).githubPullRequests
     .load()
     .run(context)
     [Symbol.asyncIterator]();
