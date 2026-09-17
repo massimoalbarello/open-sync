@@ -22,7 +22,7 @@ try {
       name: 'independent-host',
       private: true,
       type: 'module',
-      dependencies: { '@open-sync/core': './core.tgz' },
+      dependencies: { '@context-use/open-sync': './core.tgz' },
     }),
   );
   await run({ cwd: temporary, command: ['bun', 'install', '--ignore-scripts'] });

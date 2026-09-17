@@ -1,8 +1,8 @@
 // Copied into an isolated consumer by the package check; imports must resolve from the tarball.
 
-import { createOpenSync } from '@open-sync/core';
-import type { SyncRegistration } from '@open-sync/core/definition';
-import type { Delivery } from '@open-sync/core/delivery';
+import { createOpenSync } from '@context-use/open-sync';
+import type { SyncRegistration } from '@context-use/open-sync/definition';
+import type { Delivery } from '@context-use/open-sync/delivery';
 
 // Keep the installed provider runtime and credential persistence real; simulate only GitHub.
 const providerFetch = globalThis.fetch;
@@ -17,7 +17,7 @@ globalThis.fetch = Object.assign((input: RequestInfo | URL) => {
 
 let connectorExported = false;
 try {
-  import.meta.resolve('@open-sync/core/connector');
+  import.meta.resolve('@context-use/open-sync/connector');
   connectorExported = true;
 } catch {
   // Connector composition is private, including when installed from the published package.
