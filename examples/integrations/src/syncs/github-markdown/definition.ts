@@ -12,7 +12,7 @@ export const githubPullRequests = {
     id: 'example.github.pull-requests',
     version: '1',
     artifactId: 'open-sync/examples/github-complete/1',
-    provider: { service: 'github', requiredScopes: [], actions: [], proxyPostPaths: ['/graphql'] },
+    provider: { service: 'github', actions: [], proxyPostPaths: ['/graphql'] },
     configSchema: jsonSchema(z.strictObject({ scope: z.enum(['authored', 'accessible']) })),
     checkpointSchema: jsonSchema(checkpointSchema),
     initialCheckpoint,

@@ -43,7 +43,7 @@ test('receiver commit followed by a failed acknowledgement retries identical con
     await harness.engine.tick();
     await harness.engine.tick();
     expect(bodies).toHaveLength(1);
-    const queued = harness.engine.api.deliveries(owner)[0]!;
+    const queued = harness.engine.api.deliveries(owner).deliveries[0]!;
     expect(queued.errorCode).toBe('http_503');
     expect(harness.engine.api.status(owner).queue.pendingRecords).toBe(1);
     expect(
