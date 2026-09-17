@@ -1,8 +1,8 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createSyncRuntime } from '@open-sync/core';
 import type { DestinationType } from '@open-sync/core/delivery';
+import { createSyncRuntime } from '@open-sync/core/engine';
 import { githubPullRequests } from '@open-sync/example-integrations/github';
 import { githubFixture } from './github-fixture';
 
