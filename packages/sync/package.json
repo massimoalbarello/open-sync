@@ -1,8 +1,7 @@
 {
-  "name": "@open-sync/core",
+  "name": "@context-use/open-sync",
   "version": "0.1.0",
   "type": "module",
-  "private": true,
   "exports": {
     ".": "./src/open-sync.ts",
     "./definition": "./src/models/definition.ts",
@@ -31,5 +30,15 @@
   },
   "engines": {
     "bun": ">=1.4.0"
+  },
+  "description": "Headless sync runtime for Bun with provider authorization, durable checkpoints, and record delivery.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/massimoalbarello/open-sync.git",
+    "directory": "packages/sync"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
