@@ -1,6 +1,6 @@
 // Copied into an isolated consumer by the package check; imports must resolve from the tarball.
 
-import { createOpenSync } from '@context-use/open-sync';
+import { createOpenSync, type OpenSyncOptions } from '@context-use/open-sync';
 import type { SyncRegistration } from '@context-use/open-sync/definition';
 import type { Delivery } from '@context-use/open-sync/delivery';
 
@@ -35,7 +35,7 @@ const definition: SyncRegistration = {
     checkpointSchema: { type: 'integer' },
     initialCheckpoint: 0,
     kinds: { item: { type: 'object' } },
-    provider: { service: 'github', actions: [], proxyPaths: ['/user'] },
+    provider: { service: 'github', actions: ['github.get_current_user'], proxyPaths: ['/user'] },
   },
   load: () => ({
     async *run({ provider }) {
@@ -43,11 +43,14 @@ const definition: SyncRegistration = {
       if (user.status !== okStatus) {
         throw new Error('Provider request failed');
       }
+      const profile = await provider.action({ id: 'github.get_current_user', input: {} });
       yield {
         checkpoint: 1,
         complete: true,
         deliverable: {
-          records: [{ operation: 'upsert', kind: 'item', id: 'one', data: { user: user.body } }],
+          records: [
+            { operation: 'upsert', kind: 'item', id: 'one', data: { user: user.body, profile } },
+          ],
         },
       };
     },
@@ -55,7 +58,7 @@ const definition: SyncRegistration = {
 };
 const received: Delivery[] = [];
 const scope = { actorId: 'consumer', ownerId: 'consumer' };
-const sync = await createOpenSync({
+const options: OpenSyncOptions = {
   dataDirectory: './consumer-state',
   publicUrl: 'http://host/embedded',
   authorize: () => scope,
@@ -71,49 +74,111 @@ const sync = await createOpenSync({
       },
     },
   },
-});
-try {
-  await sync.providers.credentials({
-    ...scope,
-    service: 'github',
-    authType: 'api_key',
-    values: { apiKey: 'synthetic-token' },
-  });
-  const [connection] = await sync.providers.connections(scope);
-  if (!connection) {
-    throw new Error('Provider connection was not created');
-  }
-  const destination = sync.api.createDestination({ ...scope, type: 'local', config: {} });
-  await sync.api.createInstallation({
-    ...scope,
-    destinationId: destination.id,
-    config: {},
-    definition: definition.definition,
-    connection: { id: connection.id, service: connection.service },
-  });
-  sync.start();
-  const timeoutMs = 5000;
-  const pollMs = 20;
-  const deadline = Date.now() + timeoutMs;
-  while (
-    (!received.length || sync.api.status(scope).queue.pendingRecords) &&
-    Date.now() < deadline
-  ) {
-    await Bun.sleep(pollMs);
-  }
-  if (received.length !== 1 || sync.api.status(scope).queue.pendingRecords !== 0) {
-    throw new Error('Independent consumer did not receive its record');
-  }
-  const catalog = await sync.fetch(new Request('http://host/embedded/providers'));
+};
+if (Bun.isStandaloneExecutable) {
+  const catalogFiles = Bun.embeddedFiles
+    .map((file) => (file as Blob & { name: string }).name)
+    .filter((name) => name?.includes('/catalog/apps/') && name.endsWith('.json'));
+  const expected = process.argv[2] === 'empty' ? [] : ['github.json'];
   if (
-    !catalog.ok ||
-    !((await catalog.json()) as { service: string }[]).some((item) => item.service === 'github')
+    JSON.stringify(catalogFiles.map((name) => name!.split('/').at(-1)).sort()) !==
+    JSON.stringify(expected)
   ) {
-    throw new Error('Independent host cannot discover provider authentication through Open Sync');
+    throw new Error(`Unexpected embedded catalog files: ${catalogFiles.join(', ')}`);
   }
-  console.log(
-    'Installed Open Sync manages providers and delivers directly to an independent host.',
-  );
+  // A missing provider must fail startup and release Connector so the next start can succeed.
+  const unavailable = {
+    ...definition,
+    definition: { ...definition.definition, provider: { service: 'slack', actions: [] } },
+  };
+  try {
+    const unexpected = await createOpenSync({ ...options, definitions: [unavailable] });
+    await unexpected.close();
+    throw new Error('A missing provider was accepted');
+  } catch (error) {
+    if (
+      !(error instanceof Error) ||
+      !error.message.includes('Include it in getOpenSyncBuildOptions')
+    ) {
+      throw error;
+    }
+  }
+}
+const empty = process.argv[2] === 'empty';
+const sync = await createOpenSync({ ...options, definitions: empty ? [] : [definition] });
+try {
+  if (empty) {
+    if ((await sync.providers.catalog(scope)).length) {
+      throw new Error('An empty selection exposed providers');
+    }
+    console.log('Installed Open Sync runs with no bundled providers.');
+  } else {
+    await sync.providers.configure({
+      ...scope,
+      service: 'github',
+      values: { clientId: 'test-client', clientSecret: 'test-secret' },
+    });
+    const authorization = await sync.providers.start({
+      ...scope,
+      service: 'github',
+      authorizationOptionIds: ['read:user'],
+    });
+    const authorizationUrl = new URL(authorization.authorizationUrl);
+    if (
+      authorizationUrl.origin !== 'https://github.com' ||
+      authorizationUrl.searchParams.get('redirect_uri') !== 'http://host/embedded/oauth/callback'
+    ) {
+      throw new Error('Selected provider OAuth configuration was not packaged');
+    }
+    await sync.providers.credentials({
+      ...scope,
+      service: 'github',
+      authType: 'api_key',
+      values: { apiKey: 'synthetic-token' },
+    });
+    const [connection] = await sync.providers.connections(scope);
+    if (!connection) {
+      throw new Error('Provider connection was not created');
+    }
+    const destination = sync.api.createDestination({ ...scope, type: 'local', config: {} });
+    await sync.api.createInstallation({
+      ...scope,
+      destinationId: destination.id,
+      config: {},
+      definition: definition.definition,
+      connection: { id: connection.id, service: connection.service },
+    });
+    sync.start();
+    const timeoutMs = 5000;
+    const pollMs = 20;
+    const deadline = Date.now() + timeoutMs;
+    while (
+      (!received.length || sync.api.status(scope).queue.pendingRecords) &&
+      Date.now() < deadline
+    ) {
+      await Bun.sleep(pollMs);
+    }
+    if (received.length !== 1 || sync.api.status(scope).queue.pendingRecords !== 0) {
+      throw new Error('Independent consumer did not receive its record');
+    }
+    const catalog = await sync.fetch(new Request('http://host/embedded/providers'));
+    if (
+      !catalog.ok ||
+      !((await catalog.json()) as { service: string }[]).some((item) => item.service === 'github')
+    ) {
+      throw new Error('Independent host cannot discover provider authentication through Open Sync');
+    }
+    if (
+      Bun.isStandaloneExecutable &&
+      JSON.stringify((await sync.providers.catalog(scope)).map((entry) => entry.service)) !==
+        JSON.stringify(['github'])
+    ) {
+      throw new Error('Compiled catalog did not match the selected provider');
+    }
+    console.log(
+      'Installed Open Sync manages providers and delivers directly to an independent host.',
+    );
+  }
 } finally {
   await sync.close();
   globalThis.fetch = providerFetch;

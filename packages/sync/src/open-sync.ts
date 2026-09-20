@@ -75,6 +75,21 @@ export async function createOpenSync(options: OpenSyncOptions): Promise<OpenSync
       runtimeToken,
       signal: lifetime.signal,
     });
+    const requiredProviders = new Set(
+      options.definitions.flatMap(({ definition }) =>
+        definition.provider ? [definition.provider.service] : [],
+      ),
+    );
+    if (requiredProviders.size) {
+      const available = new Set((await management.catalog()).map((entry) => entry.service));
+      for (const service of requiredProviders) {
+        if (!available.has(service)) {
+          throw new Error(
+            `Open Sync provider ${JSON.stringify(service)} is unavailable. Include it in getOpenSyncBuildOptions({ providers }) and rebuild.`,
+          );
+        }
+      }
+    }
     const client = createConnectorClient({
       fetch: transport,
       baseUrl: publicUrl,
