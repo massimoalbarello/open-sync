@@ -14,6 +14,65 @@ const reply = (input: { ts: string; text: string }) => ({
 const response = (body: JsonObject): Promise<ProviderResponse> =>
   Promise.resolve({ status: 200, headers: {}, body: { ok: true, ...body } });
 
+test('Slack preserves distinct unavailable files without retaining private download URLs', async () => {
+  const f = await fixture({
+    registration: slackThreads,
+    provider: {
+      action: unused,
+      post: unused,
+      get: ({ path }) => {
+        if (path === '/auth.test') {
+          return response({ team_id: 'team', user_id: 'alice', url: 'https://example.slack.com/' });
+        }
+        if (path === '/users.conversations') {
+          return response({ channels: [{ id: 'a' }] });
+        }
+        if (path === '/conversations.history') {
+          return response({
+            messages: [
+              {
+                ts: rootTs,
+                text: 'Files',
+                files: [
+                  { id: 'F1', name: 'same.pdf', url_private: 'https://private.example/secret' },
+                  { id: 'F2', name: 'same.pdf', is_external: true },
+                ],
+              },
+            ],
+          });
+        }
+        return unused();
+      },
+    },
+  });
+  try {
+    await f.engine.tick();
+    await f.engine.tick();
+    expect(JSON.stringify(f.saved.checkpoint)).not.toContain('private.example');
+    await f.finish();
+    expect(f.records[0]).toMatchObject({
+      assetRefs: { file_RjE: { id: 'F1' }, file_RjI: { id: 'F2' } },
+      data: {
+        messages: [
+          {
+            attachments: [
+              { name: 'same.pdf', file: 'open-sync-asset:file_RjE' },
+              { name: 'same.pdf', file: 'open-sync-asset:file_RjI' },
+            ],
+          },
+        ],
+      },
+    });
+    expect(f.deliveries[0]?.deliverable.assets).toMatchObject([
+      { id: 'F1', unavailable: 'provider_download_unavailable' },
+      { id: 'F2', unavailable: 'external_connection_required' },
+    ]);
+    expect(JSON.stringify(f.deliveries)).not.toContain('private.example');
+  } finally {
+    await f.close();
+  }
+});
+
 test('Slack backfills historical threads across pages and restarts, preserves progress on errors, and upserts new replies on old threads', async () => {
   const history: JsonObject[] = [];
   const replies: JsonObject[] = [];

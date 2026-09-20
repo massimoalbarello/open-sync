@@ -38,7 +38,7 @@ export async function fixture(config: JsonObject = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'github-sync-test-'));
   const db = new SQL({ adapter: 'sqlite', filename: join(dir, 'host.db') });
   await runMigrations({ db });
-  const receiver = new ReceiverService(new SqliteReceiver(db));
+  const receiver = new ReceiverService(new SqliteReceiver({ db }));
   const delivered: Delivery[] = [];
   const destinationType = localDestination({ accept: (input) => receiver.accept(input) });
   const requests: GraphRequest[] = [];

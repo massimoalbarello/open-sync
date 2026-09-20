@@ -30,6 +30,7 @@ export interface OpenSyncOptions {
   executionTimeoutMs?: number;
   onEvent?: Logger;
   dataDirectory: string;
+  assetDirectory?: string;
   /** Absolute URL where the host mounts fetch(), including its path prefix. */
   publicUrl: string;
   /** Host authentication, ownership and CSRF policy for management HTTP requests. */
@@ -119,6 +120,7 @@ export async function createOpenSync(options: OpenSyncOptions): Promise<OpenSync
         leaseMs: (options.executionTimeoutMs ?? defaultTiming.timeoutMs) + defaultTiming.timeoutMs,
       },
       databasePath: join(options.dataDirectory, 'sync.db'),
+      assetDirectory: options.assetDirectory ?? join(options.dataDirectory, 'queued-assets'),
       connector: {
         async bind(input) {
           const owned = await repository.connection({ ...input, id: input.connection.id });

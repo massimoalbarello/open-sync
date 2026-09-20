@@ -1,4 +1,6 @@
+import { type AssetRef, assetPlaceholder } from '@context-use/open-sync/assets';
 import type { SyncContext, SyncPage } from '@context-use/open-sync/definition';
+import { canonicalJson } from '@context-use/open-sync/json';
 import type { z } from 'zod';
 import {
   type Checkpoint,
@@ -40,11 +42,29 @@ export async function readThread(input: {
   if (!messages.some((message) => message.id === rootTs)) {
     throw new Error('Slack did not return the thread root.');
   }
+  const assetRefs: Record<string, AssetRef> = {};
+  const recordMessages = messages.map(({ files, ...message }) => {
+    const attachments = (files ?? []).map((file) => {
+      const key = `file_${Buffer.from(file.id).toString('base64url')}`;
+      const name = file.name ?? file.title ?? file.id;
+      assetRefs[key] = context.assets.unavailable({
+        id: file.id,
+        version: canonicalJson({ name, mediaType: file.mimetype ?? 'application/octet-stream' })
+          .sha256,
+        name,
+        mediaType: file.mimetype ?? 'application/octet-stream',
+        code: file.is_external ? 'external_connection_required' : 'provider_download_unavailable',
+      });
+      return { name, file: assetPlaceholder(key) };
+    });
+    return { ...message, ...(attachments.length ? { attachments } : {}) };
+  });
   const channel = checkpoint.channels[0]!;
   return {
     deliverable: {
       records: [
         {
+          ...(Object.keys(assetRefs).length ? { assetRefs } : {}),
           operation: 'upsert',
           kind: 'thread',
           id: `${channel.id}:${rootTs}`,
@@ -55,7 +75,7 @@ export async function readThread(input: {
               `archives/${encodeURIComponent(channel.id)}/p${rootTs.replace('.', '')}`,
               input.workspaceUrl,
             ).href,
-            messages,
+            messages: recordMessages,
           },
         },
       ],
@@ -104,6 +124,7 @@ async function readReplies(input: {
 function normalize(message: z.infer<typeof providerMessageSchema>) {
   return {
     id: message.ts,
+    ...(message.files?.length ? { files: message.files } : {}),
     body: message.text ?? '',
     author: message.user ?? message.bot_id ?? null,
     sentAt: new Date(Number(message.ts) * millisecondsPerSecond).toISOString(),

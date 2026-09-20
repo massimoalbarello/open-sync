@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { payloadSchema } from './attachments';
 
 export const messageSchema = z.strictObject({
   id: z.string().min(1),
@@ -7,6 +8,7 @@ export const messageSchema = z.strictObject({
   to: z.string(),
   sentAt: z.iso.datetime({ offset: true }),
   labels: z.array(z.string()),
+  attachments: z.array(z.strictObject({ name: z.string(), file: z.string() })).optional(),
 });
 export const threadSchema = z.strictObject({
   subject: z.string(),
@@ -33,6 +35,7 @@ const providerMessageSchema = z.object({
   messageTimestamp: z.iso.datetime({ offset: true }),
   messageText: z.string(),
   labelIds: z.array(z.string()),
+  payload: payloadSchema,
 });
 export const responseSchema = z.object({
   threads: z.array(

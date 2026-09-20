@@ -1,3 +1,4 @@
+import type { AssetUpload } from '@context-use/open-sync/assets';
 import type { Delivery } from '@context-use/open-sync/delivery';
 import type { JsonObject } from '@context-use/open-sync/json';
 export interface ReceiverScope {
@@ -17,6 +18,12 @@ export interface ReceivedRecord {
   data: JsonObject;
 }
 export interface ReceiverRepository {
+  acceptAsset(
+    input: ReceiverScope & AssetUpload & { sourceId: string; signal: AbortSignal },
+  ): Promise<string>;
+  asset(
+    input: ReceiverScope & { id: string },
+  ): Promise<{ name: string; mediaType: string; body: ReadableStream<Uint8Array> } | undefined>;
   records(
     input: ReceiverScope & { sourceId?: string; offset: number },
   ): Promise<{ records: ReceivedRecord[]; hasMore: boolean; pageSize: number }>;

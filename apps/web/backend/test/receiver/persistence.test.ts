@@ -35,7 +35,7 @@ test('local receiver atomically deduplicates whole deliveries and keeps owner da
   const db = new SQL({ adapter: 'sqlite', filename: join(dir, 'host.db') });
   try {
     await runMigrations({ db });
-    const receiver = new SqliteReceiver(db);
+    const receiver = new SqliteReceiver({ db });
     await db.unsafe(
       "CREATE TRIGGER fail_receipt BEFORE INSERT ON host_receipts BEGIN SELECT RAISE(ABORT,'injected'); END;",
     );
@@ -80,7 +80,7 @@ test('record browsing preserves unrelated JSON schemas, pagination and deletions
   const db = new SQL({ adapter: 'sqlite', filename: join(dir, 'host.db') });
   try {
     await runMigrations({ db });
-    const receiver = new SqliteReceiver(db);
+    const receiver = new SqliteReceiver({ db });
     const count = 51;
     const records = [...Array(count).keys()].map((index) => ({
       operation: 'upsert' as const,

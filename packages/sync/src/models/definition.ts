@@ -1,4 +1,5 @@
 import type { Schema } from '@cfworker/json-schema';
+import type { SourceAssets } from './asset';
 import type { Deliverable } from './delivery';
 import type { JsonObject, JsonValue } from './json';
 
@@ -48,6 +49,7 @@ export interface SyncContext {
   sourceId: string;
   signal: AbortSignal;
   provider: ProviderOperations;
+  assets: SourceAssets;
   log(input: { message: string; fields?: JsonObject }): void;
 }
 export interface SyncExecutable {

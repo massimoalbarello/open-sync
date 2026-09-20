@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { createOpenSync, type OpenSyncRuntime } from '@context-use/open-sync';
 import { localDestination } from '@open-sync/examples/destinations/local';
 import { granolaClientRegistration } from '@open-sync/examples/providers/granola';
@@ -36,7 +37,9 @@ try {
       ...(env.NIBRUN_HOSTNAME ? [`https://${env.NIBRUN_HOSTNAME}`] : []),
     ]),
   ];
-  const receiver = new ReceiverService(new SqliteReceiver(database));
+  const receiver = new ReceiverService(
+    new SqliteReceiver({ db: database, assetDirectory: join(env.DATA_FOLDER, 'received-assets') }),
+  );
   let dashboard: DashboardService;
   sync = await createOpenSync({
     dataDirectory: env.DATA_FOLDER,
@@ -49,7 +52,10 @@ try {
     oauthClientRegistrations: { granola: granolaClientRegistration({ fetch }) },
     onProviderConnected: (input) => dashboard.connectWaiting(input),
     destinationTypes: {
-      local: localDestination({ accept: (input) => receiver.accept(input) }),
+      local: localDestination({
+        accept: (input) => receiver.accept(input),
+        acceptAsset: (input) => receiver.acceptAsset(input),
+      }),
     },
     onEvent: (event) => console.log(JSON.stringify({ event: 'sync.status', ...event })),
   });

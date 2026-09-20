@@ -5,6 +5,7 @@ import { type Resource, type Scope, workerScope } from '../../models/identity';
 import { queueUsage } from '../queue-usage';
 import { type Row, readDestination } from '../rows';
 import type { DeliveryLease, DeliveryRepository } from './contract';
+import { assertDelivery } from './lease';
 
 export class SqliteDeliveries implements DeliveryRepository {
   constructor(private readonly db: Database) {}
@@ -49,15 +50,7 @@ export class SqliteDeliveries implements DeliveryRepository {
     const { lease, result } = input;
     this.db
       .transaction(() => {
-        if (
-          !this.db
-            .query(
-              "SELECT 1 FROM deliveries WHERE owner_id=? AND id=? AND state='leased' AND worker_id=? AND generation=? AND expires_at>?",
-            )
-            .get(lease.ownerId, lease.delivery.id, lease.workerId, lease.generation, Date.now())
-        ) {
-          fail('lease_lost');
-        }
+        assertDelivery({ db: this.db, lease });
         if (result.status === 'accepted') {
           this.db
             .query('DELETE FROM deliveries WHERE owner_id=? AND id=?')

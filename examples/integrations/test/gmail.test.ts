@@ -163,3 +163,70 @@ test('Gmail never commits an empty or mismatched thread or advances a repeated c
     await f.close();
   }
 });
+
+test('Gmail preserves distinct MIME attachment identities, copies inline and fetched bytes, and emits logical references', async () => {
+  const downloads: string[] = [];
+  const f = await fixture({
+    registration: gmailThreads,
+    provider: {
+      post: unused,
+      get: ({ path }) => {
+        downloads.push(path);
+        return Promise.resolve({
+          status: 200,
+          headers: {},
+          body: { data: Buffer.from('external').toString('base64url') },
+        });
+      },
+      action: ({ id }) =>
+        Promise.resolve<JsonObject>(
+          id === 'gmail.get_profile'
+            ? { emailAddress: 'alice@example.com' }
+            : {
+                threads: [
+                  {
+                    threadId: 'a',
+                    messages: [
+                      {
+                        ...email({ id: 'm1', threadId: 'a' }),
+                        payload: {
+                          parts: [
+                            {
+                              partId: '1',
+                              filename: 'same.txt',
+                              mimeType: 'text/plain',
+                              body: { data: Buffer.from('inline').toString('base64url') },
+                            },
+                            {
+                              partId: '2',
+                              filename: 'same.txt',
+                              mimeType: 'text/plain',
+                              body: { attachmentId: 'attachment2' },
+                            },
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                ],
+              },
+        ),
+    },
+  });
+  try {
+    await f.finish();
+    expect(downloads).toEqual(['/users/me/messages/m1/attachments/attachment2']);
+    const record = f.records[0]!;
+    expect(record.operation).toBe('upsert');
+    if (record.operation !== 'upsert') {
+      throw new Error('Expected thread');
+    }
+    expect(Object.values(record.assetRefs!)).toEqual([
+      { id: 'm1:1', version: '1' },
+      { id: 'm1:2', version: '1' },
+    ]);
+    expect(JSON.stringify(record)).not.toContain(Buffer.from('inline').toString('base64url'));
+  } finally {
+    await f.close();
+  }
+});

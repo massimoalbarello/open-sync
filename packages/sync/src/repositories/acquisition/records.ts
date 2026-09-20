@@ -18,7 +18,17 @@ export function writeRecord(input: {
     return;
   }
   const contentHash =
-    record.operation === 'upsert' ? canonicalJson(record.data).sha256 : previous!.hash;
+    record.operation === 'upsert'
+      ? canonicalJson(
+          record.assetRefs || record.markdownFields
+            ? {
+                data: record.data,
+                assetRefs: record.assetRefs ?? {},
+                markdownFields: record.markdownFields ?? [],
+              }
+            : record.data,
+        ).sha256
+      : previous!.hash;
   if (record.operation === 'upsert' && previous?.deleted === 0 && previous.hash === contentHash) {
     return;
   }

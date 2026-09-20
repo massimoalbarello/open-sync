@@ -3,6 +3,7 @@ import type { SyncRecord } from '@context-use/open-sync/delivery';
 import { z } from 'zod';
 import { historyStart } from '../history';
 import { checkpointSchema, initialCheckpoint, responseSchema } from './models';
+import { threadRecord } from './thread';
 
 const millisecondsPerSecond = 1000;
 // Commit each complete thread separately, without batching several large conversations.
@@ -42,37 +43,10 @@ export async function* run(context: SyncContext): AsyncGenerator<SyncPage> {
     );
     const next = response.nextPageToken || null;
     checkCursor({ next, previous: checkpoint.pageToken, seen });
-    const records: SyncRecord[] = response.threads.map((thread) => {
-      if (thread.messages.some((message) => message.threadId !== thread.threadId)) {
-        throw new Error('Gmail returned a message from a different thread.');
-      }
-      const messages = [...thread.messages].sort(
-        // biome-ignore lint/complexity/useMaxParams: Array.sort passes both messages.
-        (a, b) =>
-          Date.parse(a.messageTimestamp) - Date.parse(b.messageTimestamp) ||
-          a.messageId.localeCompare(b.messageId),
-      );
-      if (new Set(messages.map((message) => message.messageId)).size !== messages.length) {
-        throw new Error('Gmail repeated a message in a thread.');
-      }
-      return {
-        operation: 'upsert',
-        kind: 'thread',
-        id: thread.threadId,
-        data: {
-          subject: messages[0]!.subject,
-          url: `https://mail.google.com/mail/?authuser=${encodeURIComponent(profile.emailAddress)}#all/${encodeURIComponent(thread.threadId)}`,
-          messages: messages.map((message) => ({
-            id: message.messageId,
-            body: message.messageText,
-            from: message.sender,
-            to: message.to,
-            sentAt: message.messageTimestamp,
-            labels: [...message.labelIds].sort(),
-          })),
-        },
-      };
-    });
+    const records: SyncRecord[] = [];
+    for (const thread of response.threads) {
+      records.push(await threadRecord({ thread, context, account: profile.emailAddress }));
+    }
     checkpoint = next
       ? { ...checkpoint, pageToken: next }
       : { ...initialCheckpoint, account: profile.emailAddress };

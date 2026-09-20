@@ -7,6 +7,8 @@ import { providerSetupJourney } from './provider-setup-journey';
 import { sourceRetryJourney } from './source-retry-journey';
 
 type Page = Awaited<ReturnType<typeof virtualPasskeyBrowser>>['page'];
+const successStatus = 200;
+const notFoundStatus = 404;
 const sources = [
   {
     service: 'gmail',
@@ -136,6 +138,29 @@ async function connectSource(input: {
     )
   ).json();
   assert.equal(records.records[0].kind, source.kind);
+  if (source.service === 'gmail') {
+    const attachments = records.records[0].data.messages[0].attachments as {
+      name: string;
+      file: string;
+    }[];
+    assert.equal(attachments.length, 2);
+    assert.notEqual(attachments[0]!.file, attachments[1]!.file);
+    const expected = ['inline attachment', 'external attachment'];
+    for (const [index, attachment] of attachments.entries()) {
+      const response = await page.request.get(`${origin}/api/receiver/assets/${attachment.file}`);
+      assert.equal(response.status(), successStatus);
+      assert.equal(await response.text(), expected[index]);
+      assert.match(response.headers()['content-disposition']!, /^attachment;/);
+    }
+    assert.equal(
+      (
+        await page.request.get(
+          `${origin}/api/receiver/assets/asset_00000000-0000-0000-0000-000000000000`,
+        )
+      ).status(),
+      notFoundStatus,
+    );
+  }
   assert.ok(!JSON.stringify(records).includes('fixture-token'));
   if (source.kind === 'thread') {
     assert.equal(records.records.length, 1);

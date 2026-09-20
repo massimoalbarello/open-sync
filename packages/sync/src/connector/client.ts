@@ -3,6 +3,7 @@ import type { ConnectionRef, ProviderOperations, ProviderRequirements } from '..
 import { fail } from '../models/error';
 import type { Scope } from '../models/identity';
 import type { JsonObject, JsonValue } from '../models/json';
+import { matchesProviderPath } from '../models/provider-path';
 import { connectorFailure } from './failure';
 import { connectorData, providerResponse } from './response';
 
@@ -136,7 +137,7 @@ function operations(input: {
         !path.startsWith('/') ||
         path.startsWith('//') ||
         /[\\?#]/.test(path) ||
-        !requirements.proxyPaths?.includes(path)
+        !matchesProviderPath({ path, allowed: requirements.proxyPaths })
       ) {
         fail('operation_denied');
       }
@@ -155,7 +156,7 @@ function operations(input: {
         !path.startsWith('/') ||
         path.startsWith('//') ||
         /[\\?#]/.test(path) ||
-        !requirements.proxyPostPaths?.includes(path)
+        !matchesProviderPath({ path, allowed: requirements.proxyPostPaths })
       ) {
         fail('operation_denied');
       }

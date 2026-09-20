@@ -4,12 +4,20 @@ export interface QueueLimits {
   maxPendingRecords: number;
   maxPageBytes: number;
   maxPageRecords: number;
+  maxPageAssets: number;
+  maxAssetBytes: number;
+  maxPendingAssetBytes: number;
+  maxMaterializedBytes: number;
 }
 export const defaultLimits: QueueLimits = {
   maxPendingBytes: 67_108_864,
   maxPendingRecords: 100_000,
   maxPageBytes: 1_048_576,
   maxPageRecords: 1000,
+  maxPageAssets: 1000,
+  maxAssetBytes: 104_857_600,
+  maxPendingAssetBytes: 1_073_741_824,
+  maxMaterializedBytes: 67_108_864,
 };
 export const defaultTiming = {
   pollMs: 1000,
@@ -18,6 +26,8 @@ export const defaultTiming = {
   retryMs: 30_000,
   maxPages: 100,
   historyLimit: 1000,
+  assetAttempts: 3,
+  deliveryConcurrency: 4,
 };
 export type Timing = typeof defaultTiming;
 export function positive(value: number): number {

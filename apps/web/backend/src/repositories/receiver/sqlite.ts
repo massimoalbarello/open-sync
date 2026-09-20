@@ -1,10 +1,36 @@
+import { join } from 'node:path';
 import type { DeliveredRecord, Delivery } from '@context-use/open-sync/delivery';
 import { canonicalJson } from '@context-use/open-sync/json';
 import type { SQL, TransactionSQL } from 'bun';
+import { acceptAsset } from './assets';
 import type { ReceiverRepository, ReceiverScope } from './contract';
 
 export class SqliteReceiver implements ReceiverRepository {
-  constructor(private readonly db: SQL) {}
+  private readonly db: SQL;
+  private readonly assetDirectory?: string;
+  constructor(input: { db: SQL; assetDirectory?: string }) {
+    this.db = input.db;
+    this.assetDirectory = input.assetDirectory;
+  }
+  acceptAsset(input: Parameters<ReceiverRepository['acceptAsset']>[0]) {
+    if (!this.assetDirectory) {
+      throw new Error('Receiver asset directory is required');
+    }
+    return acceptAsset({ ...input, db: this.db, directory: this.assetDirectory });
+  }
+  async asset(input: ReceiverScope & { id: string }) {
+    const [row] = await this.db<
+      { file_id: string; name: string; media_type: string }[]
+    >`SELECT file_id,name,media_type FROM host_assets WHERE owner_id=${input.ownerId} AND id=${input.id}`;
+    if (!row || !this.assetDirectory) {
+      return;
+    }
+    return {
+      name: row.name,
+      mediaType: row.media_type,
+      body: Bun.file(join(this.assetDirectory, row.file_id)).stream(),
+    };
+  }
   async records(input: ReceiverScope & { sourceId?: string; offset: number }) {
     const limit = 50;
     const sourceId = input.sourceId ?? null;

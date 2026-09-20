@@ -1,14 +1,20 @@
 import type { Logger } from '../execution/diagnostics';
 import { bindProvider, type ProviderGateway } from '../execution/provider';
-import { SyncError } from '../models/error';
+import type { SourceAssets } from '../models/asset';
+import { fail, SyncError } from '../models/error';
 import { retryDelay, type Timing } from '../models/limits';
 import type { Registry } from '../models/registry';
+import { identifier } from '../models/validation';
 import type { AcquisitionRepository, RunLease } from '../repositories/acquisition/contract';
+import type { AssetFiles, AssetRepository } from '../repositories/assets/contract';
 
 export class AcquisitionService {
   constructor(
     private readonly input: {
       repository: AcquisitionRepository;
+      assets: AssetRepository;
+      files: AssetFiles;
+      maxAssetBytes: number;
       registry: Registry;
       gateway?: ProviderGateway;
       timing: Timing;
@@ -81,6 +87,14 @@ export class AcquisitionService {
       sourceId: lease.installation.sourceId,
       signal,
       provider,
+      assets: sourceAssets({
+        repository: this.input.assets,
+        files: this.input.files,
+        lease,
+        signal,
+        maxBytes: this.input.maxAssetBytes,
+        attempts: timing.assetAttempts,
+      }),
       log: (event) =>
         this.input.log({
           ...event,
@@ -132,4 +146,111 @@ function abortCode(signal: AbortSignal): string {
     return 'timed_out';
   }
   return signal.reason === 'paused' ? 'paused' : 'interrupted';
+}
+
+function sourceAssets(input: {
+  repository: AssetRepository;
+  files: AssetFiles;
+  lease: RunLease;
+  signal: AbortSignal;
+  maxBytes: number;
+  attempts: number;
+}): SourceAssets {
+  return {
+    unavailable(capture) {
+      input.signal.throwIfAborted();
+      identifier(capture.code);
+      const { id, version, name, mediaType } = capture;
+      const asset = { id, version, name, mediaType };
+      const previous = input.repository.capture({ lease: input.lease, asset });
+      if (previous.state === 'pending') {
+        input.repository.captureFailed({
+          lease: input.lease,
+          asset,
+          code: capture.code,
+          terminal: true,
+        });
+      }
+      return { id, version };
+    },
+    async capture(capture) {
+      input.signal.throwIfAborted();
+      const { read, id, version, name, mediaType } = capture;
+      const asset = { id, version, name, mediaType };
+      const ref = { id: asset.id, version: asset.version };
+      const previous = input.repository.capture({ lease: input.lease, asset });
+      if (previous.state !== 'pending') {
+        return ref;
+      }
+      if (previous.attempt > input.attempts) {
+        input.repository.captureFailed({
+          lease: input.lease,
+          asset,
+          code: 'asset_fetch_exhausted',
+          terminal: true,
+        });
+        return ref;
+      }
+      let file: Awaited<ReturnType<AssetFiles['write']>> | undefined;
+      const availableBytes = input.repository.availableBytes();
+      try {
+        const body = await read();
+        input.signal.throwIfAborted();
+        file = await input.files.write({
+          body,
+          maxBytes: Math.min(input.maxBytes, availableBytes),
+          signal: input.signal,
+        });
+        input.signal.throwIfAborted();
+        input.repository.captured({ lease: input.lease, asset, file });
+        return ref;
+      } catch (error) {
+        if (file) {
+          await input.files.remove(file.id);
+        }
+        input.signal.throwIfAborted();
+        captureFailure({
+          ...input,
+          asset,
+          error:
+            error instanceof SyncError &&
+            error.code === 'asset_too_large' &&
+            availableBytes < input.maxBytes
+              ? new SyncError({ code: 'asset_storage_full', message: 'Asset storage is full.' })
+              : error,
+          attempt: previous.attempt,
+        });
+        return ref;
+      }
+    },
+  };
+}
+
+function captureFailure(input: {
+  repository: AssetRepository;
+  lease: RunLease;
+  asset: import('../models/asset').AssetMetadata;
+  error: unknown;
+  attempt: number;
+  attempts: number;
+}) {
+  const { error } = input;
+  if (
+    error instanceof SyncError &&
+    ['lease_lost', 'checkpoint_conflict', 'asset_version_conflict'].includes(error.code)
+  ) {
+    throw error;
+  }
+  const code =
+    error instanceof SyncError &&
+    ['asset_too_large', 'asset_storage_full', 'waiting_for_asset_capacity'].includes(error.code)
+      ? error.code === 'waiting_for_asset_capacity'
+        ? 'asset_storage_full'
+        : error.code
+      : 'asset_fetch_failed';
+  const terminal = code === 'asset_too_large' || input.attempt >= input.attempts;
+  input.repository.captureFailed({ lease: input.lease, asset: input.asset, code, terminal });
+  if (!terminal) {
+    fail('asset_fetch_failed');
+  }
 }
