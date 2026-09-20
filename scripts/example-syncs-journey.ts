@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import type { virtualPasskeyBrowser } from '@repo/browser-testing/browser';
+import { copyAuthorizationJourney } from './copy-authorization-journey';
 import { destinationSetupJourney } from './destination-setup-journey';
 
 type Page = Awaited<ReturnType<typeof virtualPasskeyBrowser>>['page'];
@@ -114,12 +115,20 @@ async function connectSource(input: {
       animations: 'disabled',
     });
   } else {
+    assert.equal(
+      await page.getByRole('button', { name: 'Copy authorization link', exact: true }).isEnabled(),
+      false,
+    );
     await page.getByLabel('Client ID', { exact: true }).fill(`fixture-${source.service}`);
     await page.getByLabel('Client secret', { exact: true }).fill('fixture-client-secret');
     await page.getByRole('button', { name: 'Save OAuth app', exact: true }).click();
     await page.getByRole('button', { name: 'Edit OAuth app', exact: true }).waitFor();
   }
-  await page.getByRole('button', { name: 'Connect account', exact: true }).click();
+  if (source.service === 'slack') {
+    await copyAuthorizationJourney(input);
+  } else {
+    await page.getByRole('button', { name: 'Connect account', exact: true }).click();
+  }
   if (source.service === 'granola') {
     await page
       .getByRole('alert')
