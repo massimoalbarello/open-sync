@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import type { OpenSyncRuntime } from '@context-use/open-sync';
 import { createSyncRuntime } from '@context-use/open-sync/engine';
 import { githubPullRequests } from '@open-sync/examples/syncs/github';
-import { destinationCredentials } from '#backend/lib/destination-credentials.ts';
 import { DashboardService } from '#backend/services/dashboard/service.ts';
 
 test('concurrent setup reuses local storage and authorization cannot strand or rebind a waiting sync', async () => {
@@ -54,10 +53,13 @@ test('concurrent setup reuses local storage and authorization cannot strand or r
   const dashboard = new DashboardService({
     api: engine.api,
     providers: { status },
-    sealDestinationKey: destinationCredentials('test-secret').seal,
   });
   try {
-    const input = { ...owner, source: 'github.pull-requests', destination: 'local' as const };
+    const input = {
+      ...owner,
+      source: 'github.pull-requests',
+      destination: { type: 'local', input: {} },
+    };
     const created = await Promise.all([dashboard.create(input), dashboard.create(input)]);
     expect(engine.api.destinations(owner)).toHaveLength(1);
     for (const sync of created) {
@@ -84,6 +86,65 @@ test('concurrent setup reuses local storage and authorization cannot strand or r
       connection: { id: 'different', service: 'github' },
     });
     expect(engine.api.installation({ ...owner, id: waiting.id }).connection).toEqual(connection);
+  } finally {
+    await engine.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('dashboard creates syncs with an unrelated destination using its own setup schema and preparation', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dashboard-destination-'));
+  const { provider: _provider, ...definition } = githubPullRequests.definition;
+  const owner = { actorId: 'alice', ownerId: 'alice' };
+  const engine = createSyncRuntime({
+    databasePath: join(directory, 'sync.db'),
+    definitions: [{ ...githubPullRequests, definition }],
+    destinationTypes: {
+      archive: {
+        version: '1',
+        configSchema: {
+          type: 'object',
+          properties: { bucket: { type: 'string' } },
+          required: ['bucket'],
+          additionalProperties: false,
+        },
+        setup: {
+          schema: {
+            type: 'object',
+            properties: { project: { type: 'string', minLength: 1 } },
+            required: ['project'],
+            additionalProperties: false,
+          },
+          prepare: ({ scope, input }) => ({ bucket: `${scope.ownerId}/${input.project}` }),
+        },
+        deliver: () => Promise.resolve({ status: 'accepted' }),
+      },
+    },
+  });
+  const dashboard = new DashboardService({
+    api: engine.api,
+    providers: { status: () => Promise.reject(new Error('unused')) },
+  });
+  try {
+    const input = {
+      ...owner,
+      source: 'github.pull-requests',
+      destination: { type: 'archive', input: { project: 'research' }, ownerId: 'injected-owner' },
+    };
+    const sync = await dashboard.create(input);
+    expect(engine.api.installation({ ...owner, id: sync.id }).destinationId).toBe(
+      engine.api.destinations(owner)[0]!.id,
+    );
+    expect(engine.api.destinations(owner)[0]?.type).toBe('archive');
+    expect(engine.api.destinations({ ...owner, ownerId: 'injected-owner' })).toHaveLength(0);
+    await expect(
+      dashboard.create({
+        ...input,
+        destination: { type: 'archive', input: { endpoint: 'wrong field' } },
+      }),
+    ).rejects.toThrow();
+    expect(engine.api.destinations(owner)).toHaveLength(1);
+    expect(engine.api.installations(owner)).toHaveLength(1);
   } finally {
     await engine.close();
     await rm(directory, { recursive: true, force: true });

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import type { virtualPasskeyBrowser } from '@repo/browser-testing/browser';
+import { destinationSetupJourney } from './destination-setup-journey';
 
 type Page = Awaited<ReturnType<typeof virtualPasskeyBrowser>>['page'];
 const sources = [
@@ -28,6 +29,7 @@ export async function exampleSyncsJourney(input: { page: Page; origin: string })
     await connectSource({ ...input, source });
   }
   const { page, origin } = input;
+  await destinationSetupJourney(input);
   await page.goto(`${origin}/sources`);
   await page.getByRole('heading', { name: 'Granola meetings', exact: true }).waitFor();
   await page.screenshot({
@@ -38,8 +40,15 @@ export async function exampleSyncsJourney(input: { page: Page; origin: string })
   await page.goto(`${origin}/syncs/new?source=gmail.threads`);
   await page.getByLabel('Destination', { exact: true }).click();
   await page.getByRole('option', { name: 'External API', exact: true }).click();
+  await page.getByLabel('API key', { exact: true }).fill('discard-on-switch');
+  await page.getByLabel('Destination', { exact: true }).click();
+  await page.getByRole('option', { name: 'Local SQLite', exact: true }).click();
+  assert.equal(await page.getByLabel('API key', { exact: true }).count(), 0);
+  await page.getByLabel('Destination', { exact: true }).click();
+  await page.getByRole('option', { name: 'External API', exact: true }).click();
+  assert.equal(await page.getByLabel('API key', { exact: true }).inputValue(), '');
   await page.getByRole('button', { name: 'Create sync', exact: true }).click();
-  await page.getByText('Enter your endpoint URL.', { exact: true }).waitFor();
+  await page.getByText('Endpoint URL is required.', { exact: true }).waitFor();
   await page.getByLabel('Endpoint URL', { exact: true }).fill('https://receiver.example/records');
   await page.getByLabel('API key', { exact: true }).fill('synthetic-destination-key');
   assert.equal(await page.getByLabel('API key', { exact: true }).getAttribute('type'), 'password');

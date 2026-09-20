@@ -5,6 +5,7 @@ import type { ProviderResponse } from '@context-use/open-sync/definition';
 import type { Delivery } from '@context-use/open-sync/delivery';
 import { createSyncRuntime } from '@context-use/open-sync/engine';
 import type { JsonObject } from '@context-use/open-sync/json';
+import { localDestination } from '@open-sync/examples/destinations/local';
 import { githubPullRequests } from '@open-sync/examples/syncs/github';
 import { SQL } from 'bun';
 import { runMigrations } from '#backend/db/migrate.ts';
@@ -39,7 +40,7 @@ export async function fixture() {
   await runMigrations({ db });
   const receiver = new ReceiverService(new SqliteReceiver(db));
   const delivered: Delivery[] = [];
-  const destinationType = receiver.destination();
+  const destinationType = localDestination({ accept: (input) => receiver.accept(input) });
   const requests: GraphRequest[] = [];
   const pulls = [pull('a'), pull('b'), pull('c')];
   const provider = { accountId: 'github-native-user-1', respond: reply };

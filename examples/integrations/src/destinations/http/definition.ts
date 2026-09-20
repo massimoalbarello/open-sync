@@ -1,39 +1,39 @@
 import type { DeliveryResult, DestinationType } from '@context-use/open-sync/delivery';
-import { z } from 'zod';
-import { jsonSchema } from '../schema';
+import { jsonSchema } from '../../schema';
+import { destinationCredentials } from './credentials';
+import { configSchema, setupSchema } from './models';
 
-export const httpEndpointSchema = z.url().refine((value) => {
-  const url = new URL(value);
-  return url.protocol === 'https:' && !url.username && !url.password && !url.hash;
-}, 'Enter an HTTPS endpoint without credentials or a fragment.');
-
-const configSchema = z.strictObject({
-  endpoint: httpEndpointSchema,
-  // An opaque reference or encrypted value. Never store the user's plaintext key in config.
-  credential: z.string().min(1),
-});
 const millisecondsPerSecond = 1000;
 
-export function httpDestination(input: {
-  resolveApiKey(input: {
-    ownerId: string;
-    endpoint: string;
-    credential: string;
-  }): string | Promise<string>;
-  fetch?: typeof fetch;
-}): DestinationType {
+export function httpDestination(input: { secret: string; fetch?: typeof fetch }): DestinationType {
   const send = input.fetch ?? fetch;
+  const credentials = destinationCredentials(input.secret);
   return {
     name: 'External API',
     description: 'Sends records to your HTTPS endpoint, authenticated with your API key.',
     version: '1',
     configSchema: jsonSchema(configSchema),
+    setup: {
+      schema: jsonSchema(setupSchema),
+      prepare({ scope, input }) {
+        const settings = setupSchema.parse(input);
+        const endpoint = new URL(settings.endpoint).href;
+        return {
+          endpoint,
+          credential: credentials.seal({
+            ownerId: scope.ownerId,
+            endpoint,
+            apiKey: settings.apiKey.trim(),
+          }),
+        };
+      },
+    },
     async deliver({ scope, config, delivery, signal }) {
       if (scope.ownerId !== delivery.ownerId) {
         return { status: 'rejected', code: 'owner_mismatch' };
       }
       const settings = configSchema.parse(config);
-      const apiKey = await input.resolveApiKey({ ownerId: scope.ownerId, ...settings });
+      const apiKey = credentials.open({ ownerId: scope.ownerId, ...settings });
       if (!apiKey || /[\r\n]/.test(apiKey)) {
         return { status: 'rejected', code: 'invalid_api_key' };
       }

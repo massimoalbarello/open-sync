@@ -1,12 +1,14 @@
 import { Button } from '@repo/ui/button';
-import { Input } from '@repo/ui/input';
 import { Select } from '@repo/ui/select';
 import { useForm } from '@tanstack/react-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
+import { useId } from 'react';
 import { SectionPage } from '../../components/section-page';
-import { catalogOptions, createSync } from '../../queries/catalog';
+import { catalogOptions, createSync, type loadCatalog } from '../../queries/catalog';
 import { syncKeys } from '../../queries/sync';
+import { SetupInput } from './-syncs/setup-input';
+import { fieldError, setupError, setupFields, setupInput } from './-syncs/setup-schema';
 
 export const Route = createFileRoute('/_workspace/syncs/new')({
   component: NewSync,
@@ -19,6 +21,29 @@ function NewSync() {
   const { userId } = Route.useRouteContext();
   const search = Route.useSearch();
   const query = useQuery(catalogOptions(userId));
+  return (
+    <SectionPage
+      title="Create sync"
+      action={
+        <Link to="/syncs" className="text-muted-foreground text-sm hover:text-foreground">
+          All syncs
+        </Link>
+      }
+    >
+      {query.isPending && <p>Loading sources and destinations…</p>}
+      {query.error && <p role="alert">{query.error.message}</p>}
+      {query.data && <SyncForm catalog={query.data} search={search} userId={userId} />}
+    </SectionPage>
+  );
+}
+
+function SyncForm(input: {
+  catalog: Awaited<ReturnType<typeof loadCatalog>>;
+  search: { source?: string; destination?: string };
+  userId: string;
+}) {
+  const { catalog, search, userId } = input;
+  const fieldId = useId();
   const navigate = useNavigate();
   const client = useQueryClient();
   const create = useMutation({
@@ -39,184 +64,177 @@ function NewSync() {
   const form = useForm({
     defaultValues: {
       source: search.source ?? '',
-      destination: search.destination ?? 'local',
-      endpoint: '',
-      apiKey: '',
+      destination: search.destination ?? catalog.types[0]?.type ?? '',
+      values: [] as string[],
     },
     onSubmit: async ({ value }) => {
-      await create.mutateAsync(
-        value.destination === 'http'
-          ? {
-              source: value.source,
-              destination: 'http',
-              endpoint: value.endpoint,
-              apiKey: value.apiKey,
-            }
-          : { source: value.source, destination: 'local' },
-      );
-      form.resetField('apiKey');
+      const type = catalog.types.find((entry) => entry.type === value.destination);
+      if (!type) {
+        return;
+      }
+      await create.mutateAsync({
+        source: value.source,
+        destination: {
+          type: type.type,
+          input: setupInput({ fields: setupFields(type.setupSchema), values: value.values }),
+        },
+      });
+      form.resetField('values');
+    },
+    validators: {
+      onSubmit: ({ value }) => {
+        const type = catalog.types.find((entry) => entry.type === value.destination);
+        if (!type) {
+          return 'Select a destination.';
+        }
+        try {
+          return setupError({
+            schema: type.setupSchema,
+            values: setupInput({ fields: setupFields(type.setupSchema), values: value.values }),
+          });
+        } catch {
+          return 'Check the destination settings.';
+        }
+      },
     },
   });
   return (
-    <SectionPage
-      title="Create sync"
-      action={
-        <Link to="/syncs" className="text-muted-foreground text-sm hover:text-foreground">
-          All syncs
-        </Link>
-      }
-    >
-      {query.isPending && <p>Loading sources and destinations…</p>}
-      {(query.error || create.error) && (
+    <>
+      {create.error && (
         <p role="alert" className="mb-4 text-destructive text-sm">
-          {(query.error || create.error)?.message}
+          {create.error.message}
         </p>
       )}
-      {query.data && (
-        <form
-          className="max-w-xl space-y-7"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void form.handleSubmit().catch(() => undefined);
+      <form
+        className="max-w-xl space-y-7"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void form.handleSubmit().catch(() => undefined);
+        }}
+      >
+        <form.Field
+          name="source"
+          validators={{
+            onSubmit: ({ value }) =>
+              !catalog.sources.some((source) => source.id === value)
+                ? 'Select a source.'
+                : undefined,
           }}
         >
-          <form.Field
-            name="source"
-            validators={{
-              onSubmit: ({ value }) =>
-                !query.data.sources.some((source) => source.id === value)
-                  ? 'Select a source.'
-                  : undefined,
-            }}
-          >
-            {(field) => (
-              <div className="space-y-2">
-                <label htmlFor="sync-source" className="font-medium text-sm">
-                  Source
-                </label>
-                <Select
-                  id="sync-source"
-                  value={field.state.value}
-                  onValueChange={field.handleChange}
-                  options={query.data.sources.map((source) => ({
-                    value: source.id,
-                    label: source.name ?? source.id,
-                  }))}
-                />
-                {field.state.meta.errors.map((error) => (
-                  <p key={String(error)} role="alert" className="text-destructive text-sm">
-                    {error}
-                  </p>
-                ))}
-              </div>
-            )}
-          </form.Field>
-          <form.Field
-            name="destination"
-            validators={{
-              onSubmit: ({ value }) =>
-                !query.data.types.some((type) => type.type === value)
-                  ? 'Select a destination.'
-                  : undefined,
-            }}
-          >
-            {(field) => (
-              <div className="space-y-2">
-                <label htmlFor="sync-destination" className="font-medium text-sm">
-                  Destination
-                </label>
-                <Select
-                  id="sync-destination"
-                  value={field.state.value}
-                  onValueChange={field.handleChange}
-                  options={query.data.types.map((type) => ({
-                    value: type.type,
-                    label: type.name ?? type.type,
-                  }))}
-                />
-                {field.state.meta.errors.map((error) => (
-                  <p key={String(error)} role="alert" className="text-destructive text-sm">
-                    {error}
-                  </p>
-                ))}
-              </div>
-            )}
-          </form.Field>
-          <form.Subscribe selector={(state) => state.values.destination}>
-            {(destination) =>
-              destination === 'http' && (
-                <div className="space-y-5">
-                  <form.Field
-                    name="endpoint"
-                    validators={{
-                      onSubmit: ({ value }) =>
-                        !value.trim()
-                          ? 'Enter your endpoint URL.'
-                          : !value.startsWith('https://')
-                            ? 'Use an HTTPS endpoint.'
-                            : undefined,
-                    }}
-                  >
-                    {(field) => (
-                      <div className="space-y-2">
-                        <label htmlFor="destination-endpoint" className="font-medium text-sm">
-                          Endpoint URL
-                        </label>
-                        <Input
-                          id="destination-endpoint"
-                          type="url"
-                          placeholder="https://api.example.com/records"
-                          value={field.state.value}
-                          onChange={(event) => field.handleChange(event.target.value)}
-                          onBlur={field.handleBlur}
-                        />
-                        {field.state.meta.errors.map((error) => (
-                          <p key={String(error)} role="alert" className="text-destructive text-sm">
-                            {error}
-                          </p>
-                        ))}
-                      </div>
-                    )}
-                  </form.Field>
-                  <form.Field
-                    name="apiKey"
-                    validators={{
-                      onSubmit: ({ value }) => (!value.trim() ? 'Enter your API key.' : undefined),
-                    }}
-                  >
-                    {(field) => (
-                      <div className="space-y-2">
-                        <label htmlFor="destination-api-key" className="font-medium text-sm">
-                          API key
-                        </label>
-                        <Input
-                          id="destination-api-key"
-                          type="password"
-                          autoComplete="off"
-                          value={field.state.value}
-                          onChange={(event) => field.handleChange(event.target.value)}
-                          onBlur={field.handleBlur}
-                        />
-                        <p className="text-muted-foreground text-sm">
-                          Stored encrypted. Used to authenticate deliveries to your endpoint.
+          {(field) => (
+            <div className="space-y-2">
+              <label htmlFor="sync-source" className="font-medium text-sm">
+                Source
+              </label>
+              <Select
+                id="sync-source"
+                value={field.state.value}
+                onValueChange={field.handleChange}
+                options={catalog.sources.map((source) => ({
+                  value: source.id,
+                  label: source.name ?? source.id,
+                }))}
+              />
+              {field.state.meta.errors.map((error) => (
+                <p key={String(error)} role="alert" className="text-destructive text-sm">
+                  {error}
+                </p>
+              ))}
+            </div>
+          )}
+        </form.Field>
+        <form.Field
+          name="destination"
+          validators={{
+            onSubmit: ({ value }) =>
+              !catalog.types.some((type) => type.type === value)
+                ? 'Select a destination.'
+                : undefined,
+          }}
+        >
+          {(field) => (
+            <div className="space-y-2">
+              <label htmlFor="sync-destination" className="font-medium text-sm">
+                Destination
+              </label>
+              <Select
+                id="sync-destination"
+                value={field.state.value}
+                onValueChange={(value) => {
+                  field.handleChange(value);
+                  form.resetField('values');
+                }}
+                options={catalog.types.map((type) => ({
+                  value: type.type,
+                  label: type.name ?? type.type,
+                }))}
+              />
+              {field.state.meta.errors.map((error) => (
+                <p key={String(error)} role="alert" className="text-destructive text-sm">
+                  {error}
+                </p>
+              ))}
+            </div>
+          )}
+        </form.Field>
+        <form.Subscribe selector={(state) => state.values.destination}>
+          {(destination) => {
+            const type = catalog.types.find((entry) => entry.type === destination);
+            return (
+              type &&
+              [...setupFields(type.setupSchema).entries()].map(([index, definition]) => (
+                <form.Field
+                  key={`${destination}:${definition.name}`}
+                  name={`values[${index}]`}
+                  validators={{
+                    onSubmit: ({ value }) => fieldError({ field: definition, value: value ?? '' }),
+                  }}
+                >
+                  {(field) => (
+                    <div className="space-y-2">
+                      <label htmlFor={`${fieldId}-${index}`} className="font-medium text-sm">
+                        {String(definition.schema.title ?? definition.name)}
+                      </label>
+                      <SetupInput
+                        field={definition}
+                        id={`${fieldId}-${index}`}
+                        value={field.state.value ?? ''}
+                        onChange={field.handleChange}
+                        onBlur={field.handleBlur}
+                      />
+                      {definition.schema.description && (
+                        <p
+                          id={`${fieldId}-${index}-help`}
+                          className="text-muted-foreground text-sm"
+                        >
+                          {String(definition.schema.description)}
                         </p>
-                        {field.state.meta.errors.map((error) => (
-                          <p key={String(error)} role="alert" className="text-destructive text-sm">
-                            {error}
-                          </p>
-                        ))}
-                      </div>
-                    )}
-                  </form.Field>
-                </div>
-              )
-            }
-          </form.Subscribe>
-          <Button type="submit" disabled={create.isPending}>
-            {create.isPending ? 'Creating…' : 'Create sync'}
-          </Button>
-        </form>
-      )}
-    </SectionPage>
+                      )}
+                      {field.state.meta.errors.map((error) => (
+                        <p key={String(error)} role="alert" className="text-destructive text-sm">
+                          {error}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </form.Field>
+              ))
+            );
+          }}
+        </form.Subscribe>
+        <form.Subscribe selector={(state) => state.errors}>
+          {(errors) =>
+            errors.map((error) => (
+              <p key={String(error)} role="alert" className="text-destructive text-sm">
+                {String(error)}
+              </p>
+            ))
+          }
+        </form.Subscribe>
+        <Button type="submit" disabled={create.isPending}>
+          {create.isPending ? 'Creating…' : 'Create sync'}
+        </Button>
+      </form>
+    </>
   );
 }

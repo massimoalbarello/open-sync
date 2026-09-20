@@ -22,7 +22,11 @@ export function createSyncController(input: {
   authorize(request: Request): Scope | null | Promise<Scope | null>;
 }) {
   return new Elysia({ prefix: '/sync' })
-    .onError(({ error }) => syncErrorResponse(error))
+    .onError(({ error, code, status }) =>
+      code === 'VALIDATION'
+        ? status('Unprocessable Content', { error: 'invalid_input' })
+        : syncErrorResponse(error),
+    )
     .resolve(async ({ request, status }) => {
       const scope = await input.authorize(request);
       if (!scope) {
@@ -40,6 +44,12 @@ export function createSyncController(input: {
       {
         body: t.Object({ type: identifier, config }),
       },
+    )
+    .post(
+      '/destinations/setup',
+      ({ scope, body }) =>
+        input.api.setupDestination({ ...body, input: body.input as JsonObject, ...scope }),
+      { body: t.Object({ type: identifier, input: config }) },
     )
     .get('/installations', ({ scope }) => ({ installations: input.api.installations(scope) }))
     .post(

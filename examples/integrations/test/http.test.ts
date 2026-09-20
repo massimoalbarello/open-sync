@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import type { Delivery } from '@context-use/open-sync/delivery';
 import { httpDestination } from '@open-sync/examples/destinations/http';
-import { destinationCredentials } from '#backend/lib/destination-credentials.ts';
+import { destinationCredentials } from '../src/destinations/http/credentials';
 
 const owner = { actorId: 'alice', ownerId: 'alice' };
 const delivery: Delivery = {
@@ -28,12 +28,6 @@ const delivery: Delivery = {
 
 test('HTTP deliveries authenticate, retain idempotency on retry and never follow redirects', async () => {
   const endpoint = 'https://receiver.example/records';
-  const credentials = destinationCredentials('test-host-secret');
-  const credential = credentials.seal({
-    ownerId: owner.ownerId,
-    endpoint,
-    apiKey: 'user-provided-key',
-  });
   const received: { authorization: string | null; id: string | null; body: unknown }[] = [];
   let mode: 'retry' | 'redirect' | 'reject' | 'accept' = 'retry';
   let forwarded = false;
@@ -61,7 +55,7 @@ test('HTTP deliveries authenticate, retain idempotency on retry and never follow
     },
   });
   const destination = httpDestination({
-    resolveApiKey: credentials.open,
+    secret: 'test-host-secret',
     fetch: Object.assign(
       (...[url, init]: Parameters<typeof fetch>) => {
         expect(String(url)).toBe(endpoint);
@@ -70,9 +64,13 @@ test('HTTP deliveries authenticate, retain idempotency on retry and never follow
       { preconnect: fetch.preconnect },
     ),
   });
+  const config = await destination.setup!.prepare({
+    scope: owner,
+    input: { endpoint, apiKey: 'user-provided-key' },
+  });
   const input = {
     scope: owner,
-    config: { endpoint, credential },
+    config,
     delivery,
     signal: new AbortController().signal,
   };

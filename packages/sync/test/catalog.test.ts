@@ -15,6 +15,7 @@ test('catalog exposes serializable metadata, and polling history survives restar
         description: undefined,
         version: '1',
         configSchema: { type: 'object', additionalProperties: false },
+        setupSchema: { type: 'object', additionalProperties: false },
       },
     ]);
     await f.engine.tick();

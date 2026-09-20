@@ -5,21 +5,7 @@ import { syncKeys } from './sync';
 export function catalogOptions(userId: string) {
   return queryOptions({
     queryKey: [...syncKeys.owner(userId), 'catalog'],
-    queryFn: async () => {
-      const [sources, types, destinations] = await Promise.all([
-        syncApi.sync.definitions.get(),
-        syncApi.sync['destination-types'].get(),
-        syncApi.sync.destinations.get(),
-      ]);
-      if (sources.error || types.error || destinations.error) {
-        throw new Error('Could not load sources and destinations.');
-      }
-      return {
-        sources: sources.data.definitions,
-        types: types.data.types,
-        destinations: destinations.data.destinations,
-      };
-    },
+    queryFn: loadCatalog,
   });
 }
 export async function createSync(input: Parameters<typeof api.api.dashboard.syncs.post>[0]) {
@@ -28,4 +14,20 @@ export async function createSync(input: Parameters<typeof api.api.dashboard.sync
     throw new Error('Could not create sync. Please try again.');
   }
   return result.data;
+}
+
+export async function loadCatalog() {
+  const [sources, types, destinations] = await Promise.all([
+    syncApi.sync.definitions.get(),
+    syncApi.sync['destination-types'].get(),
+    syncApi.sync.destinations.get(),
+  ]);
+  if (sources.error || types.error || destinations.error) {
+    throw new Error('Could not load sources and destinations.');
+  }
+  return {
+    sources: sources.data.definitions,
+    types: types.data.types,
+    destinations: destinations.data.destinations,
+  };
 }

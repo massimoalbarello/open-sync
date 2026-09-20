@@ -314,7 +314,7 @@ try {
   assert.equal(
     (
       await page.request.post(`${app.origin}/api/dashboard/syncs`, {
-        data: { source: 'github.pull-requests', destination: 'local' },
+        data: { source: 'github.pull-requests', destination: { type: 'local', input: {} } },
         headers: { origin: app.origin },
       })
     ).status(),

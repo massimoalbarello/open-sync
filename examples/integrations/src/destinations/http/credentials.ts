@@ -4,7 +4,7 @@ const keyBytes = 32;
 const nonceBytes = 12;
 const tagBytes = 16;
 
-/** Host-owned encryption; ciphertext is bound to its owner and destination endpoint. */
+/** Ciphertext is bound to its owner and endpoint; the host supplies a stable secret. */
 export function destinationCredentials(secret: string) {
   const key = Buffer.from(
     hkdfSync('sha256', secret, 'open-sync', 'destination-api-keys', keyBytes),

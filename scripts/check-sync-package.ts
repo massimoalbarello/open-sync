@@ -63,8 +63,15 @@ for (const source of [githubPullRequests, gmailThreads, slackThreads, granolaMee
   const definition = await source.load();
   if (typeof definition.run !== 'function') throw new Error('Missing source implementation');
 }
-if (typeof localDestination !== 'function' || typeof httpDestination !== 'function') {
-  throw new Error('Missing destination examples');
+const local = localDestination({ accept: async () => true });
+const http = httpDestination({ secret: 'package-test-secret' });
+const config = await http.setup.prepare({
+  scope: { ownerId: 'owner', actorId: 'owner' },
+  input: { endpoint: 'https://example.com/records', apiKey: 'package-test-api-key' },
+});
+if (typeof local.deliver !== 'function' || typeof http.deliver !== 'function' ||
+    JSON.stringify(config).includes('package-test-api-key')) {
+  throw new Error('Invalid packaged destination setup');
 }
 `,
   );

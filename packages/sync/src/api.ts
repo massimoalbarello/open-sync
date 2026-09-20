@@ -9,6 +9,7 @@ export type SyncApi = Pick<
   | 'runs'
   | 'destinations'
   | 'createDestination'
+  | 'setupDestination'
   | 'createInstallation'
   | 'connectInstallation'
   | 'installations'
@@ -31,6 +32,7 @@ export function syncApi(service: SyncManagement): SyncApi {
     destinationTypes: service.destinationTypes.bind(service),
     runs: service.runs.bind(service),
     createDestination: service.createDestination.bind(service),
+    setupDestination: service.setupDestination.bind(service),
     createInstallation: service.createInstallation.bind(service),
     connectInstallation: service.connectInstallation.bind(service),
     installations: service.installations.bind(service),
