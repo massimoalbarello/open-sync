@@ -17,9 +17,17 @@ export function dashboardController(input: {
       return { scope };
     })
     .post('/syncs', ({ scope, body }) => input.dashboard.create({ ...scope, ...body }), {
-      body: t.Object({
-        source: t.String({ minLength: 1, maxLength: 1024 }),
-        destination: t.Literal('local'),
-      }),
+      body: t.Union([
+        t.Object({
+          source: t.String({ minLength: 1, maxLength: 1024 }),
+          destination: t.Literal('local'),
+        }),
+        t.Object({
+          source: t.String({ minLength: 1, maxLength: 1024 }),
+          destination: t.Literal('http'),
+          endpoint: t.String({ minLength: 1, maxLength: 2048 }),
+          apiKey: t.String({ minLength: 1, maxLength: 16384 }),
+        }),
+      ]),
     });
 }

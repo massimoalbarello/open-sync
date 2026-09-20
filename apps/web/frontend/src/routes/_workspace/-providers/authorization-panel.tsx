@@ -13,6 +13,7 @@ export function AuthorizationPanel(input: {
   userId: string;
   service: string;
   connectionId?: string;
+  oauthOnly?: boolean;
   status: Awaited<ReturnType<typeof loadProvider>>;
 }) {
   const client = useQueryClient();
@@ -34,19 +35,22 @@ export function AuthorizationPanel(input: {
     },
   });
   const { status } = input;
-  const auth = status.setup.auth.find((entry) => entry.type === method) ?? status.setup.auth[0];
+  const methods = input.oauthOnly
+    ? status.setup.auth.filter((entry) => entry.type === 'oauth2')
+    : status.setup.auth;
+  const auth = methods.find((entry) => entry.type === method) ?? methods[0];
   if (input.connectionId && !target?.authType) {
     return <p role="alert">This account is unavailable. Reload the provider page to try again.</p>;
   }
   const accounts = status.connections.filter((connection) => connection.authType === auth?.type);
   return (
     <div className="space-y-8">
-      {!target && status.setup.auth.length > 1 && (
+      {!target && methods.length > 1 && (
         <fieldset
           className="inline-flex flex-wrap gap-1 rounded-lg bg-muted p-1"
           aria-label="Authentication methods"
         >
-          {status.setup.auth.map((entry) => (
+          {methods.map((entry) => (
             <Button
               key={entry.type}
               variant={entry.type === auth?.type ? 'default' : 'ghost'}

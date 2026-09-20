@@ -1,5 +1,6 @@
 import type { SyncRegistration } from '@context-use/open-sync/definition';
-import { checkpointSchema, initialCheckpoint, jsonSchema } from './acquisition/state';
+import { jsonSchema } from '../../schema';
+import { checkpointSchema, initialCheckpoint } from './acquisition/state';
 import { run } from './pull-requests';
 
 export const githubPullRequests = {

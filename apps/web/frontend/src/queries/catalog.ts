@@ -22,7 +22,7 @@ export function catalogOptions(userId: string) {
     },
   });
 }
-export async function createSync(input: { source: string; destination: 'local' }) {
+export async function createSync(input: Parameters<typeof api.api.dashboard.syncs.post>[0]) {
   const result = await api.api.dashboard.syncs.post(input);
   if (result.error) {
     throw new Error('Could not create sync. Please try again.');

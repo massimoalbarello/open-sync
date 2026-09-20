@@ -1,4 +1,5 @@
 import { Button } from '@repo/ui/button';
+import { Input } from '@repo/ui/input';
 import { Select } from '@repo/ui/select';
 import { useForm } from '@tanstack/react-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -36,9 +37,24 @@ function NewSync() {
     },
   });
   const form = useForm({
-    defaultValues: { source: search.source ?? '', destination: search.destination ?? 'local' },
+    defaultValues: {
+      source: search.source ?? '',
+      destination: search.destination ?? 'local',
+      endpoint: '',
+      apiKey: '',
+    },
     onSubmit: async ({ value }) => {
-      await create.mutateAsync({ source: value.source, destination: 'local' });
+      await create.mutateAsync(
+        value.destination === 'http'
+          ? {
+              source: value.source,
+              destination: 'http',
+              endpoint: value.endpoint,
+              apiKey: value.apiKey,
+            }
+          : { source: value.source, destination: 'local' },
+      );
+      form.resetField('apiKey');
     },
   });
   return (
@@ -98,7 +114,10 @@ function NewSync() {
           <form.Field
             name="destination"
             validators={{
-              onSubmit: ({ value }) => (value !== 'local' ? 'Select a destination.' : undefined),
+              onSubmit: ({ value }) =>
+                !query.data.types.some((type) => type.type === value)
+                  ? 'Select a destination.'
+                  : undefined,
             }}
           >
             {(field) => (
@@ -110,9 +129,10 @@ function NewSync() {
                   id="sync-destination"
                   value={field.state.value}
                   onValueChange={field.handleChange}
-                  options={query.data.types
-                    .filter((type) => type.type === 'local')
-                    .map((type) => ({ value: type.type, label: type.name ?? type.type }))}
+                  options={query.data.types.map((type) => ({
+                    value: type.type,
+                    label: type.name ?? type.type,
+                  }))}
                 />
                 {field.state.meta.errors.map((error) => (
                   <p key={String(error)} role="alert" className="text-destructive text-sm">
@@ -122,6 +142,76 @@ function NewSync() {
               </div>
             )}
           </form.Field>
+          <form.Subscribe selector={(state) => state.values.destination}>
+            {(destination) =>
+              destination === 'http' && (
+                <div className="space-y-5">
+                  <form.Field
+                    name="endpoint"
+                    validators={{
+                      onSubmit: ({ value }) =>
+                        !value.trim()
+                          ? 'Enter your endpoint URL.'
+                          : !value.startsWith('https://')
+                            ? 'Use an HTTPS endpoint.'
+                            : undefined,
+                    }}
+                  >
+                    {(field) => (
+                      <div className="space-y-2">
+                        <label htmlFor="destination-endpoint" className="font-medium text-sm">
+                          Endpoint URL
+                        </label>
+                        <Input
+                          id="destination-endpoint"
+                          type="url"
+                          placeholder="https://api.example.com/records"
+                          value={field.state.value}
+                          onChange={(event) => field.handleChange(event.target.value)}
+                          onBlur={field.handleBlur}
+                        />
+                        {field.state.meta.errors.map((error) => (
+                          <p key={String(error)} role="alert" className="text-destructive text-sm">
+                            {error}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </form.Field>
+                  <form.Field
+                    name="apiKey"
+                    validators={{
+                      onSubmit: ({ value }) => (!value.trim() ? 'Enter your API key.' : undefined),
+                    }}
+                  >
+                    {(field) => (
+                      <div className="space-y-2">
+                        <label htmlFor="destination-api-key" className="font-medium text-sm">
+                          API key
+                        </label>
+                        <Input
+                          id="destination-api-key"
+                          type="password"
+                          autoComplete="off"
+                          value={field.state.value}
+                          onChange={(event) => field.handleChange(event.target.value)}
+                          onBlur={field.handleBlur}
+                        />
+                        <p className="text-muted-foreground text-sm">
+                          Stored encrypted. Used to authenticate deliveries to your endpoint.
+                        </p>
+                        {field.state.meta.errors.map((error) => (
+                          <p key={String(error)} role="alert" className="text-destructive text-sm">
+                            {error}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </form.Field>
+                </div>
+              )
+            }
+          </form.Subscribe>
           <Button type="submit" disabled={create.isPending}>
             {create.isPending ? 'Creating…' : 'Create sync'}
           </Button>

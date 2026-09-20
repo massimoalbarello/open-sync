@@ -54,7 +54,18 @@ try {
   await writeFile(
     join(temporary, 'adapter.ts'),
     `import { githubPullRequests } from '@open-sync/examples/syncs/github';
-if (typeof githubPullRequests.load !== 'function') throw new Error('Missing GitHub sync');
+import { gmailEmails } from '@open-sync/examples/syncs/gmail';
+import { slackMessages } from '@open-sync/examples/syncs/slack';
+import { granolaMeetings } from '@open-sync/examples/syncs/granola';
+import { localDestination } from '@open-sync/examples/destinations/local';
+import { httpDestination } from '@open-sync/examples/destinations/http';
+for (const source of [githubPullRequests, gmailEmails, slackMessages, granolaMeetings]) {
+  const definition = await source.load();
+  if (typeof definition.run !== 'function') throw new Error('Missing source implementation');
+}
+if (typeof localDestination !== 'function' || typeof httpDestination !== 'function') {
+  throw new Error('Missing destination examples');
+}
 `,
   );
   await run({ cwd: temporary, command: ['bun', 'adapter.ts'] });

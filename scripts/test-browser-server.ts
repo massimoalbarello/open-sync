@@ -1,6 +1,7 @@
-// Test composition root: only GitHub's external HTTP boundary is replaced. The real host,
+// Test composition root: only external provider and receiver HTTP boundaries are replaced. The real host,
 // passkey verification, Connector, sync worker and SQLite stores run unchanged.
 import { pull } from '../apps/web/backend/test/github-sync/fixture';
+import { exampleProviderResponse } from './example-provider-fixtures';
 
 const fetchNetwork = globalThis.fetch;
 let oauthToken = 0;
@@ -14,11 +15,12 @@ const records = Array.from(
 );
 globalThis.fetch = Object.assign(
   async (...args: Parameters<typeof fetch>) => {
-    const request =
-      args[0] instanceof Request
-        ? new Request(args[0], args[1])
-        : new Request(String(args[0]), args[1]);
+    const request = fetchRequest(args);
     const url = new URL(request.url);
+    const exampleResponse = await exampleProviderResponse(request);
+    if (exampleResponse) {
+      return exampleResponse;
+    }
     if (url.hostname === 'github.com' && url.pathname === '/login/oauth/access_token') {
       return Response.json({
         access_token: `browser-test-oauth-token-${++oauthToken}`,
@@ -78,3 +80,9 @@ globalThis.fetch = Object.assign(
   { preconnect: fetchNetwork.preconnect },
 );
 await import('../apps/web/backend/src/main');
+
+function fetchRequest(args: Parameters<typeof fetch>) {
+  return args[0] instanceof Request
+    ? new Request(args[0], args[1])
+    : new Request(String(args[0]), args[1]);
+}

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { virtualPasskeyBrowser } from '@repo/browser-testing/browser';
+import { exampleSyncsJourney } from './example-syncs-journey';
 import {
   githubOAuthJourney,
   githubOAuthReconnectJourney,
@@ -10,6 +11,7 @@ import { startIsolatedApp } from './isolated-app';
 import { ownerRegistrationJourney } from './owner-registration-journey';
 
 const fixtureRecordCount = 65;
+const sourceCount = 4;
 const drainTimeoutMs = 120_000;
 const wideViewport = { width: 1920, height: 1080 };
 
@@ -81,12 +83,12 @@ try {
 
   await page.getByRole('link', { name: 'Sources', exact: true }).click();
   await page.getByRole('heading', { name: 'GitHub pull requests', exact: true }).waitFor();
-  assert.equal(await page.locator('main li').count(), 1);
+  assert.equal(await page.locator('main li').count(), sourceCount);
   assert.equal(await page.getByText('Configuration schema', { exact: true }).count(), 0);
   assert.ok(
-    (await page.getByRole('link', { name: 'Configure provider' }).getAttribute('href'))?.startsWith(
-      '/providers/github',
-    ),
+    (
+      await page.getByRole('link', { name: 'Configure provider' }).first().getAttribute('href')
+    )?.startsWith('/providers/github'),
   );
   await page.screenshot({
     path: 'artifacts/sources-catalog.png',
@@ -95,7 +97,7 @@ try {
   });
   await page.getByRole('link', { name: 'Destinations', exact: true }).click();
   await page.getByRole('heading', { name: 'Local SQLite', exact: true }).waitFor();
-  assert.equal(await page.locator('main li').count(), 1);
+  assert.equal(await page.locator('main li').count(), 2);
   assert.equal(await page.getByRole('button', { name: 'Add destination' }).count(), 0);
   await page.screenshot({
     path: 'artifacts/destinations.png',
@@ -128,6 +130,8 @@ try {
     data: { paused: true },
   });
   assert.ok(settings.ok());
+  assert.equal(await page.getByRole('button', { name: 'API key', exact: true }).count(), 0);
+  await page.goto(`${app.origin}/providers/github`);
   await page.getByRole('button', { name: 'API key', exact: true }).click();
   const status = await (
     await page.request.get(`${app.origin}/api/open-sync/providers/github`)
@@ -150,9 +154,15 @@ try {
   const originalKeySync = await (
     await page.request.get(`${app.origin}/api/open-sync/sync/installations/${syncId}`)
   ).json();
-  await page.goto(
-    `${app.origin}/providers/github?connectionId=${originalKeySync.connection.id}&syncId=${syncId}`,
+  assert.equal(originalKeySync.connection, undefined);
+  assert.equal(originalKeySync.enabled, false);
+  const keyAccounts = await (
+    await page.request.get(`${app.origin}/api/open-sync/providers/github`)
+  ).json();
+  const keyConnection = keyAccounts.connections.find(
+    (connection: { authType: string }) => connection.authType === 'api_key',
   );
+  await page.goto(`${app.origin}/providers/github?connectionId=${keyConnection.id}`);
   await page.getByRole('heading', { name: /^Reconnect / }).waitFor();
   assert.equal(await page.getByRole('button', { name: 'OAuth', exact: true }).count(), 0);
   await page.getByLabel(keyLabel, { exact: true }).fill('browser-test-replacement-key');
@@ -168,7 +178,8 @@ try {
   ).json();
   assert.deepEqual(refreshedKeySync.connection, originalKeySync.connection);
   assert.equal(refreshedKeySync.sourceId, originalKeySync.sourceId);
-  await page.getByRole('link', { name: 'View sync', exact: true }).click();
+  await githubOAuthSuccessJourney({ page, origin: app.origin });
+  await page.goto(`${app.origin}/syncs/${syncId}`);
   await page.getByText('succeeded → Local SQLite', { exact: true }).waitFor();
   assert.equal(await page.getByText('Record schemas', { exact: true }).count(), 0);
   assert.equal(await page.getByText('Source configuration', { exact: true }).count(), 0);
@@ -253,7 +264,8 @@ try {
   const accounts = await (
     await page.request.get(`${app.origin}/api/open-sync/providers/github`)
   ).json();
-  assert.equal(accounts.connections.length, 2);
+  const expectedConnections = 3;
+  assert.equal(accounts.connections.length, expectedConnections);
   await page.goto(`${app.origin}/syncs/${oauthSync.id}`);
   await page.getByText('succeeded → Local SQLite', { exact: true }).waitFor();
   const beforeRun = await (
@@ -329,6 +341,7 @@ try {
   }
   await page.getByRole('button', { name: 'Sign in with a passkey' }).click();
   await page.getByRole('heading', { name: 'Syncs', exact: true }).waitFor();
+  await exampleSyncsJourney({ page, origin: app.origin });
   console.log(
     'Browser journey passed: paginated catalogs, provider setup, deferred authorization, GitHub syncs, infinite records and queue, responsive layout and real passkeys.',
   );

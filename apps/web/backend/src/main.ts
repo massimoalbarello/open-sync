@@ -1,9 +1,11 @@
 import { createOpenSync, type OpenSyncRuntime } from '@context-use/open-sync';
+import { httpDestination } from '@open-sync/examples/destinations/http';
 import { createApp } from '#backend/app.ts';
 import { createSqliteDatabase } from '#backend/db/client.ts';
 import { runMigrations } from '#backend/db/migrate.ts';
 import { loadAuthSecret } from '#backend/lib/auth/auth-secret.ts';
 import { createAuth } from '#backend/lib/auth/better-auth.ts';
+import { destinationCredentials } from '#backend/lib/destination-credentials.ts';
 import { loadEnv } from '#backend/lib/env.ts';
 import { FrontendAssetsRepository } from '#backend/repositories/frontend-assets/repository.ts';
 import { SqliteReceiver } from '#backend/repositories/receiver/sqlite.ts';
@@ -35,6 +37,7 @@ try {
     ]),
   ];
   const receiver = new ReceiverService(new SqliteReceiver(database));
+  const credentials = destinationCredentials(secret.value);
   let dashboard: DashboardService;
   sync = await createOpenSync({
     dataDirectory: env.DATA_FOLDER,
@@ -45,10 +48,13 @@ try {
       `/providers/${encodeURIComponent(service)}${outcome === 'failed' ? '?authorization=failed' : ''}`,
     definitions: syncDefinitions,
     onProviderConnected: (input) => dashboard.connectWaiting(input),
-    destinationTypes: { local: receiver.destination() },
+    destinationTypes: {
+      local: receiver.destination(),
+      http: httpDestination({ resolveApiKey: credentials.open }),
+    },
     onEvent: (event) => console.log(JSON.stringify({ event: 'sync.status', ...event })),
   });
-  dashboard = new DashboardService(sync);
+  dashboard = new DashboardService({ ...sync, sealDestinationKey: credentials.seal });
   const app = createApp({
     dashboard,
     auth,

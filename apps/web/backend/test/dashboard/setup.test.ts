@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type { OpenSyncRuntime } from '@context-use/open-sync';
 import { createSyncRuntime } from '@context-use/open-sync/engine';
 import { githubPullRequests } from '@open-sync/examples/syncs/github';
+import { destinationCredentials } from '#backend/lib/destination-credentials.ts';
 import { DashboardService } from '#backend/services/dashboard/service.ts';
 
 test('concurrent setup reuses local storage and authorization cannot strand or rebind a waiting sync', async () => {
@@ -40,19 +41,23 @@ test('concurrent setup reuses local storage and authorization cannot strand or r
         iconUrl: null,
         categories: [],
         scenario: '',
-        authTypes: ['api_key'],
+        authTypes: ['oauth2'],
       },
       setup: { service: 'github', auth: [] },
       // The two initial reads race before account authorization completes.
       connections:
         statusReads > 2
-          ? [{ id: connection.id, account: 'Alice', status: 'active', authType: 'api_key' }]
+          ? [{ id: connection.id, account: 'Alice', status: 'active', authType: 'oauth2' }]
           : [],
     });
   };
-  const dashboard = new DashboardService({ api: engine.api, providers: { status } });
+  const dashboard = new DashboardService({
+    api: engine.api,
+    providers: { status },
+    sealDestinationKey: destinationCredentials('test-secret').seal,
+  });
   try {
-    const input = { ...owner, source: 'github.pull-requests', destination: 'local' };
+    const input = { ...owner, source: 'github.pull-requests', destination: 'local' as const };
     const created = await Promise.all([dashboard.create(input), dashboard.create(input)]);
     expect(engine.api.destinations(owner)).toHaveLength(1);
     for (const sync of created) {

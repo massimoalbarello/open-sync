@@ -4,13 +4,19 @@
   "type": "module",
   "private": true,
   "exports": {
-    "./syncs/github": "./src/syncs/github/definition.ts"
+    "./syncs/github": "./src/syncs/github/definition.ts",
+    "./syncs/gmail": "./src/syncs/gmail/definition.ts",
+    "./syncs/slack": "./src/syncs/slack/definition.ts",
+    "./syncs/granola": "./src/syncs/granola/definition.ts",
+    "./destinations/local": "./src/destinations/local.ts",
+    "./destinations/http": "./src/destinations/http.ts"
   },
   "files": [
     "src"
   ],
   "scripts": {
     "check:types": "tsc --noEmit",
+    "test": "bun test test",
     "prepack": "cp ../../LICENSE ./LICENSE",
     "postpack": "rm ./LICENSE"
   },

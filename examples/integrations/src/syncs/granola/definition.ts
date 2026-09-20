@@ -1,0 +1,25 @@
+import type { SyncRegistration } from '@context-use/open-sync/definition';
+import { z } from 'zod';
+import { jsonSchema } from '../../schema';
+import { run } from './meetings';
+import { checkpointSchema, meetingSchema } from './models';
+
+export const granolaMeetings = {
+  definition: {
+    id: 'granola.meetings',
+    name: 'Granola meetings',
+    description:
+      'Meeting notes and summaries from the last 30 days through Granola MCP and OAuth. Rechecks accessible meetings; unavailable notes are not treated as deletions.',
+    version: '1',
+    artifactId: 'open-sync/granola-meetings/1',
+    provider: {
+      service: 'granola',
+      actions: ['granola.list_meetings', 'granola.get_meetings'],
+    },
+    configSchema: jsonSchema(z.strictObject({})),
+    checkpointSchema: jsonSchema(checkpointSchema),
+    initialCheckpoint: { remainingIds: null },
+    kinds: { meeting: jsonSchema(meetingSchema) },
+  },
+  load: () => ({ run }),
+} satisfies SyncRegistration;

@@ -25,7 +25,10 @@ function Provider(input: { userId: string; service: string }) {
   const query = useQuery(providerSetupOptions(input));
   const status = query.data;
   const connected =
-    status?.connections.filter((connection) => connection.status === 'active') ?? [];
+    status?.connections.filter(
+      (connection) =>
+        connection.status === 'active' && (!syncId || connection.authType === 'oauth2'),
+    ) ?? [];
   return (
     <SectionPage
       title={status?.provider.displayName ?? 'Provider'}
@@ -66,6 +69,7 @@ function Provider(input: { userId: string; service: string }) {
               {...input}
               status={status}
               connectionId={connectionId}
+              oauthOnly={!!syncId && !connectionId}
             />
             {!!connected.length &&
               (syncId ? (
