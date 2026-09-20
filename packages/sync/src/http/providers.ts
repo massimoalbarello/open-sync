@@ -29,6 +29,17 @@ export function createProviderController(input: {
     )
     .get('/', async ({ request }) => await input.providers.catalog(await scope(request)))
     .get(
+      '/catalog',
+      async ({ request, query }) =>
+        input.providers.catalogPage({ ...(await scope(request)), ...query }),
+      {
+        query: t.Object({
+          q: t.Optional(t.String({ maxLength: 200 })),
+          offset: t.Optional(t.Integer({ minimum: 0, maximum: 1000000 })),
+        }),
+      },
+    )
+    .get(
       '/:service',
       async ({ request, params }) =>
         await input.providers.status({ ...(await scope(request)), ...params }),
@@ -50,6 +61,7 @@ export function createProviderController(input: {
       {
         params: t.Object({ service }),
         body: t.Object({
+          connectionId: t.Optional(id),
           authorizationOptionIds: t.Optional(
             t.Array(t.String({ maxLength: 256 }), { maxItems: 128 }),
           ),
@@ -63,6 +75,7 @@ export function createProviderController(input: {
       {
         params: t.Object({ service }),
         body: t.Object({
+          connectionId: t.Optional(id),
           authType: t.Union([t.Literal('api_key'), t.Literal('custom_credential')]),
           values,
         }),

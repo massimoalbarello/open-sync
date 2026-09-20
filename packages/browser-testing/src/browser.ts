@@ -7,7 +7,9 @@ export async function virtualPasskeyBrowser(input: { headless: boolean }) {
     handleSIGTERM: false,
   });
   try {
-    const context = await browser.newContext();
+    const context = await browser.newContext({
+      viewport: input.headless ? { width: 1280, height: 720 } : null,
+    });
     const page = await context.newPage();
     await enableVirtualPasskey(page);
     return { page, close: () => browser.close() };

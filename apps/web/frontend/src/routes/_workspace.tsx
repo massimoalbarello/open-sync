@@ -2,7 +2,17 @@ import { Button } from '@repo/ui/button';
 import { cn } from '@repo/ui/class-names';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, Link, Outlet, redirect, useNavigate } from '@tanstack/react-router';
-import { ArrowRightLeft, ListChecks, LogOut, Menu, Plug, RefreshCw } from 'lucide-react';
+import {
+  ArrowRightLeft,
+  Database,
+  Download,
+  ListChecks,
+  LogOut,
+  Menu,
+  Plug,
+  RefreshCw,
+  Upload,
+} from 'lucide-react';
 import { useState } from 'react';
 import { sessionOptions, signOut } from '../queries/session';
 
@@ -20,7 +30,10 @@ export const Route = createFileRoute('/_workspace')({
 const sections = [
   { to: '/providers', label: 'Providers', icon: Plug },
   { to: '/syncs', label: 'Syncs', icon: RefreshCw },
-  { to: '/delivery', label: 'Delivery queue', icon: ListChecks },
+  { to: '/records', label: 'Records', icon: Database },
+  { to: '/delivery', label: 'Queue', icon: ListChecks },
+  { to: '/sources', label: 'Sources', icon: Download },
+  { to: '/destinations', label: 'Destinations', icon: Upload },
 ] as const;
 
 function Workspace() {
@@ -35,8 +48,8 @@ function Workspace() {
     },
   });
   return (
-    <div className="min-h-dvh bg-sidebar p-2 md:grid md:grid-cols-[16rem_minmax(0,1fr)] md:gap-2">
-      <aside className="flex flex-col">
+    <div className="min-h-dvh bg-sidebar md:grid md:grid-cols-[14rem_minmax(0,1fr)]">
+      <aside className="flex flex-col md:sticky md:top-0 md:h-dvh">
         <div className="flex h-16 items-center justify-between px-4">
           <Link to="/syncs" className="flex items-center gap-3 font-semibold text-lg">
             <ArrowRightLeft aria-hidden="true" className="size-6" />
@@ -65,7 +78,7 @@ function Workspace() {
                 to={to}
                 onClick={() => setMenuOpen(false)}
                 activeProps={{ 'aria-current': 'page' }}
-                className="flex items-center gap-3 rounded-xl px-4 py-3 font-medium text-muted-foreground hover:bg-accent hover:text-foreground data-[status=active]:bg-card data-[status=active]:text-foreground data-[status=active]:shadow-sm"
+                className="flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium text-muted-foreground hover:bg-accent hover:text-foreground data-[status=active]:bg-card data-[status=active]:text-foreground data-[status=active]:shadow-sm"
               >
                 <Icon aria-hidden="true" className="size-5" />
                 {label}
@@ -84,7 +97,7 @@ function Workspace() {
           </footer>
         </div>
       </aside>
-      <main className="min-h-[calc(100dvh-5rem)] min-w-0 rounded-2xl bg-background md:min-h-[calc(100dvh-1rem)]">
+      <main className="min-h-[calc(100dvh-4rem)] min-w-0 border-border bg-background md:min-h-dvh md:border-l">
         <Outlet />
       </main>
     </div>

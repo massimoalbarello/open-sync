@@ -114,8 +114,8 @@ test('only the owner of an active attempt can claim its public connection refere
     };
     await repository.start({ ...alice, id: 'superseded', requestId: 'request1' });
     await repository.start({ ...alice, id: connection.id, requestId: 'request2' });
-    await repository.complete({ ...alice, ...connection, id: 'superseded' });
-    await repository.complete({ ...bob, ...connection });
+    await repository.complete({ ...alice, ...connection, id: 'superseded', requestId: 'request1' });
+    await repository.complete({ ...bob, ...connection, requestId: 'request2' });
     expect(await repository.list(alice)).toEqual([]);
     const calls: string[] = [];
     const service = new ProviderService({

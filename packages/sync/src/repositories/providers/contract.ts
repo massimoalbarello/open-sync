@@ -10,6 +10,7 @@ export interface ProviderRepository {
   owns(input: ProviderScope & { connectorId: string }): Promise<boolean>;
   start(input: ProviderScope & ProviderAuthorization): Promise<void>;
   pending(input: ProviderScope & { id: string }): Promise<ProviderAuthorization | null>;
+  updateAccount(input: ProviderScope & ProviderConnection): Promise<void>;
   add(input: ProviderScope & ProviderConnection): Promise<void>;
-  complete(input: ProviderScope & ProviderConnection): Promise<void>;
+  complete(input: ProviderScope & ProviderConnection & { requestId: string }): Promise<void>;
 }

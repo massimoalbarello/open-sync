@@ -48,3 +48,5 @@ artifacts/
 
 # License copied into the independent package only while verifying its tarball.
 /packages/sync/LICENSE
+
+/packages/http-delivery/LICENSE

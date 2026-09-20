@@ -1,4 +1,4 @@
-import type { SyncDefinition } from '../../models/definition';
+import type { ConnectionRef, SyncDefinition } from '../../models/definition';
 import type { Destination } from '../../models/delivery';
 import type { Resource, Scope } from '../../models/identity';
 import type { CreateInstallation, Installation, SyncRun } from '../../models/installation';
@@ -18,6 +18,7 @@ export interface CatalogRepository {
     hasMore: boolean;
     pageSize: number;
   };
+  connectInstallation(input: Resource & { connection: ConnectionRef }): Installation;
   setEnabled(input: Resource & { enabled: boolean }): Installation;
   queue(input: Resource & { checkpoint?: JsonValue }): void;
 }

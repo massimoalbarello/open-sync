@@ -5,7 +5,10 @@ import { join } from 'node:path';
 const root = join(import.meta.dir, '..');
 const temporary = await mkdtemp(join(tmpdir(), 'open-sync-package-'));
 const execution = await mkdtemp(join(tmpdir(), 'open-sync-executable-'));
-const license = join(root, 'packages/sync/LICENSE');
+const packages = [
+  { directory: 'packages/sync', archive: 'sync' },
+  { directory: 'examples/integrations', archive: 'syncs' },
+];
 async function run(input: { cwd: string; command: string[] }) {
   const child = Bun.spawn(input.command, { cwd: input.cwd, stdout: 'inherit', stderr: 'inherit' });
   if (await child.exited) {
@@ -13,17 +16,23 @@ async function run(input: { cwd: string; command: string[] }) {
   }
 }
 try {
-  await run({
-    cwd: join(root, 'packages/sync'),
-    command: ['bun', 'pm', 'pack', '--filename', join(temporary, 'core.tgz')],
-  });
+  for (const entry of packages) {
+    await run({
+      cwd: join(root, entry.directory),
+      command: ['bun', 'pm', 'pack', '--filename', join(temporary, `${entry.archive}.tgz`)],
+    });
+  }
   await writeFile(
     join(temporary, 'package.json'),
     JSON.stringify({
       name: 'independent-host',
       private: true,
       type: 'module',
-      dependencies: { '@context-use/open-sync': './core.tgz' },
+      overrides: { '@context-use/open-sync': './sync.tgz' },
+      dependencies: {
+        '@context-use/open-sync': './sync.tgz',
+        '@open-sync/examples': './syncs.tgz',
+      },
     }),
   );
   await run({ cwd: temporary, command: ['bun', 'install', '--ignore-scripts'] });
@@ -42,8 +51,17 @@ try {
   await run({ cwd: temporary, command: ['bun', 'build.ts'] });
   await copyFile(join(temporary, 'consumer'), join(execution, 'consumer'));
   await run({ cwd: execution, command: ['./consumer', 'empty'] });
+  await writeFile(
+    join(temporary, 'adapter.ts'),
+    `import { githubPullRequests } from '@open-sync/examples/syncs/github';
+if (typeof githubPullRequests.load !== 'function') throw new Error('Missing GitHub sync');
+`,
+  );
+  await run({ cwd: temporary, command: ['bun', 'adapter.ts'] });
 } finally {
   await rm(temporary, { recursive: true, force: true });
   await rm(execution, { recursive: true, force: true });
-  await rm(license, { force: true });
+  for (const entry of packages) {
+    await rm(join(root, entry.directory, 'LICENSE'), { force: true });
+  }
 }

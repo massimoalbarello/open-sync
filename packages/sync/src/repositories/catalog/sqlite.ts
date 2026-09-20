@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite';
-import type { SyncDefinition } from '../../models/definition';
+import type { ConnectionRef, SyncDefinition } from '../../models/definition';
 import { fail } from '../../models/error';
 import type { Resource, Scope } from '../../models/identity';
 import type { CreateInstallation } from '../../models/installation';
@@ -112,6 +112,21 @@ export class SqliteCatalog implements CatalogRepository {
       hasMore: rows.length > limit,
       pageSize: limit,
     };
+  }
+  connectInstallation(input: Resource & { connection: ConnectionRef }) {
+    return this.db
+      .transaction(() => {
+        const installation = this.installation(input);
+        if (installation.connection || installation.enabled) {
+          fail('already_connected');
+        }
+        this.db
+          .query(`UPDATE installations SET connection=?,enabled=1,
+        binding_epoch=binding_epoch+1,status='ready',next_due_at=? WHERE owner_id=? AND id=?`)
+          .run(canonicalJson(input.connection).json, Date.now(), input.ownerId, input.id);
+        return this.installation(input);
+      })
+      .immediate();
   }
   setEnabled(input: Resource & { enabled: boolean }) {
     return this.db

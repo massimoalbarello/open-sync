@@ -5,7 +5,8 @@
   "workspaces": {
     "packages": [
       "apps/*",
-      "packages/*"
+      "packages/*",
+      "examples/*"
     ],
     "catalog": {
       "@better-auth/passkey": "^1.7.2",
@@ -23,7 +24,7 @@
     "check:types": "bun run --bun turbo check:types && bun run --bun tsc -p tsconfig.json",
     "check:codestyle": "bun run --bun biome check",
     "check:frontend": "node node_modules/eslint/bin/eslint.js apps/web/frontend/src",
-    "check:backend": "node node_modules/dependency-cruiser/bin/dependency-cruiser.mjs --config apps/web/backend/dependency-cruiser.config.mjs apps/web/backend/src packages/sync/src",
+    "check:backend": "node node_modules/dependency-cruiser/bin/dependency-cruiser.mjs --config apps/web/backend/dependency-cruiser.config.mjs apps/web/backend/src packages/sync/src examples/integrations/src",
     "check:all": "bun run --parallel check:types check:codestyle check:frontend check:backend",
     "check:commit-message": "bun run --bun commitlint",
     "fix:codestyle": "bun run --bun biome check --write",
