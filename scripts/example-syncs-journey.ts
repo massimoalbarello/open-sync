@@ -105,16 +105,39 @@ async function connectSource(input: {
     .waitFor();
   const syncId = new URL(page.url()).searchParams.get('syncId')!;
   assert.equal(await page.getByRole('button', { name: 'API key', exact: true }).count(), 0);
-  await page.getByLabel('Client ID', { exact: true }).fill(`fixture-${source.service}`);
-  if (source.service !== 'granola') {
+  if (source.service === 'granola') {
+    assert.equal(await page.getByLabel('Client ID', { exact: true }).count(), 0);
+    assert.equal(await page.getByLabel('Client secret', { exact: true }).count(), 0);
+    await page.screenshot({
+      path: 'artifacts/granola-connect.png',
+      fullPage: true,
+      animations: 'disabled',
+    });
+  } else {
+    await page.getByLabel('Client ID', { exact: true }).fill(`fixture-${source.service}`);
     await page.getByLabel('Client secret', { exact: true }).fill('fixture-client-secret');
+    await page.getByRole('button', { name: 'Save OAuth app', exact: true }).click();
+    await page.getByRole('button', { name: 'Edit OAuth app', exact: true }).waitFor();
   }
-  await page.getByRole('button', { name: 'Save OAuth app', exact: true }).click();
-  await page.getByRole('button', { name: 'Edit OAuth app', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Connect account', exact: true }).click();
+  if (source.service === 'granola') {
+    await page
+      .getByRole('alert')
+      .filter({ hasText: 'Could not start authorization. Try connecting again.' })
+      .waitFor();
+    assert.equal(await page.getByText('private-upstream-detail', { exact: false }).count(), 0);
+    await page.getByRole('button', { name: 'Connect account', exact: true }).click();
+  }
   await page.getByRole('heading', { name: 'Example consent boundary' }).waitFor();
   const authorization = new URL(page.url());
-  assert.equal(authorization.searchParams.get('client_id'), `fixture-${source.service}`);
+  assert.equal(
+    authorization.searchParams.get('client_id'),
+    source.service === 'granola' ? 'dynamically-registered-granola' : `fixture-${source.service}`,
+  );
+  if (source.service === 'granola') {
+    assert.equal(authorization.searchParams.get('code_challenge_method'), 'S256');
+    assert.ok(authorization.searchParams.get('code_challenge'));
+  }
   assert.equal(
     authorization.searchParams.get('redirect_uri'),
     `${origin}/api/open-sync/oauth/callback`,

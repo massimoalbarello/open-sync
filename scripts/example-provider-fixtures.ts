@@ -1,4 +1,5 @@
 // Provider HTTP boundaries only: authentication, OAuth state, MCP and storage stay real.
+let granolaRegistrationAttempts = 0;
 export async function exampleProviderResponse(request: Request): Promise<Response | undefined> {
   const url = new URL(request.url);
   if (url.hostname === 'oauth2.googleapis.com') {
@@ -17,19 +18,15 @@ export async function exampleProviderResponse(request: Request): Promise<Respons
     return slackResponse(url);
   }
   if (url.hostname === 'mcp-auth.granola.ai') {
-    return Response.json(
-      url.pathname.endsWith('/userinfo')
-        ? { sub: 'granola-alice', email: 'alice@example.com', name: 'Alice' }
-        : {
-            access_token: 'granola-fixture-token',
-            refresh_token: 'granola-refresh',
-            token_type: 'Bearer',
-            expires_in: 3600,
-            scope: 'openid profile email offline_access',
-          },
-    );
+    return await granolaOAuthResponse(request);
   }
   if (url.hostname === 'mcp.granola.ai') {
+    if (url.pathname.startsWith('/.well-known/oauth-protected-resource')) {
+      return Response.json({
+        resource: 'https://mcp.granola.ai/mcp',
+        authorization_servers: ['https://mcp-auth.granola.ai'],
+      });
+    }
     return await granolaResponse(request);
   }
   if (url.hostname === 'receiver.example') {
@@ -199,4 +196,51 @@ async function granolaResponse(request: Request) {
       throw new Error(`Unexpected MCP method: ${body.method}`);
   }
   return Response.json({ jsonrpc: '2.0', id: body.id, result });
+}
+
+async function granolaOAuthResponse(request: Request) {
+  const url = new URL(request.url);
+  if (url.pathname === '/.well-known/oauth-authorization-server') {
+    return Response.json({
+      issuer: 'https://mcp-auth.granola.ai',
+      authorization_endpoint: 'https://mcp-auth.granola.ai/oauth2/authorize',
+      token_endpoint: 'https://mcp-auth.granola.ai/oauth2/token',
+      registration_endpoint: 'https://mcp-auth.granola.ai/oauth2/register',
+      response_types_supported: ['code'],
+      code_challenge_methods_supported: ['S256'],
+      token_endpoint_auth_methods_supported: ['none'],
+    });
+  }
+  if (url.pathname === '/oauth2/register') {
+    const metadata = (await request.json()) as Record<string, unknown>;
+    if (
+      request.method !== 'POST' ||
+      metadata.token_endpoint_auth_method !== 'none' ||
+      !Array.isArray(metadata.redirect_uris) ||
+      metadata.redirect_uris.length !== 1
+    ) {
+      throw new Error('Invalid Granola dynamic registration');
+    }
+    if (++granolaRegistrationAttempts === 1) {
+      return Response.json(
+        { error: 'temporarily_unavailable', detail: 'private-upstream-detail' },
+        { status: 503 },
+      );
+    }
+    return Response.json(
+      { ...metadata, client_id: 'dynamically-registered-granola' },
+      { status: 201 },
+    );
+  }
+  return Response.json(
+    url.pathname.endsWith('/userinfo')
+      ? { sub: 'granola-alice', email: 'alice@example.com', name: 'Alice' }
+      : {
+          access_token: 'granola-fixture-token',
+          refresh_token: 'granola-refresh',
+          token_type: 'Bearer',
+          expires_in: 3600,
+          scope: 'openid profile email offline_access',
+        },
+  );
 }

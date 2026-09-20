@@ -59,7 +59,7 @@ export async function connectProvider(input: {
     connectionId: input.connectionId,
   });
   if (result.error) {
-    throw new Error('Could not start authorization. Check the OAuth app configuration.');
+    throw new Error('Could not start authorization. Try connecting again.');
   }
   return result.data;
 }

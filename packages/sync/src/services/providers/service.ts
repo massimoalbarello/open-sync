@@ -3,6 +3,7 @@ import { ProviderCatalog } from '../../models/provider-catalog';
 import { oauthClientValues, publicConnection } from '../../models/provider-values';
 import type {
   ConnectorManagement,
+  OAuthClientRegistration,
   ProviderScope,
   ProviderSetup as RuntimeProviderSetup,
 } from '../../models/providers';
@@ -11,12 +12,14 @@ import type { ProviderRepository } from '../../repositories/providers/contract';
 
 export class ProviderService {
   private providerCatalog?: Promise<ProviderCatalog>;
+  private readonly clientRegistrations = new Map<string, Promise<void>>();
   constructor(
     private readonly input: {
       repository: ProviderRepository;
       connector: ConnectorManagement;
       returnUrl(input: { service: string; id: string }): string;
       canConfigure(scope: ProviderScope): Promise<boolean>;
+      registrations?: Readonly<Record<string, OAuthClientRegistration>>;
       signal: AbortSignal;
       onConnected?(
         input: ProviderScope & { connection: { id: string; service: string } },
@@ -64,11 +67,23 @@ export class ProviderService {
     this.guard(input);
     return (await this.loadCatalog()).page(input);
   }
+  private registration(service: string) {
+    const registrations = this.input.registrations;
+    return registrations && Object.hasOwn(registrations, service)
+      ? registrations[service]
+      : undefined;
+  }
   private async setup(service: string): Promise<RuntimeProviderSetup> {
     const setup = await this.input.connector.call({
       path: `/v1/providers/${encodeURIComponent(service)}/setup`,
     });
-    return setup as unknown as RuntimeProviderSetup;
+    const result = setup as unknown as RuntimeProviderSetup;
+    return {
+      ...result,
+      ...(result.oauthClient && this.registration(service)
+        ? { oauthClient: { ...result.oauthClient, automaticRegistration: true } }
+        : {}),
+    };
   }
   async status(input: ProviderScope & { service: string }) {
     this.guard(input);
@@ -114,6 +129,8 @@ export class ProviderService {
     if (!(await this.input.canConfigure(input))) {
       fail('forbidden');
     }
+    // An explicit manual configuration wins over an automatic registration already in progress.
+    await this.clientRegistrations.get(input.service)?.catch(() => undefined);
     const setup = await this.setup(input.service);
     const auth = setup.auth.find((method) => method.type === 'oauth2');
     if (!auth) {
@@ -129,6 +146,58 @@ export class ProviderService {
     });
     return { configured: true };
   }
+  private async ensureClient(input: ProviderScope & { service: string }) {
+    const register = this.registration(input.service);
+    if (!register || (await this.setup(input.service)).oauthClient?.configured) {
+      return;
+    }
+    if (!(await this.input.canConfigure(input))) {
+      fail('forbidden');
+    }
+    let pending = this.clientRegistrations.get(input.service);
+    if (!pending) {
+      pending = this.registerClient({ service: input.service, register }).finally(() => {
+        this.clientRegistrations.delete(input.service);
+      });
+      this.clientRegistrations.set(input.service, pending);
+    }
+    await pending;
+  }
+
+  private async registerClient(input: { service: string; register: OAuthClientRegistration }) {
+    const setup = await this.setup(input.service);
+    if (setup.oauthClient?.configured) {
+      return;
+    }
+    const auth = setup.auth.find((method) => method.type === 'oauth2');
+    if (!auth || !setup.oauthClient) {
+      fail('provider_request_failed');
+    }
+    try {
+      const timeoutMs = 30_000;
+      const values = await input.register({
+        redirectUri: setup.oauthClient.expectedRedirectUri,
+        scopes: auth.scopes,
+        signal: AbortSignal.any([this.input.signal, AbortSignal.timeout(timeoutMs)]),
+      });
+      this.input.signal.throwIfAborted();
+      await this.input.connector.call({
+        path: `/api/oauth/configs/${encodeURIComponent(input.service)}`,
+        method: 'PUT',
+        body: oauthClientValues({
+          auth,
+          values: { clientId: values.clientId, clientSecret: values.clientSecret ?? '' },
+        }),
+      });
+    } catch {
+      // Registration errors may contain credentials or upstream bodies.
+      throw new SyncError({
+        code: 'provider_request_failed',
+        message: 'Could not register the OAuth client. Try connecting again.',
+      });
+    }
+  }
+
   private async reconnectTarget(input: ProviderScope & { service: string; connectionId?: string }) {
     if (!input.connectionId) {
       return undefined;
@@ -148,6 +217,7 @@ export class ProviderService {
   ) {
     this.guard(input);
     const target = await this.reconnectTarget(input);
+    await this.ensureClient(input);
     const id = target?.id ?? `connection_${crypto.randomUUID()}`;
     const result = await this.input.connector.call({
       path: target

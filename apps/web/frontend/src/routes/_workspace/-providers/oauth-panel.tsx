@@ -36,7 +36,7 @@ export function AuthorizationForm(input: {
   service: string;
   connectionId?: string;
   auth: OAuth;
-  disabled: boolean;
+  client: RuntimeProviderSetup['oauthClient'];
 }) {
   const id = useId();
   const connect = useMutation({
@@ -115,7 +115,12 @@ export function AuthorizationForm(input: {
           {connect.error.message}
         </p>
       )}
-      <Button type="submit" disabled={connect.isPending || input.disabled}>
+      <Button
+        type="submit"
+        disabled={
+          connect.isPending || !(input.client?.configured || input.client?.automaticRegistration)
+        }
+      >
         {connect.isPending
           ? 'Connecting…'
           : input.connectionId

@@ -1,6 +1,7 @@
 import { createOpenSync, type OpenSyncRuntime } from '@context-use/open-sync';
 import { httpDestination } from '@open-sync/examples/destinations/http';
 import { localDestination } from '@open-sync/examples/destinations/local';
+import { granolaClientRegistration } from '@open-sync/examples/providers/granola';
 import { createApp } from '#backend/app.ts';
 import { createSqliteDatabase } from '#backend/db/client.ts';
 import { runMigrations } from '#backend/db/migrate.ts';
@@ -46,6 +47,7 @@ try {
     authorizationRedirect: ({ service, outcome }) =>
       `/providers/${encodeURIComponent(service)}${outcome === 'failed' ? '?authorization=failed' : ''}`,
     definitions: syncDefinitions,
+    oauthClientRegistrations: { granola: granolaClientRegistration({ fetch }) },
     onProviderConnected: (input) => dashboard.connectWaiting(input),
     destinationTypes: {
       local: localDestination({ accept: (input) => receiver.accept(input) }),

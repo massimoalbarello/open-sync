@@ -11,12 +11,17 @@ import type { DestinationType } from './models/delivery';
 import { fail } from './models/error';
 import type { Scope } from './models/identity';
 import { defaultTiming, type QueueLimits } from './models/limits';
+import type { OAuthClientRegistration } from './models/providers';
 import { SqliteProviders } from './repositories/providers/sqlite';
 import { createSyncRuntime } from './runtime';
 import { ProviderService } from './services/providers/service';
 
 export type { Scope } from './models/identity';
-export type { ProviderCatalogEntry, ProviderSetup } from './models/providers';
+export type {
+  OAuthClientRegistration,
+  ProviderCatalogEntry,
+  ProviderSetup,
+} from './models/providers';
 
 export interface OpenSyncOptions {
   definitions: readonly SyncRegistration[];
@@ -31,6 +36,8 @@ export interface OpenSyncOptions {
   authorize(request: Request): Scope | null | Promise<Scope | null>;
   /** OAuth application settings are instance-wide, so require the host's administrator policy. */
   canConfigureProviders(scope: Scope): Promise<boolean>;
+  /** Optional automatic OAuth client setup, selected by the host; never runs on catalog reads. */
+  oauthClientRegistrations?: Readonly<Record<string, OAuthClientRegistration>>;
   /** Called after an owned connection is saved, including a retried OAuth completion. */
   onProviderConnected?(
     input: Scope & { connection: { id: string; service: string } },
@@ -130,6 +137,7 @@ export async function createOpenSync(options: OpenSyncOptions): Promise<OpenSync
       connector: management,
       signal: lifetime.signal,
       canConfigure: options.canConfigureProviders,
+      registrations: options.oauthClientRegistrations,
       onConnected: options.onProviderConnected,
       returnUrl: (input) =>
         `${publicUrl}/providers/${encodeURIComponent(input.service)}/return/${input.id}`,
