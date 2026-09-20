@@ -1,5 +1,6 @@
 import { bindProvider, type ProviderGateway } from '../execution/provider';
 import type { WorkerControl } from '../execution/worker';
+import type { ConnectionRef } from '../models/definition';
 import { fail } from '../models/error';
 import type { Resource, Scope } from '../models/identity';
 import type { CreateInstallation } from '../models/installation';
@@ -65,7 +66,7 @@ export class SyncManagement {
     if (input.intervalMs !== undefined) {
       positive(input.intervalMs);
     }
-    if (definition.provider) {
+    if (definition.provider && (input.connection || input.enabled !== false)) {
       await bindProvider({
         actorId: input.actorId,
         ownerId: input.ownerId,
@@ -92,8 +93,34 @@ export class SyncManagement {
     this.guard(input);
     return this.input.catalog.installation(input);
   }
+  async connectInstallation(input: Resource & { connection: ConnectionRef }) {
+    this.guard(input);
+    const installation = this.input.catalog.installation(input);
+    if (installation.connection || installation.enabled) {
+      fail('already_connected');
+    }
+    const { definition } = this.input.registry.definition(installation.definition);
+    if (!definition.provider) {
+      fail('unexpected_connection');
+    }
+    await bindProvider({
+      ...input,
+      requirements: definition.provider,
+      gateway: this.input.gateway,
+      signal: AbortSignal.timeout(this.input.timeoutMs),
+    });
+    this.guard(input);
+    return this.input.catalog.connectInstallation(input);
+  }
   async setEnabled(input: Resource & { enabled: boolean }) {
     this.guard(input);
+    const installation = this.input.catalog.installation(input);
+    if (input.enabled && !installation.connection) {
+      const { definition } = this.input.registry.definition(installation.definition);
+      if (definition.provider) {
+        fail('connection_required');
+      }
+    }
     const result = this.input.catalog.setEnabled(input);
     await this.input.worker.cancel(input);
     return result;

@@ -4,6 +4,14 @@ const core = '^packages/sync/src/';
 export default {
   forbidden: [
     {
+      name: 'integrations-consume-public-contracts',
+      severity: 'error',
+      from: { path: '^examples/.*/src/' },
+      to: {
+        path: '^(apps/|packages/ui/|packages/sync/src/(db|repositories|services|execution|connector)/|node_modules/@oomol-lab/open-connector/)',
+      },
+    },
+    {
       name: 'only-open-sync-composition-loads-connector',
       severity: 'error',
       from: {

@@ -52,6 +52,14 @@ export class SqliteProviders implements ProviderRepository {
         .get(input.ownerId, input.id),
     );
   }
+  updateAccount(input: ProviderScope & ProviderConnection) {
+    this.db
+      .query(
+        'UPDATE provider_connections SET account=? WHERE owner_id=? AND id=? AND connector_id=?',
+      )
+      .run(input.account, input.ownerId, input.id, input.connectorId);
+    return Promise.resolve();
+  }
   add(input: ProviderScope & ProviderConnection) {
     this.db
       .query(
@@ -60,18 +68,26 @@ export class SqliteProviders implements ProviderRepository {
       .run(input.ownerId, input.id, input.connectorId, input.account, input.service);
     return Promise.resolve();
   }
-  complete(input: ProviderScope & ProviderConnection) {
+  complete(input: ProviderScope & ProviderConnection & { requestId: string }) {
     this.db
       .transaction(() => {
         // A superseded authorization must never claim a connection.
         this.db
           .query(`INSERT INTO provider_connections(owner_id,id,connector_id,account,service)
-        SELECT owner_id,id,?,?,? FROM provider_authorizations WHERE owner_id=? AND id=?
-        ON CONFLICT(owner_id,id) DO NOTHING`)
-          .run(input.connectorId, input.account, input.service, input.ownerId, input.id);
+        SELECT owner_id,id,?,?,? FROM provider_authorizations WHERE owner_id=? AND id=? AND request_id=?
+        ON CONFLICT(owner_id,id) DO UPDATE SET account=excluded.account
+        WHERE provider_connections.connector_id=excluded.connector_id`)
+          .run(
+            input.connectorId,
+            input.account,
+            input.service,
+            input.ownerId,
+            input.id,
+            input.requestId,
+          );
         this.db
-          .query('DELETE FROM provider_authorizations WHERE owner_id=? AND id=?')
-          .run(input.ownerId, input.id);
+          .query('DELETE FROM provider_authorizations WHERE owner_id=? AND id=? AND request_id=?')
+          .run(input.ownerId, input.id, input.requestId);
       })
       .immediate();
     return Promise.resolve();

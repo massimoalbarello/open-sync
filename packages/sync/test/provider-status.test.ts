@@ -60,7 +60,12 @@ test('connection status checks only owned provider references and never reports 
     for (const next of ['active', 'reauth_required', 'failed']) {
       status = next;
       expect((await service.status({ ...owner, service: 'github' })).connections).toEqual([
-        { id: 'local', account: 'Owner', status: next === 'failed' ? 'unknown' : next },
+        {
+          id: 'local',
+          account: 'Owner',
+          status: next === 'failed' ? 'unknown' : next,
+          authType: undefined,
+        },
       ]);
     }
   } finally {

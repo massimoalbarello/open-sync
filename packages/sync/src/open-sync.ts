@@ -31,6 +31,10 @@ export interface OpenSyncOptions {
   authorize(request: Request): Scope | null | Promise<Scope | null>;
   /** OAuth application settings are instance-wide, so require the host's administrator policy. */
   canConfigureProviders(scope: Scope): Promise<boolean>;
+  /** Called after an owned connection is saved, including a retried OAuth completion. */
+  onProviderConnected?(
+    input: Scope & { connection: { id: string; service: string } },
+  ): Promise<void>;
   /** Final host UI location after Open Sync completes authorization. */
   authorizationRedirect?(input: { service: string; outcome: 'connected' | 'failed' }): string;
 }
@@ -126,6 +130,7 @@ export async function createOpenSync(options: OpenSyncOptions): Promise<OpenSync
       connector: management,
       signal: lifetime.signal,
       canConfigure: options.canConfigureProviders,
+      onConnected: options.onProviderConnected,
       returnUrl: (input) =>
         `${publicUrl}/providers/${encodeURIComponent(input.service)}/return/${input.id}`,
     });
