@@ -1,26 +1,31 @@
 import type { SyncRegistration } from '@context-use/open-sync/definition';
 import { z } from 'zod';
 import { jsonSchema } from '../../schema';
-import { run } from './messages';
-import { checkpointSchema, initialCheckpoint, messageSchema } from './models';
+import { checkpointSchema, initialCheckpoint, threadSchema } from './models';
+import { run } from './threads';
 
-export const slackMessages = {
+export const slackThreads = {
   definition: {
-    id: 'slack.messages',
-    name: 'Slack channel messages',
+    id: 'slack.threads',
+    name: 'Slack threads',
     description:
-      'Top-level messages from your joined public and private channels over the last 30 days. Rechecks for edits; excludes thread replies, DMs and deletion detection.',
+      'Complete threads discovered in the last 30 days of joined-channel history, including all replies. Rechecks for edits; excludes DMs and deletion detection.',
     version: '1',
-    artifactId: 'open-sync/slack-messages/1',
+    artifactId: 'open-sync/slack-threads/1',
     provider: {
       service: 'slack',
       actions: [],
-      proxyPaths: ['/auth.test', '/users.conversations', '/conversations.history'],
+      proxyPaths: [
+        '/auth.test',
+        '/users.conversations',
+        '/conversations.history',
+        '/conversations.replies',
+      ],
     },
     configSchema: jsonSchema(z.strictObject({})),
     checkpointSchema: jsonSchema(checkpointSchema),
     initialCheckpoint,
-    kinds: { message: jsonSchema(messageSchema) },
+    kinds: { thread: jsonSchema(threadSchema) },
   },
   load: () => ({ run }),
 } satisfies SyncRegistration;

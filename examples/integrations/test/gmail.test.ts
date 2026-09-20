@@ -1,26 +1,28 @@
 import { expect, test } from 'bun:test';
 import type { JsonObject } from '@context-use/open-sync/json';
-import { gmailEmails } from '../src/syncs/gmail/definition';
+import { gmailThreads } from '../src/syncs/gmail/definition';
 import { fixture, unused } from './fixture';
 
-const email = (id: string) => ({
-  messageId: id,
-  threadId: 'thread',
+const email = (input: { id: string; threadId: string; sentAt?: string }) => ({
+  messageId: input.id,
+  threadId: input.threadId,
   subject: 'Lunch',
   sender: 'Sam <sam@example.com>',
   to: 'alice@example.com',
-  messageTimestamp: '2026-09-19T12:00:00.000Z',
+  messageTimestamp: input.sentAt ?? '2026-09-19T12:00:00.000Z',
   messageText: 'Meet at noon?',
   labelIds: ['UNREAD', 'INBOX'],
   payload: { raw: 'omit me' },
 });
 
-test('Gmail resumes a frozen search after restart, emits simple emails, and revisits edits without duplicate deliveries', async () => {
+test('Gmail resumes thread discovery, includes older context, and updates whole conversations without duplicate records', async () => {
   const requests: JsonObject[] = [];
+  const threadCount = 2;
   let account = 'alice@example.com';
-  let body = 'Meet at noon?';
+  let updated = false;
+  const root = email({ id: 'root', threadId: 'a', sentAt: '2020-01-01T00:00:00.000Z' });
   const f = await fixture({
-    registration: gmailEmails,
+    registration: gmailThreads,
     provider: {
       get: unused,
       post: unused,
@@ -28,11 +30,36 @@ test('Gmail resumes a frozen search after restart, emits simple emails, and revi
         if (id === 'gmail.get_profile') {
           return Promise.resolve<JsonObject>({ emailAddress: account });
         }
+        expect(id).toBe('gmail.list_threads');
+        expect(input.verbose).toBe(true);
         requests.push(input);
         return Promise.resolve<JsonObject>(
           input.pageToken
-            ? { messages: [{ ...email('b'), messageText: body }] }
-            : { messages: [email('a')], nextPageToken: 'next' },
+            ? { threads: [{ threadId: 'b', messages: [email({ id: 'single', threadId: 'b' })] }] }
+            : {
+                threads: [
+                  {
+                    threadId: 'a',
+                    messages: [
+                      ...(updated
+                        ? [
+                            email({
+                              id: 'new-reply',
+                              threadId: 'a',
+                              sentAt: '2026-09-20T12:00:00.000Z',
+                            }),
+                          ]
+                        : []),
+                      {
+                        ...email({ id: 'reply', threadId: 'a' }),
+                        messageText: updated ? 'Meet at one?' : 'Sure!',
+                      },
+                      root,
+                    ],
+                  },
+                ],
+                nextPageToken: 'next',
+              },
         );
       },
     },
@@ -44,25 +71,42 @@ test('Gmail resumes a frozen search after restart, emits simple emails, and revi
     await f.finish();
     expect(requests[1]?.query).toBe(requests[0]?.query);
     expect(requests[1]?.pageToken).toBe('next');
-    expect(f.records.map((record) => record.id)).toEqual(['a', 'b']);
-    const record = f.records[0]!;
-    expect(record.operation === 'upsert' && record.data).toEqual({
-      subject: 'Lunch',
-      body: 'Meet at noon?',
-      from: 'Sam <sam@example.com>',
-      to: 'alice@example.com',
-      sentAt: '2026-09-19T12:00:00.000Z',
-      threadId: 'thread',
-      labels: ['INBOX', 'UNREAD'],
-      url: 'https://mail.google.com/mail/?authuser=alice%40example.com#all/a',
+    expect(f.records.map((record) => [record.kind, record.id])).toEqual([
+      ['thread', 'a'],
+      ['thread', 'b'],
+    ]);
+    expect(f.records[0]).toMatchObject({
+      data: {
+        subject: 'Lunch',
+        url: 'https://mail.google.com/mail/?authuser=alice%40example.com#all/a',
+        messages: [
+          {
+            id: 'root',
+            body: 'Meet at noon?',
+            from: 'Sam <sam@example.com>',
+            to: 'alice@example.com',
+            sentAt: root.messageTimestamp,
+            labels: ['INBOX', 'UNREAD'],
+          },
+          { id: 'reply', body: 'Sure!' },
+        ],
+      },
     });
+    expect(JSON.stringify(f.records)).not.toContain('omit me');
     f.queue();
     await f.finish();
     expect(f.records).toHaveLength(2);
-    body = 'Meet at one instead?';
+    updated = true;
     f.queue();
     await f.finish();
-    expect(f.records.at(-1)).toMatchObject({ id: 'b', revision: 2, data: { body } });
+    expect(f.records).toHaveLength(threadCount + 1);
+    expect(f.records.at(-1)).toMatchObject({
+      id: 'a',
+      revision: 2,
+      data: {
+        messages: [{ id: 'root' }, { id: 'reply', body: 'Meet at one?' }, { id: 'new-reply' }],
+      },
+    });
     account = 'someone-else@example.com';
     f.queue();
     await f.engine.tick();
@@ -73,10 +117,10 @@ test('Gmail resumes a frozen search after restart, emits simple emails, and revi
   }
 });
 
-test('Gmail does not checkpoint a malformed record or a repeated page token', async () => {
-  let malformed = true;
+test('Gmail never commits an empty or mismatched thread or advances a repeated cursor', async () => {
+  let mode: 'empty' | 'foreign' | 'valid' = 'empty';
   const f = await fixture({
-    registration: gmailEmails,
+    registration: gmailThreads,
     provider: {
       get: unused,
       post: unused,
@@ -85,10 +129,13 @@ test('Gmail does not checkpoint a malformed record or a repeated page token', as
           id === 'gmail.get_profile'
             ? { emailAddress: 'alice@example.com' }
             : {
-                messages: [
+                threads: [
                   {
-                    ...email('a'),
-                    messageTimestamp: malformed ? 'invalid' : email('a').messageTimestamp,
+                    threadId: 'a',
+                    messages:
+                      mode === 'empty'
+                        ? []
+                        : [email({ id: 'root', threadId: mode === 'foreign' ? 'b' : 'a' })],
                   },
                 ],
                 nextPageToken: 'repeat',
@@ -97,9 +144,15 @@ test('Gmail does not checkpoint a malformed record or a repeated page token', as
     },
   });
   try {
-    await f.engine.tick();
-    expect(f.saved.checkpoint).toEqual(gmailEmails.definition.initialCheckpoint);
-    malformed = false;
+    for (const value of ['empty', 'foreign'] as const) {
+      mode = value;
+      f.queue();
+      await f.engine.tick();
+      expect(f.saved.status).toBe('execution_failed');
+      expect(f.saved.checkpoint).toEqual(gmailThreads.definition.initialCheckpoint);
+      expect(f.records).toHaveLength(0);
+    }
+    mode = 'valid';
     f.queue();
     await f.engine.tick();
     const committed = f.saved.checkpoint;

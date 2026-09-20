@@ -5,14 +5,14 @@ type Page = Awaited<ReturnType<typeof virtualPasskeyBrowser>>['page'];
 const sources = [
   {
     service: 'gmail',
-    name: 'Gmail emails',
-    kind: 'email',
+    name: 'Gmail threads',
+    kind: 'thread',
     authorization: 'https://accounts.google.com/o/oauth2/v2/auth**',
   },
   {
     service: 'slack',
-    name: 'Slack channel messages',
-    kind: 'message',
+    name: 'Slack threads',
+    kind: 'thread',
     authorization: 'https://slack.com/oauth/v2_user/authorize**',
   },
   {
@@ -35,7 +35,7 @@ export async function exampleSyncsJourney(input: { page: Page; origin: string })
     fullPage: true,
     animations: 'disabled',
   });
-  await page.goto(`${origin}/syncs/new?source=gmail.emails`);
+  await page.goto(`${origin}/syncs/new?source=gmail.threads`);
   await page.getByLabel('Destination', { exact: true }).click();
   await page.getByRole('option', { name: 'External API', exact: true }).click();
   await page.getByRole('button', { name: 'Create sync', exact: true }).click();
@@ -134,5 +134,21 @@ async function connectSource(input: {
   ).json();
   assert.equal(records.records[0].kind, source.kind);
   assert.ok(!JSON.stringify(records).includes('fixture-token'));
+  if (source.kind === 'thread') {
+    assert.equal(records.records.length, 1);
+    assert.deepEqual(
+      records.records[0].data.messages.map((message: { body: string }) => message.body),
+      source.service === 'gmail'
+        ? ['Meet at noon?', 'Yes, see you there!']
+        : ['Lunch?', 'At noon?', 'See you there!'],
+    );
+    await page.locator('summary').first().click();
+    await page.locator('pre').getByText('"messages":', { exact: false }).waitFor();
+    await page.screenshot({
+      path: `artifacts/${source.service}-thread-record.png`,
+      fullPage: true,
+      animations: 'disabled',
+    });
+  }
   console.log(`${source.name}: OAuth and local delivery passed.`);
 }

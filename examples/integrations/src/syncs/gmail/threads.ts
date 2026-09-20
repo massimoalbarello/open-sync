@@ -5,7 +5,8 @@ import { checkpointSchema, initialCheckpoint, responseSchema } from './models';
 
 const windowMs = 2_592_000_000;
 const millisecondsPerSecond = 1000;
-const pageSize = 10;
+// Commit each complete thread separately, without batching several large conversations.
+const pageSize = 1;
 
 export async function* run(context: SyncContext): AsyncGenerator<SyncPage> {
   const profile = z
@@ -29,10 +30,10 @@ export async function* run(context: SyncContext): AsyncGenerator<SyncPage> {
     context.signal.throwIfAborted();
     const response = responseSchema.parse(
       await context.provider.action({
-        id: 'gmail.fetch_emails',
+        id: 'gmail.list_threads',
         input: {
           query: checkpoint.query!,
-          detail: 'full',
+          verbose: true,
           maxResults: pageSize,
           ...(checkpoint.pageToken ? { pageToken: checkpoint.pageToken } : {}),
         },
@@ -40,21 +41,37 @@ export async function* run(context: SyncContext): AsyncGenerator<SyncPage> {
     );
     const next = response.nextPageToken || null;
     checkCursor({ next, previous: checkpoint.pageToken, seen });
-    const records: SyncRecord[] = response.messages.map((message) => ({
-      operation: 'upsert',
-      kind: 'email',
-      id: message.messageId,
-      data: {
-        subject: message.subject,
-        body: message.messageText,
-        from: message.sender,
-        to: message.to,
-        sentAt: message.messageTimestamp,
-        url: `https://mail.google.com/mail/?authuser=${encodeURIComponent(profile.emailAddress)}#all/${encodeURIComponent(message.messageId)}`,
-        threadId: message.threadId,
-        labels: [...message.labelIds].sort(),
-      },
-    }));
+    const records: SyncRecord[] = response.threads.map((thread) => {
+      if (thread.messages.some((message) => message.threadId !== thread.threadId)) {
+        throw new Error('Gmail returned a message from a different thread.');
+      }
+      const messages = [...thread.messages].sort(
+        // biome-ignore lint/complexity/useMaxParams: Array.sort passes both messages.
+        (a, b) =>
+          Date.parse(a.messageTimestamp) - Date.parse(b.messageTimestamp) ||
+          a.messageId.localeCompare(b.messageId),
+      );
+      if (new Set(messages.map((message) => message.messageId)).size !== messages.length) {
+        throw new Error('Gmail repeated a message in a thread.');
+      }
+      return {
+        operation: 'upsert',
+        kind: 'thread',
+        id: thread.threadId,
+        data: {
+          subject: messages[0]!.subject,
+          url: `https://mail.google.com/mail/?authuser=${encodeURIComponent(profile.emailAddress)}#all/${encodeURIComponent(thread.threadId)}`,
+          messages: messages.map((message) => ({
+            id: message.messageId,
+            body: message.messageText,
+            from: message.sender,
+            to: message.to,
+            sentAt: message.messageTimestamp,
+            labels: [...message.labelIds].sort(),
+          })),
+        },
+      };
+    });
     checkpoint = next
       ? { ...checkpoint, pageToken: next }
       : { ...initialCheckpoint, account: profile.emailAddress };

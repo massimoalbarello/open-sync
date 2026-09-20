@@ -3,6 +3,7 @@ import type { JsonObject } from '@context-use/open-sync/json';
 import { z } from 'zod';
 
 export class ExpiredCursor extends Error {}
+export class ThreadNotFound extends Error {}
 
 export async function request(input: { context: SyncContext; path: string; query?: JsonObject }) {
   const response = await input.context.provider.get({ path: input.path, query: input.query });
@@ -14,6 +15,9 @@ export async function request(input: { context: SyncContext; path: string; query
   const result = body.parse(response.body);
   if (result.error === 'invalid_cursor') {
     throw new ExpiredCursor();
+  }
+  if (input.path === '/conversations.replies' && result.error === 'thread_not_found') {
+    throw new ThreadNotFound();
   }
   if (!result.ok) {
     throw new Error('Slack could not read this account or channel. Check OAuth permissions.');

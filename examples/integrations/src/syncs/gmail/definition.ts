@@ -1,22 +1,22 @@
 import type { SyncRegistration } from '@context-use/open-sync/definition';
 import { z } from 'zod';
 import { jsonSchema } from '../../schema';
-import { run } from './messages';
-import { checkpointSchema, emailSchema, initialCheckpoint } from './models';
+import { checkpointSchema, initialCheckpoint, threadSchema } from './models';
+import { run } from './threads';
 
-export const gmailEmails = {
+export const gmailThreads = {
   definition: {
-    id: 'gmail.emails',
-    name: 'Gmail emails',
+    id: 'gmail.threads',
+    name: 'Gmail threads',
     description:
-      'Email subjects, bodies and participants from the last 30 days. Rechecks that window for changes; does not remove previously saved emails.',
+      'Complete email threads with activity in the last 30 days, including older messages in each conversation. Rechecks for changes; does not infer deleted threads.',
     version: '1',
-    artifactId: 'open-sync/gmail-emails/1',
-    provider: { service: 'gmail', actions: ['gmail.get_profile', 'gmail.fetch_emails'] },
+    artifactId: 'open-sync/gmail-threads/1',
+    provider: { service: 'gmail', actions: ['gmail.get_profile', 'gmail.list_threads'] },
     configSchema: jsonSchema(z.strictObject({})),
     checkpointSchema: jsonSchema(checkpointSchema),
     initialCheckpoint,
-    kinds: { email: jsonSchema(emailSchema) },
+    kinds: { thread: jsonSchema(threadSchema) },
   },
   load: () => ({ run }),
 } satisfies SyncRegistration;

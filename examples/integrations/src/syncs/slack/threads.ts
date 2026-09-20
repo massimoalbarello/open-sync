@@ -1,14 +1,17 @@
 import type { SyncContext, SyncPage } from '@context-use/open-sync/definition';
-import type { SyncRecord } from '@context-use/open-sync/delivery';
 import { z } from 'zod';
 import {
   channelSchema,
   checkpointSchema,
+  finishChannel,
+  finishThread,
   historySchema,
   initialCheckpoint,
+  nextCursor,
   paginationSchema,
 } from './models';
-import { ExpiredCursor, request } from './request';
+import { readThread } from './replies';
+import { ExpiredCursor, request, ThreadNotFound } from './request';
 
 const windowSeconds = 2_592_000;
 const millisecondsPerSecond = 1000;
@@ -32,19 +35,29 @@ export async function* run(context: SyncContext): AsyncGenerator<SyncPage> {
       return;
     }
     try {
-      const page = checkpoint.channels.length
-        ? await readHistory({ context, checkpoint, workspaceUrl: identity.url })
-        : await readDirectory({ context, checkpoint });
+      const page = checkpoint.threads.length
+        ? await readThread({ context, checkpoint, workspaceUrl: identity.url })
+        : checkpoint.channels.length
+          ? await readHistory({ context, checkpoint })
+          : await readDirectory({ context, checkpoint });
       checkpoint = checkpointSchema.parse(page.checkpoint);
       yield page;
     } catch (error) {
-      if (!(error instanceof ExpiredCursor)) {
-        throw error;
-      }
-      checkpoint = restartPage(checkpoint);
+      checkpoint = recover({ checkpoint, error });
       yield { deliverable: { records: [] }, checkpoint, complete: false };
     }
   }
+}
+
+function recover(input: { checkpoint: z.infer<typeof checkpointSchema>; error: unknown }) {
+  if (input.error instanceof ThreadNotFound) {
+    // A thread can disappear between discovery and hydration. Keep any previously delivered copy.
+    return finishThread(input.checkpoint);
+  }
+  if (input.error instanceof ExpiredCursor) {
+    return restartPage(input.checkpoint);
+  }
+  throw input.error;
 }
 
 async function readDirectory(input: {
@@ -87,7 +100,6 @@ async function readDirectory(input: {
 async function readHistory(input: {
   context: SyncContext;
   checkpoint: z.infer<typeof checkpointSchema>;
-  workspaceUrl: string;
 }): Promise<SyncPage> {
   const { context, checkpoint } = input;
   const channel = checkpoint.channels[0]!;
@@ -105,34 +117,19 @@ async function readHistory(input: {
       },
     }),
   );
-  const cursor = response.response_metadata?.next_cursor || null;
-  if ((cursor && cursor === checkpoint.messageCursor) || (response.has_more && !cursor)) {
-    throw new Error('Slack returned incomplete message pagination.');
-  }
-  const records: SyncRecord[] = response.messages.map((message) => ({
-    operation: 'upsert',
-    kind: 'message',
-    id: `${channel.id}:${message.ts}`,
-    data: {
-      body: message.text ?? '',
-      author: message.user ?? message.bot_id ?? null,
-      channel: channel.name ?? channel.id,
-      channelId: channel.id,
-      sentAt: new Date(Number(message.ts) * millisecondsPerSecond).toISOString(),
-      url: new URL(
-        `archives/${encodeURIComponent(channel.id)}/p${message.ts.replace('.', '')}`,
-        input.workspaceUrl,
-      ).href,
-      threadId: message.thread_ts ? `${channel.id}:${message.thread_ts}` : null,
-    },
-  }));
+  const cursor = nextCursor({ response, previous: checkpoint.messageCursor });
+  // Thread broadcasts can appear beside their parent in channel history.
+  const threads = new Map(
+    response.messages.map((message) => [message.thread_ts ?? message.ts, message]),
+  );
   return {
-    deliverable: { records },
-    checkpoint: {
+    deliverable: { records: [] },
+    checkpoint: finishChannel({
       ...checkpoint,
       messageCursor: cursor,
-      channels: cursor ? checkpoint.channels : checkpoint.channels.slice(1),
-    },
+      historyComplete: !cursor,
+      threads: [...threads.values()],
+    }),
     complete: false,
   };
 }
@@ -152,6 +149,12 @@ function beginCycle(input: { context: SyncContext; account: string }) {
 }
 
 function restartPage(checkpoint: z.infer<typeof checkpointSchema>) {
+  if (checkpoint.threads.length) {
+    if (!checkpoint.replyCursor) {
+      throw new Error('Slack rejected a request without a reply cursor.');
+    }
+    return { ...checkpoint, replyCursor: null, messages: [] };
+  }
   const cursor = checkpoint.channels.length ? checkpoint.messageCursor : checkpoint.directoryCursor;
   if (!cursor) {
     throw new Error('Slack rejected a request without a cursor.');

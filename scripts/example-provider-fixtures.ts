@@ -46,28 +46,42 @@ function gmailResponse(url: URL) {
       historyId: '1',
     });
   }
-  if (url.pathname.endsWith('/messages')) {
-    return Response.json({ messages: [{ id: 'email-1', threadId: 'thread-1' }] });
+  if (url.pathname.endsWith('/threads')) {
+    return Response.json({ threads: [{ id: 'thread-1' }] });
   }
-  if (url.pathname.endsWith('/messages/email-1')) {
+  if (url.pathname.endsWith('/threads/thread-1')) {
     return Response.json({
-      id: 'email-1',
-      threadId: 'thread-1',
-      labelIds: ['INBOX'],
-      internalDate: String(Date.now()),
-      snippet: 'Meet at noon?',
-      payload: {
-        mimeType: 'text/plain',
-        headers: [
-          { name: 'Subject', value: 'Lunch' },
-          { name: 'From', value: 'sam@example.com' },
-          { name: 'To', value: 'alice@example.com' },
-        ],
-        body: { data: Buffer.from('Meet at noon?').toString('base64url') },
-      },
+      id: 'thread-1',
+      messages: [
+        gmailMessage({ id: 'email-1', date: '2020-01-01T12:00:00.000Z', text: 'Meet at noon?' }),
+        gmailMessage({
+          id: 'email-2',
+          date: '2026-09-20T12:00:00.000Z',
+          text: 'Yes, see you there!',
+        }),
+      ],
     });
   }
   throw new Error(`Unexpected Gmail fixture path: ${url.pathname}`);
+}
+
+function gmailMessage(input: { id: string; date: string; text: string }) {
+  return {
+    id: input.id,
+    threadId: 'thread-1',
+    labelIds: ['INBOX'],
+    internalDate: String(Date.parse(input.date)),
+    snippet: input.text,
+    payload: {
+      mimeType: 'text/plain',
+      headers: [
+        { name: 'Subject', value: 'Lunch' },
+        { name: 'From', value: 'sam@example.com' },
+        { name: 'To', value: 'alice@example.com' },
+      ],
+      body: { data: Buffer.from(input.text).toString('base64url') },
+    },
+  };
 }
 
 function slackResponse(url: URL) {
@@ -104,15 +118,39 @@ function slackResponse(url: URL) {
         };
       case '/api/conversations.history':
         return {
-          messages: [{ ts: '1789819200.000001', text: 'Hello from Slack', user: 'U1' }],
+          messages: [{ ts: '1789819200.000001', text: 'Lunch?', user: 'U1', reply_count: 2 }],
           has_more: false,
           response_metadata: { next_cursor: '' },
         };
+      case '/api/conversations.replies':
+        return slackReplies(url);
       default:
         throw new Error(`Unexpected Slack fixture path: ${url.pathname}`);
     }
   })();
   return Response.json({ ok: true, ...body }, { headers: { 'x-oauth-scopes': scopes } });
+}
+
+function slackReplies(url: URL) {
+  const root = '1789819200.000001';
+  if (url.searchParams.get('oldest') || url.searchParams.get('latest')) {
+    throw new Error('Thread messages must not be clipped to the discovery window');
+  }
+  return url.searchParams.get('cursor')
+    ? {
+        messages: [
+          { ts: '1789819202.000001', thread_ts: root, text: 'See you there!', user: 'U1' },
+        ],
+        has_more: false,
+      }
+    : {
+        messages: [
+          { ts: root, thread_ts: root, text: 'Lunch?', user: 'U1', reply_count: 2 },
+          { ts: '1789819201.000001', thread_ts: root, text: 'At noon?', user: 'U2' },
+        ],
+        has_more: true,
+        response_metadata: { next_cursor: 'replies-2' },
+      };
 }
 
 async function granolaResponse(request: Request) {

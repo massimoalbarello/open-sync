@@ -54,12 +54,12 @@ try {
   await writeFile(
     join(temporary, 'adapter.ts'),
     `import { githubPullRequests } from '@open-sync/examples/syncs/github';
-import { gmailEmails } from '@open-sync/examples/syncs/gmail';
-import { slackMessages } from '@open-sync/examples/syncs/slack';
+import { gmailThreads } from '@open-sync/examples/syncs/gmail';
+import { slackThreads } from '@open-sync/examples/syncs/slack';
 import { granolaMeetings } from '@open-sync/examples/syncs/granola';
 import { localDestination } from '@open-sync/examples/destinations/local';
 import { httpDestination } from '@open-sync/examples/destinations/http';
-for (const source of [githubPullRequests, gmailEmails, slackMessages, granolaMeetings]) {
+for (const source of [githubPullRequests, gmailThreads, slackThreads, granolaMeetings]) {
   const definition = await source.load();
   if (typeof definition.run !== 'function') throw new Error('Missing source implementation');
 }
