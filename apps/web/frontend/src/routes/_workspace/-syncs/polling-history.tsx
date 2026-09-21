@@ -14,12 +14,6 @@ export function PollingHistory({
   return (
     <div className="space-y-4">
       {!history.polls.length && <p>No polls yet.</p>}
-      {history.polls.some((poll) => poll.legacy) && (
-        <p className="text-muted-foreground text-sm">
-          Earlier history contains individual attempts. Record counts and cancellation reasons were
-          not recorded.
-        </p>
-      )}
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead>
@@ -39,39 +33,31 @@ export function PollingHistory({
                 </td>
                 <td className="py-4 pr-4">{statusLabel(poll.state)}</td>
                 <td className="py-4">
-                  {poll.recordsProcessed === null
-                    ? 'Unavailable'
-                    : poll.recordsProcessed.toLocaleString()}
-                  {poll.recordsChanged !== null && (
-                    <p className="text-muted-foreground text-xs">
-                      {poll.recordsChanged.toLocaleString()} changed
-                    </p>
-                  )}
+                  {poll.recordsProcessed.toLocaleString()}
+                  <p className="text-muted-foreground text-xs">
+                    {poll.recordsChanged.toLocaleString()} changed
+                  </p>
                 </td>
               </tr>
               <tr>
                 <td colSpan={4} className="pb-4">
-                  {poll.legacy ? (
-                    <p className="text-muted-foreground text-xs">Earlier attempt</p>
-                  ) : (
-                    <details>
-                      <summary className="cursor-pointer text-muted-foreground">
-                        {poll.attemptCount} {poll.attemptCount === 1 ? 'attempt' : 'attempts'}
-                      </summary>
-                      {poll.attempts.length < poll.attemptCount && (
-                        <p className="mt-2 text-muted-foreground">Showing recent attempts.</p>
-                      )}
-                      <ol className="mt-2 space-y-2 text-xs">
-                        {poll.attempts.map((attempt) => (
-                          <li key={attempt.id}>
-                            {new Date(attempt.startedAt).toLocaleTimeString()} ·{' '}
-                            {statusLabel(attempt.state)} ·{' '}
-                            {attempt.recordsProcessed?.toLocaleString() ?? '—'} records
-                          </li>
-                        ))}
-                      </ol>
-                    </details>
-                  )}
+                  <details>
+                    <summary className="cursor-pointer text-muted-foreground">
+                      {poll.attemptCount} {poll.attemptCount === 1 ? 'attempt' : 'attempts'}
+                    </summary>
+                    {poll.attempts.length < poll.attemptCount && (
+                      <p className="mt-2 text-muted-foreground">Showing recent attempts.</p>
+                    )}
+                    <ol className="mt-2 space-y-2 text-xs">
+                      {poll.attempts.map((attempt) => (
+                        <li key={attempt.id}>
+                          {new Date(attempt.startedAt).toLocaleTimeString()} ·{' '}
+                          {statusLabel(attempt.state)} · {attempt.recordsProcessed.toLocaleString()}{' '}
+                          records
+                        </li>
+                      ))}
+                    </ol>
+                  </details>
                 </td>
               </tr>
             </tbody>
@@ -87,7 +73,7 @@ export function PollingHistory({
           <Link
             to="/syncs/$id"
             params={{ id }}
-            search={{ section: 'history', offset: Math.max(0, offset - (history.pageSize ?? 0)) }}
+            search={{ section: 'history', offset: Math.max(0, offset - history.pageSize) }}
             className="text-sm underline"
           >
             Newer

@@ -1,10 +1,6 @@
-import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
-import { openDatabase } from '../src/db/client';
-import legacySchema from '../src/db/schema.sql' with { type: 'text' };
 import { createSyncController } from '../src/http/controller';
 import type { SyncRegistration } from '../src/models/definition';
-import { SqliteCatalog } from '../src/repositories/catalog/sqlite';
 import { createSyncRuntime } from '../src/runtime';
 import { accepted, alpha, beta, configure, fixture, page, repositories, storage } from './support';
 
@@ -112,10 +108,12 @@ test('healthy work yields at a committed checkpoint before the hard deadline', a
     await engine.tick();
     expect(cleaned).toBe(true);
     expect(engine.api.installation({ ...alpha, id: installation.id }).checkpoint).toBe(1);
-    expect(engine.api.runs({ ...alpha, id: installation.id }).runs[0]).toMatchObject({
-      state: 'yielded',
-      recordsProcessed: 1,
-    });
+    expect(engine.api.polls({ ...alpha, id: installation.id }).polls[0]?.attempts[0]).toMatchObject(
+      {
+        state: 'yielded',
+        recordsProcessed: 1,
+      },
+    );
     expect(
       engine.api.installation({ ...alpha, id: installation.id }).nextDueAt,
     ).toBeLessThanOrEqual(Date.now());
@@ -214,56 +212,8 @@ test('empty completion batches do not inflate record totals', () => {
       recordsProcessed: 1,
       recordsChanged: 1,
     });
-    expect(history.polls[0]?.attempts[0]).toMatchObject({ pages: 2, recordsProcessed: 1 });
+    expect(history.polls[0]?.attempts[0]).toMatchObject({ recordsProcessed: 1, recordsChanged: 1 });
   } finally {
     f.close();
-  }
-});
-
-test('the additive upgrade retains old history without inventing record counts or cancellation reasons', () => {
-  const files = storage();
-  const old = new Database(files.path);
-  let upgraded: Database | undefined;
-  try {
-    old.exec(legacySchema);
-    const catalog = new SqliteCatalog(old);
-    catalog.register(fixture.definition);
-    const destination = catalog.createDestination({
-      ...alpha,
-      type: 'local',
-      version: '1',
-      config: {},
-    });
-    const installation = catalog.createInstallation({
-      ...alpha,
-      definition: fixture.definition,
-      destinationId: destination.id,
-      config: { count: 1 },
-      initialCheckpoint: 0,
-    });
-    old
-      .query(`INSERT INTO runs VALUES (?,?,?,'test',1,'worker',1,100,67,'cancelled',1,100,67)`)
-      .run(alpha.ownerId, 'old-run', installation.id);
-    old.close();
-    upgraded = openDatabase(files.path);
-    const history = new SqliteCatalog(upgraded).polls({ ...alpha, id: installation.id, offset: 0 });
-    expect(history.polls[0]).toMatchObject({
-      id: 'old-run',
-      legacy: true,
-      state: 'cancelled',
-      recordsProcessed: null,
-      recordsChanged: null,
-    });
-    const legacyPages = 67;
-    expect(history.polls[0]?.attempts[0]?.pages).toBe(legacyPages);
-    upgraded.close();
-    upgraded = openDatabase(files.path);
-    expect(new SqliteCatalog(upgraded).polls({ ...alpha, id: installation.id, offset: 0 })).toEqual(
-      history,
-    );
-  } finally {
-    old.close();
-    upgraded?.close();
-    files.close();
   }
 });

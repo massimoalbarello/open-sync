@@ -7,7 +7,7 @@ import { canonicalJson, type JsonObject, type JsonValue } from '../../models/jso
 import { defaultTiming } from '../../models/limits';
 import { readDestination, readInstallation } from '../rows';
 import type { CatalogRepository } from './contract';
-import { readPolls, readRuns } from './history';
+import { readPolls } from './history';
 
 export class SqliteCatalog implements CatalogRepository {
   constructor(private readonly db: Database) {}
@@ -82,10 +82,6 @@ export class SqliteCatalog implements CatalogRepository {
       )
       .all(scope.ownerId)
       .map(({ id }) => this.installation({ ...scope, id }));
-  }
-  runs(input: Resource & { offset: number }) {
-    this.installation(input);
-    return readRuns({ db: this.db, scope: input });
   }
   polls(input: Resource & { offset: number }) {
     this.installation(input);

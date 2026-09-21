@@ -68,8 +68,8 @@ export function claimRun(input: {
         generation: 1,
         checkpointRevision: installation.checkpointRevision,
       };
-      db.query(`INSERT INTO runs(owner_id,id,installation_id,definition_ref,binding_epoch,worker_id,generation,expires_at,checkpoint_revision,state,started_at,poll_id,records_processed,records_changed)
-      VALUES (?,?,?,?,?,?,?,?,?,'running',?,?,0,0)`).run(
+      db.query(`INSERT INTO runs(owner_id,id,installation_id,definition_ref,binding_epoch,worker_id,generation,expires_at,state,started_at,poll_id)
+      VALUES (?,?,?,?,?,?,?,?,'running',?,?)`).run(
         scope.ownerId,
         lease.id,
         installation.id,
@@ -78,7 +78,6 @@ export function claimRun(input: {
         lease.workerId,
         lease.generation,
         Date.now() + input.leaseMs,
-        lease.checkpointRevision,
         Date.now(),
         pollId,
       );

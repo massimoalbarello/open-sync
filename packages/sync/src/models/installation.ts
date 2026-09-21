@@ -27,15 +27,13 @@ export interface CreateInstallation extends Scope {
   enabled?: boolean;
 }
 
-export interface SyncRun {
+export interface SyncAttempt {
   id: string;
   state: string;
   startedAt: number;
   completedAt: number | null;
-  pages: number;
-  checkpointRevision: number;
-  recordsProcessed: number | null;
-  recordsChanged: number | null;
+  recordsProcessed: number;
+  recordsChanged: number;
 }
 
 export interface SyncPoll {
@@ -43,9 +41,8 @@ export interface SyncPoll {
   state: string;
   startedAt: number;
   completedAt: number | null;
-  recordsProcessed: number | null;
-  recordsChanged: number | null;
+  recordsProcessed: number;
+  recordsChanged: number;
   attemptCount: number;
-  attempts: SyncRun[];
-  legacy: boolean;
+  attempts: SyncAttempt[];
 }

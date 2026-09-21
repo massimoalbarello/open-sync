@@ -63,15 +63,6 @@ export function createSyncController(input: {
       ({ scope, params }) => input.api.installation({ ...scope, id: params.id }),
       resourceParams,
     )
-    .get(
-      '/installations/:id/runs',
-      ({ scope, params, query }) =>
-        input.api.runs({ ...scope, id: params.id, offset: query.offset }),
-      {
-        ...resourceParams,
-        query: t.Object({ offset: t.Optional(t.Integer({ minimum: 0, maximum: 1000000 })) }),
-      },
-    )
     .patch(
       '/installations/:id',
       ({ scope, params, body }) =>

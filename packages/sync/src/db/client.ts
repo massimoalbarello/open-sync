@@ -1,7 +1,8 @@
 import { Database } from 'bun:sqlite';
-import { fail } from '../models/error';
-import polls from './polls.sql' with { type: 'text' };
+import { SyncError } from '../models/error';
 import schema from './schema.sql' with { type: 'text' };
+
+const schemaVersion = 3;
 
 export function openDatabase(path: string): Database {
   const db = new Database(path, { create: true, strict: true });
@@ -13,11 +14,12 @@ export function openDatabase(path: string): Database {
         .get()!;
       if (version === 0) {
         db.exec(schema);
-      } else if (version !== 1 && version !== 2) {
-        fail('schema_version');
-      }
-      if (version < 2) {
-        db.exec(polls);
+        db.exec(`PRAGMA user_version=${schemaVersion}`);
+      } else if (version !== schemaVersion) {
+        throw new SyncError({
+          code: 'schema_version',
+          message: 'Unsupported sync database schema. Start with a fresh database.',
+        });
       }
     }).immediate();
     return db;
