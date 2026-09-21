@@ -135,16 +135,28 @@ function slackResponse(url: URL) {
   }
   if (url.pathname === '/api/conversations.replies' && url.searchParams.has('cursor')) {
     const injectedFailures = 2;
-    const rateLimited = 429;
+    const ok = 200;
     const unavailable = 503;
     if (++slackReplyAttempts <= injectedFailures) {
       return Response.json(
-        { ok: false, error: 'private-upstream-detail' },
         {
-          status: slackReplyAttempts === 1 ? rateLimited : unavailable,
+          ok: false,
+          error: slackReplyAttempts === 1 ? 'ratelimited' : 'private-upstream-detail',
+          detail: 'private-upstream-detail',
+        },
+        {
+          status: slackReplyAttempts === 1 ? ok : unavailable,
           headers: { 'retry-after': '60' },
         },
       );
+    }
+    const permissionFailure = 4;
+    if (slackReplyAttempts === permissionFailure) {
+      return Response.json({
+        ok: false,
+        error: 'missing_scope',
+        detail: 'private-upstream-detail',
+      });
     }
   }
   const body = (() => {

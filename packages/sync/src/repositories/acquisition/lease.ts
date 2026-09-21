@@ -121,24 +121,26 @@ export function finishRun(input: {
   state: string;
   delay: number;
   failureCount?: number;
+  pause?: boolean;
 }): void {
   updatePoll({
     db: input.db,
     ownerId: input.lease.ownerId,
     runId: input.lease.id,
-    state: input.state,
+    state: input.pause ? 'paused' : input.state,
   });
   input.db
     .query('UPDATE runs SET state=?,completed_at=? WHERE owner_id=? AND id=?')
     .run(input.state, Date.now(), input.lease.ownerId, input.lease.id);
   input.db
     .query(
-      'UPDATE installations SET status=?,next_due_at=?,failure_count=COALESCE(?,failure_count) WHERE owner_id=? AND id=?',
+      'UPDATE installations SET status=?,next_due_at=?,failure_count=COALESCE(?,failure_count),enabled=CASE WHEN ? THEN 0 ELSE enabled END WHERE owner_id=? AND id=?',
     )
     .run(
       input.state,
       Date.now() + input.delay,
       input.failureCount ?? null,
+      input.pause ? 1 : 0,
       input.lease.ownerId,
       input.lease.installation.id,
     );

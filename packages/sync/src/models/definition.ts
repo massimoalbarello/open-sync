@@ -3,6 +3,9 @@ import type { SourceAssets } from './asset';
 import type { Deliverable } from './delivery';
 import type { JsonObject, JsonValue } from './json';
 
+// biome-ignore lint/performance/noBarrelFile: Public source-authoring entry point exposes its failure contract.
+export { SourceHttpError } from './source-http-error';
+
 export interface DefinitionRef {
   id: string;
   version: string;

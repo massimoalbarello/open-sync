@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
 import { createConnectorClient } from '../src/connector/client';
+import { connectorFailure } from '../src/connector/failure';
 import type { SyncEvent } from '../src/execution/diagnostics';
 import type { SyncRegistration } from '../src/models/definition';
 import { createSyncRuntime } from '../src/runtime';
@@ -10,6 +11,39 @@ const requirements = { service: 'slack', actions: [], proxyPaths: ['/conversatio
 const rateLimited = 429;
 const unavailable = 503;
 const secret = 'private-token-and-provider-payload';
+
+test('legacy ambiguous 403 remains retryable; preserved quota classification and cooldown use HTTP semantics', () => {
+  const forbidden = 403;
+  const legacy = connectorFailure({
+    service: 'gmail',
+    operation: 'gmail.list_threads',
+    kind: 'rejected',
+    response: new Response(null, { status: forbidden }),
+    body: { errorCode: 'authorization_failed', data: { status: forbidden } },
+  });
+  expect(legacy.status).toBeUndefined();
+  const preserved = connectorFailure({
+    service: 'gmail',
+    operation: 'gmail.list_threads',
+    kind: 'rejected',
+    response: new Response(null, { status: rateLimited, headers: { 'retry-after': '30' } }),
+    body: {
+      errorCode: 'rate_limited',
+      message: secret,
+      data: {
+        status: forbidden,
+        reason: 'userRateLimitExceeded',
+        headers: { 'Retry-After': '120', authorization: secret },
+      },
+    },
+  });
+  expect(preserved).toMatchObject({
+    status: rateLimited,
+    retryAfterMs: 120_000,
+    diagnostics: { providerStatus: forbidden },
+  });
+  expect(JSON.stringify(preserved)).not.toContain(secret);
+});
 
 function client(response: () => Promise<Response>) {
   return createConnectorClient({
@@ -85,6 +119,7 @@ test('connector failure diagnostics reach scoped runtime logs without credential
           connectorStatus: rateLimited,
           connectorErrorCode: 'rate_limited',
           providerStatus: rateLimited,
+          httpStatus: rateLimited,
           failureCount: 1,
           retryAfterMs: 120_000,
         },

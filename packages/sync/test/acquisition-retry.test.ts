@@ -167,7 +167,7 @@ test('source failures back off durably despite partial progress and pruned histo
 });
 
 test.each(['records', 'assets'])(
-  'a provider cooldown for %s is a lower bound and healthy checkpoint yields reset backoff',
+  'a provider cooldown for %s is a lower bound and checkpoint yields preserve backoff across restarts',
   async (mode) => {
     const files = storage();
     let now = Date.now();
@@ -210,7 +210,7 @@ test.each(['records', 'assets'])(
       timing: { retryMs, maxPages: 1, assetAttempts: 4 },
       onEvent: (event: SyncEvent) => events.push(event),
     };
-    const engine = createSyncRuntime(options);
+    let engine = createSyncRuntime(options);
     try {
       const installation = await configure(engine);
       const scope = { ...alpha, id: installation.id };
@@ -227,9 +227,12 @@ test.each(['records', 'assets'])(
       failing = false;
       await engine.tick();
       expect(engine.api.installation(scope)).toMatchObject({ status: 'yielded', nextDueAt: now });
+      await engine.close();
+      engine = createSyncRuntime(options);
       failing = true;
       await engine.tick();
-      expect(engine.api.installation(scope).nextDueAt).toBe(now + retryMs);
+      const thirdDelay = 120_000;
+      expect(engine.api.installation(scope).nextDueAt).toBe(now + thirdDelay);
     } finally {
       await engine.close();
       clock.mockRestore();

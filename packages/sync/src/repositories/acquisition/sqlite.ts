@@ -63,7 +63,13 @@ export class SqliteAcquisition implements AcquisitionRepository {
     }).immediate();
     input.lease.checkpointRevision++;
   }
-  finish(input: { lease: RunLease; state: string; delay: number; failureCount?: number }): void {
+  finish(input: {
+    lease: RunLease;
+    state: string;
+    delay: number;
+    failureCount?: number;
+    pause?: boolean;
+  }): void {
     this.input.db
       .transaction(() => {
         assertRun({ db: this.input.db, lease: input.lease });
