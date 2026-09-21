@@ -38,9 +38,14 @@ export async function fixture(config: JsonObject = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'github-sync-test-'));
   const db = new SQL({ adapter: 'sqlite', filename: join(dir, 'host.db') });
   await runMigrations({ db });
-  const receiver = new ReceiverService(new SqliteReceiver({ db }));
+  const receiver = new ReceiverService(
+    await SqliteReceiver.open({ db, assetDirectory: join(dir, 'assets') }),
+  );
   const delivered: Delivery[] = [];
-  const destinationType = localDestination({ accept: (input) => receiver.accept(input) });
+  const destinationType = localDestination({
+    accept: (input) => receiver.accept(input),
+    acceptAsset: (input) => receiver.acceptAsset(input),
+  });
   const requests: GraphRequest[] = [];
   const pulls = [pull('a'), pull('b'), pull('c')];
   const provider = { accountId: 'github-native-user-1', respond: reply };

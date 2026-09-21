@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SQL } from 'bun';
@@ -13,7 +13,7 @@ test('receiver owns its bytes and stable asset IDs, checks integrity, and isolat
   const assetDirectory = join(dir, 'assets');
   try {
     await runMigrations({ db });
-    let receiver = new SqliteReceiver({ db, assetDirectory });
+    let receiver = await SqliteReceiver.open({ db, assetDirectory });
     const bytes = Buffer.from('00ff0d0a', 'hex');
     const input = {
       ...owner,
@@ -31,7 +31,13 @@ test('receiver owns its bytes and stable asset IDs, checks integrity, and isolat
       open: () => Promise.resolve(new Blob([bytes]).stream()),
     };
     const id = await receiver.acceptAsset(input);
-    receiver = new SqliteReceiver({ db, assetDirectory });
+    const committedFiles = await readdir(assetDirectory);
+    const orphan = crypto.randomUUID();
+    await writeFile(join(assetDirectory, orphan), 'interrupted upload');
+    await writeFile(join(assetDirectory, 'keep.txt'), 'unmanaged file');
+    receiver = await SqliteReceiver.open({ db, assetDirectory });
+    expect((await readdir(assetDirectory)).sort()).toEqual([...committedFiles, 'keep.txt'].sort());
+    await rm(join(assetDirectory, 'keep.txt'));
     expect(
       await receiver.acceptAsset({
         ...input,

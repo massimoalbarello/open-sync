@@ -38,7 +38,10 @@ try {
     ]),
   ];
   const receiver = new ReceiverService(
-    new SqliteReceiver({ db: database, assetDirectory: join(env.DATA_FOLDER, 'received-assets') }),
+    await SqliteReceiver.open({
+      db: database,
+      assetDirectory: join(env.DATA_FOLDER, 'received-assets'),
+    }),
   );
   let dashboard: DashboardService;
   sync = await createOpenSync({

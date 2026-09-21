@@ -1,11 +1,32 @@
 const privateFileMode = 0o600;
 
 import { createHash } from 'node:crypto';
-import { mkdir, open, unlink } from 'node:fs/promises';
+import { mkdir, open, opendir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { canonicalJson } from '@context-use/open-sync/json';
 import type { SQL } from 'bun';
 import type { ReceiverRepository } from './contract';
+
+/** Runs before uploads start. Only generated files absent from durable receipts are removed. */
+export async function recoverAssetFiles(input: { db: SQL; directory: string }) {
+  const directory = await opendir(input.directory).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== 'ENOENT') {
+      throw error;
+    }
+  });
+  if (!directory) {
+    return;
+  }
+  for await (const file of directory) {
+    if (!file.isFile() || !/^[0-9a-f-]{36}$/.test(file.name)) {
+      continue;
+    }
+    const [stored] = await input.db`SELECT 1 FROM host_assets WHERE file_id=${file.name} LIMIT 1`;
+    if (!stored) {
+      await unlink(join(input.directory, file.name));
+    }
+  }
+}
 
 export async function acceptAsset(
   input: Parameters<ReceiverRepository['acceptAsset']>[0] & { db: SQL; directory: string },

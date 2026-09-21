@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { AssetRef } from '@context-use/open-sync/assets';
 import type { JsonObject } from '@context-use/open-sync/json';
 import { SQL } from 'bun';
 import { runMigrations } from '#backend/db/migrate.ts';
@@ -10,12 +11,15 @@ import { SqliteReceiver } from '#backend/repositories/receiver/sqlite.ts';
 const owner = { actorId: 'alice', ownerId: 'alice' };
 const other = { actorId: 'bob', ownerId: 'bob' };
 
-async function withReceiver(run: (receiver: SqliteReceiver) => Promise<void>) {
+async function withReceiver(run: (input: { receiver: SqliteReceiver; db: SQL }) => Promise<void>) {
   const dir = await mkdtemp(join(tmpdir(), 'browse-assets-'));
   const db = new SQL({ adapter: 'sqlite', filename: join(dir, 'host.db') });
   try {
     await runMigrations({ db });
-    await run(new SqliteReceiver({ db, assetDirectory: join(dir, 'assets') }));
+    await run({
+      receiver: await SqliteReceiver.open({ db, assetDirectory: join(dir, 'assets') }),
+      db,
+    });
   } finally {
     await db.close();
     await rm(dir, { recursive: true, force: true });
@@ -46,12 +50,18 @@ function receiveAsset(input: {
   });
 }
 
-function receiveRecord(input: { receiver: SqliteReceiver; data: JsonObject; revision: number }) {
+function receiveRecord(input: {
+  receiver: SqliteReceiver;
+  data: JsonObject;
+  revision: number;
+  assetRefs?: Record<string, AssetRef>;
+  deliveryId?: string;
+}) {
   return input.receiver.accept({
     ...owner,
     delivery: {
       version: 1,
-      id: `delivery_${input.revision}`,
+      id: input.deliveryId ?? `delivery_${input.revision}`,
       ownerId: owner.ownerId,
       sourceId: 'source',
       installationId: 'sync',
@@ -63,6 +73,7 @@ function receiveRecord(input: { receiver: SqliteReceiver; data: JsonObject; revi
             kind: 'document',
             id: 'record',
             data: input.data,
+            ...(input.assetRefs ? { assetRefs: input.assetRefs } : {}),
             revision: input.revision,
             contentHash: `hash_${input.revision}`,
             eventId: `event_${input.revision}`,
@@ -74,7 +85,7 @@ function receiveRecord(input: { receiver: SqliteReceiver; data: JsonObject; revi
 }
 
 test('assets browse in bounded pages with owner and source isolation and public metadata only', async () => {
-  await withReceiver(async (receiver) => {
+  await withReceiver(async ({ receiver }) => {
     const count = 51;
     for (let index = 0; index < count; index++) {
       await receiveAsset({ receiver, id: String(index) });
@@ -104,44 +115,52 @@ test('assets browse in bounded pages with owner and source isolation and public 
   });
 });
 
-test('records link exact stored JSON and Markdown references to owned assets from the same source', async () => {
-  await withReceiver(async (receiver) => {
+test('records persist declared asset relationships independently of rendered content and revision order', async () => {
+  await withReceiver(async ({ receiver, db }) => {
     const first = await receiveAsset({ receiver, id: 'first' });
     const second = await receiveAsset({ receiver, id: 'second' });
     const unlinked = await receiveAsset({ receiver, id: 'unlinked' });
-    const foreign = await receiveAsset({ receiver, id: 'foreign', scope: other });
-    const anotherSource = await receiveAsset({ receiver, id: 'another', sourceId: 'other-source' });
-    const url = (id: string) => `/api/receiver/assets/${id}`;
-    const data = {
-      attachments: [
-        { name: 'same-name.txt', file: first },
-        { name: 'same-name.txt', file: second },
-      ],
-      nested: [first, { url: url(second) }],
-      body: `[first](${url(first)})\n\n![second][attachment]\n\n[attachment]: ${url(second)}`,
-      literal: `\`[code](${url(unlinked)})\`\n\n\`\`\`\n[code](${url(unlinked)})\n\`\`\`\n\n[unused]: ${url(unlinked)}`,
-      invalid: [
-        foreign,
-        anotherSource,
-        'asset_00000000-0000-0000-0000-000000000000',
-        `https://elsewhere.test${url(unlinked)}`,
-      ],
-    };
-    await receiveRecord({ receiver, data, revision: 1 });
+    await receiveAsset({ receiver, id: 'foreign', scope: other });
+    await receiveAsset({ receiver, id: 'another', sourceId: 'other-source' });
+    const assetRefs = Object.fromEntries(
+      ['first', 'second', 'foreign', 'another', 'missing'].map((id) => [id, { id, version: '1' }]),
+    );
+    assetRefs.repeated = { id: 'first', version: '1' };
+    const data = { body: unlinked, attachment: `[copied link](/api/receiver/assets/${unlinked})` };
+    await receiveRecord({ receiver, data, assetRefs, revision: 1 });
     const record = (await receiver.records({ ...owner, offset: 0 })).records[0]!;
     expect(record.data).toEqual(data);
     expect(record.assets.map((asset) => asset.id)).toEqual([first, second]);
-    expect(record.assets.map((asset) => asset.name)).toEqual(['same-name.txt', 'same-name.txt']);
+    expect(record).not.toHaveProperty('assetIds');
     expect((await receiver.records({ ...other, offset: 0 })).records).toEqual([]);
+    await db.unsafe(
+      "CREATE TRIGGER fail_receipt BEFORE INSERT ON host_receipts BEGIN SELECT RAISE(ABORT,'injected'); END",
+    );
+    await expect(
+      receiveRecord({ receiver, data: { body: 'replacement' }, revision: 2 }),
+    ).rejects.toThrow('injected');
+    expect((await receiver.records({ ...owner, offset: 0 })).records[0]).toMatchObject({
+      revision: 1,
+      data,
+      assets: [{ id: first }, { id: second }],
+    });
+    await db.unsafe('DROP TRIGGER fail_receipt');
     await receiveRecord({
       receiver,
-      data: { body: `[inline](${url(first)})\n\n[attachment][file]\n\n[file]: ${url(second)}` },
+      data,
+      assetRefs: { file: { id: 'second', version: '1' } },
       revision: 2,
     });
+    await receiveRecord({ receiver, data, assetRefs, revision: 1, deliveryId: 'stale' });
     expect(
       (await receiver.records({ ...owner, offset: 0 })).records[0]!.assets.map((asset) => asset.id),
-    ).toEqual([first, second]);
-    await receiveRecord({ receiver, data: { body: 'No attachments now' }, revision: 3 });
+    ).toEqual([second]);
+    // Matching content alone cannot create an attachment relationship.
+    await receiveRecord({
+      receiver,
+      data: { body: first, link: `/api/receiver/assets/${second}` },
+      revision: 3,
+    });
     expect((await receiver.records({ ...owner, offset: 0 })).records[0]!.assets).toEqual([]);
   });
 });

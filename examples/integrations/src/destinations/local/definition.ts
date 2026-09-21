@@ -6,7 +6,7 @@ import type { Delivery, DestinationType } from '@context-use/open-sync/delivery'
 /** Uses only destination contracts, even when the receiver runs in the same process. */
 export function localDestination(input: {
   accept(input: Scope & { delivery: Delivery }): Promise<boolean>;
-  acceptAsset?(
+  acceptAsset(
     input: AssetUpload & {
       actorId: string;
       ownerId: string;
@@ -19,13 +19,10 @@ export function localDestination(input: {
     name: 'Local SQLite',
     description: 'Stores records and attachments in this application.',
     version: '1',
-    acceptsAssets: Boolean(input.acceptAsset),
+    acceptsAssets: true,
     configSchema: { type: 'object', additionalProperties: false },
     deliver: assetsFirst({
       async upload({ scope, delivery, signal, asset, idempotencyKey, open }) {
-        if (!input.acceptAsset) {
-          return { status: 'rejected', code: 'assets_unsupported' };
-        }
         return {
           status: 'accepted',
           reference: await input.acceptAsset({

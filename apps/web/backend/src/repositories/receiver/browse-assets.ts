@@ -1,5 +1,4 @@
 import type { SQL } from 'bun';
-import { referencedAssetIds } from '#backend/models/receiver/asset-references.ts';
 import type { ReceivedAsset, ReceivedRecord, ReceiverScope } from './contract';
 
 interface AssetRow {
@@ -29,19 +28,20 @@ export async function browseAssets(
   return { assets: rows.slice(0, pageSize).map(asset), hasMore: rows.length > pageSize, pageSize };
 }
 export async function relateAssets(
-  input: ReceiverScope & { db: SQL; records: Omit<ReceivedRecord, 'assets'>[] },
+  input: ReceiverScope & {
+    db: SQL;
+    records: (Omit<ReceivedRecord, 'assets'> & { assetIds: string[] })[];
+  },
 ): Promise<ReceivedRecord[]> {
-  const references = input.records.map((record) => referencedAssetIds(record.data));
-  const ids = [...new Set(references.flatMap((refs) => [...refs]))];
+  const ids = [...new Set(input.records.flatMap((record) => record.assetIds))];
   const rows = ids.length
     ? await input.db<AssetRow[]>`SELECT id,source_id,name,media_type,size FROM host_assets
     WHERE owner_id=${input.ownerId} AND id IN (SELECT value FROM json_each(${JSON.stringify(ids)}))`
     : [];
   const byId = new Map(rows.map((row) => [row.id, asset(row)]));
-  // biome-ignore lint/complexity/useMaxParams: Array.map supplies the record index.
-  return input.records.map((record, index) => ({
+  return input.records.map(({ assetIds, ...record }) => ({
     ...record,
-    assets: [...references[index]!].flatMap((id) => {
+    assets: assetIds.flatMap((id) => {
       const found = byId.get(id);
       return found?.sourceId === record.sourceId ? [found] : [];
     }),
