@@ -14,3 +14,7 @@ CREATE TABLE host_assets (
   UNIQUE(owner_id, idempotency_key),
   UNIQUE(owner_id, source_id, asset_id, asset_version)
 );
+
+CREATE INDEX host_assets_file_id ON host_assets(file_id);
+
+ALTER TABLE host_records ADD COLUMN asset_ids TEXT NOT NULL DEFAULT '[]';
