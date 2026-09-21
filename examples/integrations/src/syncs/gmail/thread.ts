@@ -42,6 +42,8 @@ export async function threadRecord(input: {
     kind: 'thread',
     id: thread.threadId,
     content: threadContent(messages),
+    preview: messages[0]!.subject || messages[0]!.messageText,
+    createdAt: messages[0]!.messageTimestamp,
     data: {
       subject: messages[0]!.subject,
       url: `https://mail.google.com/mail/?authuser=${encodeURIComponent(input.account)}#all/${encodeURIComponent(thread.threadId)}`,

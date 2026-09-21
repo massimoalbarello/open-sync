@@ -3,6 +3,7 @@ import type { AssetRef, DeliveryAsset, DestinationAssets } from './asset';
 import type { DefinitionRef } from './definition';
 import type { Scope } from './identity';
 import type { JsonObject } from './json';
+import type { RecordMetadata } from './metadata';
 
 /** Source-authored readable content; it need not duplicate or be derived from data. */
 export interface RecordContent {
@@ -11,7 +12,7 @@ export interface RecordContent {
 }
 
 export type SyncRecord =
-  | {
+  | (RecordMetadata & {
       operation: 'upsert';
       kind: string;
       id: string;
@@ -20,7 +21,7 @@ export type SyncRecord =
       content?: RecordContent;
       assetRefs?: Record<string, AssetRef>;
       markdownFields?: string[];
-    }
+    })
   | { operation: 'delete'; kind: string; id: string };
 export interface Deliverable {
   records: readonly SyncRecord[];

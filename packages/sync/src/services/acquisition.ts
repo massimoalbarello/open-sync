@@ -164,8 +164,8 @@ function sourceAssets(input: {
     unavailable(capture) {
       input.signal.throwIfAborted();
       identifier(capture.code);
-      const { id, version, name, mediaType } = capture;
-      const asset = { id, version, name, mediaType };
+      const { id, version } = capture;
+      const asset = assetMetadata(capture);
       const previous = input.repository.capture({ lease: input.lease, asset });
       if (previous.state === 'pending') {
         input.repository.captureFailed({
@@ -179,8 +179,8 @@ function sourceAssets(input: {
     },
     async capture(capture) {
       input.signal.throwIfAborted();
-      const { read, id, version, name, mediaType } = capture;
-      const asset = { id, version, name, mediaType };
+      const { read } = capture;
+      const asset = assetMetadata(capture);
       const ref = { id: asset.id, version: asset.version };
       const previous = input.repository.capture({ lease: input.lease, asset });
       if (previous.state !== 'pending') {
@@ -227,6 +227,17 @@ function sourceAssets(input: {
         return ref;
       }
     },
+  };
+}
+
+function assetMetadata(input: import('../models/asset').AssetMetadata) {
+  return {
+    id: input.id,
+    version: input.version,
+    name: input.name,
+    mediaType: input.mediaType,
+    ...(input.createdAt !== undefined ? { createdAt: input.createdAt } : {}),
+    ...(input.updatedAt !== undefined ? { updatedAt: input.updatedAt } : {}),
   };
 }
 

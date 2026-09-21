@@ -77,6 +77,11 @@ test('GitHub resumes committed pages after restart, then polls only updates sinc
     });
     const allRecords = 3;
     expect((await f.receiver.status(owner)).records).toBe(allRecords);
+    expect((await f.receiver.records({ ...owner, offset: 0 })).records[0]).toMatchObject({
+      preview: 'PR a',
+      createdAt: '2020-01-01T00:00:00.000Z',
+      updatedAt: new Date(f.pulls[0]!.updatedAt).toISOString(),
+    });
     expect(
       f.delivered.flatMap((batch) => batch.deliverable.records).map((record) => record.id),
     ).toEqual(['a', 'b', 'c']);

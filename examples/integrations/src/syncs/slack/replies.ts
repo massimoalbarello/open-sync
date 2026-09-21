@@ -39,7 +39,8 @@ export async function readThread(input: {
       complete: false,
     };
   }
-  if (!messages.some((message) => message.id === rootTs)) {
+  const rootMessage = messages.find((message) => message.id === rootTs);
+  if (!rootMessage) {
     throw new Error('Slack did not return the thread root.');
   }
   const assetRefs: Record<string, AssetRef> = {};
@@ -68,6 +69,8 @@ export async function readThread(input: {
           operation: 'upsert',
           kind: 'thread',
           id: `${channel.id}:${rootTs}`,
+          preview: rootMessage.body,
+          createdAt: rootMessage.sentAt,
           data: {
             channel: channel.name ?? channel.id,
             channelId: channel.id,

@@ -5,6 +5,7 @@ import type { SyncRecord } from './delivery';
 import { fail } from './error';
 import { canonicalJson } from './json';
 import type { QueueLimits } from './limits';
+import { normalizeRecordMetadata } from './metadata';
 import { identifier, validate } from './validation';
 
 export function preparePage(input: {
@@ -56,7 +57,18 @@ function validateRecord(input: { record: SyncRecord; definition: SyncDefinition 
   }
   const fields =
     record.operation === 'upsert'
-      ? ['operation', 'kind', 'id', 'data', 'content', 'assetRefs', 'markdownFields']
+      ? [
+          'operation',
+          'kind',
+          'id',
+          'data',
+          'content',
+          'assetRefs',
+          'markdownFields',
+          'preview',
+          'createdAt',
+          'updatedAt',
+        ]
       : ['operation', 'kind', 'id'];
   if (Object.keys(record).some((key) => !fields.includes(key))) {
     fail('invalid_record');
@@ -78,6 +90,7 @@ function validateRecord(input: { record: SyncRecord; definition: SyncDefinition 
     }
     validateAssetReferences(record);
     validate({ value: record.data, schema: definition.kinds[record.kind]! });
+    Object.assign(record, normalizeRecordMetadata(record));
   } else if (record.operation !== 'delete') {
     fail('invalid_record');
   }

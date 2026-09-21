@@ -1,13 +1,14 @@
 import type { Delivery, DeliveryResult } from './delivery';
 import { fail } from './error';
 import type { JsonValue } from './json';
+import type { SourceTimestamps } from './metadata';
 
 /** Identity is scoped to one owner and source. A version must identify immutable content. */
 export interface AssetRef {
   id: string;
   version: string;
 }
-export interface AssetMetadata extends AssetRef {
+export interface AssetMetadata extends AssetRef, SourceTimestamps {
   name: string;
   mediaType: string;
 }

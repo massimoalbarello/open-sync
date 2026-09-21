@@ -51,6 +51,7 @@ test('standalone binary embeds frontend and migrations and preserves state on re
         '0000_better_auth_schema.sql',
         '0001_host_schema.sql',
         '0002_receiver_assets.sql',
+        '0003_source_metadata.sql',
       ]);
     } finally {
       await db.close();

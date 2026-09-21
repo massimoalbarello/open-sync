@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { AssetDownload } from '../../components/asset-link';
 import { SectionPage } from '../../components/section-page';
+import { SourceTimestamps } from '../../components/source-timestamps';
 import { assetOptions } from '../../queries/assets';
 import { AssetPreview } from './-assets/asset-preview';
 
@@ -19,6 +20,7 @@ function AssetDetail() {
         asset && (
           <p className="break-words text-muted-foreground text-sm">
             {asset.mediaType} · {asset.size.toLocaleString()} bytes
+            <SourceTimestamps createdAt={asset.createdAt} updatedAt={asset.updatedAt} />
           </p>
         )
       }

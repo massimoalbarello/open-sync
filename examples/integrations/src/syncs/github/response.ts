@@ -36,7 +36,13 @@ export function record(value: JsonValue): SyncRecord {
     }
     data[field] = pull[field];
   }
-  if (typeof pull.isDraft !== 'boolean') {
+  const { title, createdAt, updatedAt } = pull;
+  if (
+    typeof pull.isDraft !== 'boolean' ||
+    typeof title !== 'string' ||
+    typeof createdAt !== 'string' ||
+    typeof updatedAt !== 'string'
+  ) {
     throw new Error('Incomplete GitHub pull request.');
   }
   return {
@@ -44,6 +50,9 @@ export function record(value: JsonValue): SyncRecord {
     kind: 'pull-request',
     id: identity(pull.id),
     content: { format: 'markdown', body: String(data.body ?? '') },
+    preview: title,
+    createdAt,
+    updatedAt,
     data: {
       ...data,
       repository: identity(repository.nameWithOwner),

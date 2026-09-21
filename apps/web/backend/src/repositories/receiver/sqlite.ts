@@ -32,7 +32,7 @@ export class SqliteReceiver implements ReceiverRepository {
   async record(input: ReceiverScope & RecordIdentity) {
     const [row] = await this.db<
       RecordRow[]
-    >`SELECT source_id,kind,record_id,revision,data,content,asset_ids FROM host_records
+    >`SELECT source_id,kind,record_id,revision,data,content,asset_ids,preview,created_at,updated_at FROM host_records
       WHERE owner_id=${input.ownerId} AND source_id=${input.sourceId} AND kind=${input.kind}
       AND record_id=${input.id} AND deleted=0`;
     if (!row) {
@@ -67,7 +67,7 @@ export class SqliteReceiver implements ReceiverRepository {
     const sourceId = input.sourceId ?? null;
     const rows = await this.db<
       RecordRow[]
-    >`SELECT source_id,kind,record_id,revision,data,content,asset_ids FROM host_records
+    >`SELECT source_id,kind,record_id,revision,data,content,asset_ids,preview,created_at,updated_at FROM host_records
       WHERE owner_id=${input.ownerId} AND deleted=0 AND (${sourceId} IS NULL OR source_id=${sourceId})
       ORDER BY source_id,kind,record_id LIMIT ${limit + 1} OFFSET ${input.offset}`;
     return {
@@ -137,6 +137,7 @@ async function applyRecord(input: {
 }): Promise<void> {
   const { tx, ownerId, sourceId, record } = input;
   const data = record.operation === 'upsert' ? canonicalJson(record.data).json : null;
+  const metadata = record.operation === 'upsert' ? record : undefined;
   const content =
     record.operation === 'upsert' && record.content ? canonicalJson(record.content).json : null;
   const references = record.operation === 'upsert' ? Object.values(record.assetRefs ?? {}) : [];
@@ -149,9 +150,9 @@ async function applyRecord(input: {
         ORDER BY cast(ref.key AS INTEGER)`
     : [];
   const assetIds = JSON.stringify(assets.map((asset) => asset.id));
-  await tx`INSERT INTO host_records(owner_id,source_id,kind,record_id,revision,deleted,data,asset_ids,content)
-    VALUES (${ownerId},${sourceId},${record.kind},${record.id},${record.revision},${Number(record.operation === 'delete')},${data},${assetIds},${content})
-    ON CONFLICT(owner_id,source_id,kind,record_id) DO UPDATE SET revision=excluded.revision,deleted=excluded.deleted,data=excluded.data,asset_ids=excluded.asset_ids,content=excluded.content
+  await tx`INSERT INTO host_records(owner_id,source_id,kind,record_id,revision,deleted,data,asset_ids,content,preview,created_at,updated_at)
+    VALUES (${ownerId},${sourceId},${record.kind},${record.id},${record.revision},${Number(record.operation === 'delete')},${data},${assetIds},${content},${metadata?.preview ?? null},${metadata?.createdAt ?? null},${metadata?.updatedAt ?? null})
+    ON CONFLICT(owner_id,source_id,kind,record_id) DO UPDATE SET revision=excluded.revision,deleted=excluded.deleted,data=excluded.data,asset_ids=excluded.asset_ids,content=excluded.content,preview=excluded.preview,created_at=excluded.created_at,updated_at=excluded.updated_at
     WHERE excluded.revision>host_records.revision`;
 }
 
@@ -169,6 +170,9 @@ interface RecordRow {
   data: string;
   content: string | null;
   asset_ids: string;
+  preview: string | null;
+  created_at: string | null;
+  updated_at: string | null;
 }
 function recordRow(row: RecordRow) {
   return {
@@ -176,6 +180,9 @@ function recordRow(row: RecordRow) {
     kind: row.kind,
     id: row.record_id,
     revision: row.revision,
+    ...(row.preview !== null ? { preview: row.preview } : {}),
+    ...(row.created_at !== null ? { createdAt: row.created_at } : {}),
+    ...(row.updated_at !== null ? { updatedAt: row.updated_at } : {}),
     assetIds: JSON.parse(row.asset_ids) as string[],
     data: JSON.parse(row.data) as import('@context-use/open-sync/json').JsonObject,
     ...(row.content === null ? {} : { content: JSON.parse(row.content) as RecordContent }),
