@@ -5,7 +5,7 @@ import { assetsFirst } from '../src/delivery/assets-first';
 import type { AssetRendering, AssetUpload } from '../src/models/asset';
 import { assetKey, assetPlaceholder } from '../src/models/asset';
 import { resolveRecordAssets, validateAssetReferences } from '../src/models/asset-references';
-import type { SyncRegistration } from '../src/models/definition';
+import { SourceHttpError, type SyncRegistration } from '../src/models/definition';
 import type { Delivery, DestinationType } from '../src/models/delivery';
 import { createSyncRuntime } from '../src/runtime';
 import { alpha, beta, storage } from './support';
@@ -249,8 +249,14 @@ test('bounded upload failures become explicit record outcomes, including Markdow
   }
 });
 
-test('capture failures, oversized streams and full storage never enqueue partial content or lose the record', async () => {
-  for (const mode of ['fetch', 'oversized', 'capacity']) {
+test.each([
+  { mode: 'fetch', expectedReads: maxAttempts, code: 'asset_fetch_failed' },
+  { mode: 'oversized', expectedReads: 1, code: 'asset_too_large' },
+  { mode: 'provider_oversized', expectedReads: 1, code: 'asset_too_large' },
+  { mode: 'capacity', expectedReads: maxAttempts, code: 'asset_storage_full' },
+])(
+  '$mode capture failures never enqueue partial content or lose the record',
+  async ({ mode, expectedReads, code }) => {
     let delivered: Delivery | undefined;
     let reads = 0;
     const fixture = await setup({
@@ -259,6 +265,9 @@ test('capture failures, oversized streams and full storage never enqueue partial
       registration: source({
         read: () => {
           reads++;
+          if (mode === 'provider_oversized') {
+            return Promise.reject(new SourceHttpError({ status: 413 }));
+          }
           return mode !== 'fetch'
             ? Promise.resolve(new Blob(['too large']).stream())
             : Promise.reject(new Error('Token must not leak'));
@@ -278,17 +287,12 @@ test('capture failures, oversized streams and full storage never enqueue partial
       for (let tick = 0; tick < maxTicks; tick++) {
         await fixture.tick();
       }
-      expect(reads).toBe(mode === 'oversized' ? 1 : maxAttempts);
+      expect(reads).toBe(expectedReads);
       expect(delivered?.deliverable.records[0]).toMatchObject({
         data: {
           file: {
             status: 'failed',
-            code:
-              mode === 'capacity'
-                ? 'asset_storage_full'
-                : mode === 'oversized'
-                  ? 'asset_too_large'
-                  : 'asset_fetch_failed',
+            code,
           },
         },
       });
@@ -296,8 +300,8 @@ test('capture failures, oversized streams and full storage never enqueue partial
     } finally {
       await fixture.close();
     }
-  }
-});
+  },
+);
 
 test('bundle adapters receive logical references and streams, with no requirement to return asset IDs', async () => {
   let captured: Delivery | undefined;

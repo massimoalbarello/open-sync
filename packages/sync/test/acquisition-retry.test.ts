@@ -167,13 +167,12 @@ test('source failures back off durably despite partial progress and pruned histo
 });
 
 test.each(['records', 'assets'])(
-  'a provider cooldown for %s is a lower bound and healthy checkpoint yields reset backoff',
+  'checkpoint yields preserve %s backoff across restarts',
   async (mode) => {
     const files = storage();
     let now = Date.now();
     const clock = spyOn(Date, 'now').mockImplementation(() => now);
     const events: SyncEvent[] = [];
-    let cooldown = 120_000;
     let failing = true;
     const options = {
       databasePath: files.path,
@@ -186,8 +185,7 @@ test.each(['records', 'assets'])(
                 const failure = new SyncError({
                   code: 'connector_request_failed',
                   message: 'private upstream payload',
-                  diagnostics: { httpStatus: 429 },
-                  retryAfterMs: cooldown,
+                  status: 429,
                 });
                 if (mode === 'assets') {
                   await context.assets.capture({
@@ -210,16 +208,15 @@ test.each(['records', 'assets'])(
       timing: { retryMs, maxPages: 1, assetAttempts: 4 },
       onEvent: (event: SyncEvent) => events.push(event),
     };
-    const engine = createSyncRuntime(options);
+    let engine = createSyncRuntime(options);
     try {
       const installation = await configure(engine);
       const scope = { ...alpha, id: installation.id };
       await engine.tick();
-      expect(engine.api.installation(scope).nextDueAt).toBe(now + cooldown);
-      expect(events.at(-1)?.fields).toMatchObject({ httpStatus: 429, retryAfterMs: cooldown });
+      expect(engine.api.installation(scope).nextDueAt).toBe(now + retryMs);
+      expect(events.at(-1)?.fields).toMatchObject({ httpStatus: 429, retryAfterMs: retryMs });
       expect(JSON.stringify(events)).not.toContain('private upstream payload');
-      now += cooldown;
-      cooldown = 1;
+      now += retryMs;
       await engine.tick();
       const secondDelay = 60_000;
       expect(engine.api.installation(scope).nextDueAt).toBe(now + secondDelay);
@@ -227,9 +224,12 @@ test.each(['records', 'assets'])(
       failing = false;
       await engine.tick();
       expect(engine.api.installation(scope)).toMatchObject({ status: 'yielded', nextDueAt: now });
+      await engine.close();
+      engine = createSyncRuntime(options);
       failing = true;
       await engine.tick();
-      expect(engine.api.installation(scope).nextDueAt).toBe(now + retryMs);
+      const thirdDelay = 120_000;
+      expect(engine.api.installation(scope).nextDueAt).toBe(now + thirdDelay);
     } finally {
       await engine.close();
       clock.mockRestore();

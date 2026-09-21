@@ -16,5 +16,6 @@ CREATE TABLE host_records (
   revision INTEGER NOT NULL,
   deleted INTEGER NOT NULL,
   data TEXT,
+  content TEXT,
   PRIMARY KEY(owner_id, source_id, kind, record_id)
 );

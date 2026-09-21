@@ -1,5 +1,5 @@
 import { type AssetRef, assetPlaceholder } from '@context-use/open-sync/assets';
-import type { SyncContext } from '@context-use/open-sync/definition';
+import { SourceHttpError, type SyncContext } from '@context-use/open-sync/definition';
 import { z } from 'zod';
 
 const successStatus = 200;
@@ -47,7 +47,7 @@ export async function gmailAttachments(input: {
               path: `/users/me/messages/${encodeURIComponent(input.messageId)}/attachments/${encodeURIComponent(part.body.attachmentId)}`,
             });
             if (response.status !== successStatus) {
-              throw new Error('Gmail attachment unavailable');
+              throw new SourceHttpError(response);
             }
             data = z.object({ data: z.string() }).parse(response.body).data;
           }

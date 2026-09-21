@@ -161,7 +161,14 @@ async function verifyRecords(input: {
   ).json();
   assert.equal(records.records[0].kind, source.kind);
   if (source.service === 'gmail') {
-    const attachments = records.records[0].data.messages[0].attachments as {
+    const receivedAttachments = records.records[0].data.messages[0].attachments;
+    const attachmentCount = 3;
+    assert.equal(receivedAttachments.length, attachmentCount);
+    assert.deepEqual(receivedAttachments[2], {
+      name: 'oversized.bin',
+      file: { status: 'failed', code: 'asset_too_large' },
+    });
+    const attachments = receivedAttachments.slice(0, 2) as {
       name: string;
       file: string;
     }[];
@@ -171,9 +178,10 @@ async function verifyRecords(input: {
       records.records[0].assets.map((asset: { id: string }) => asset.id).sort(),
       records.records[0].data.messages
         .flatMap(
-          (message: { attachments?: { file: string }[] }) =>
+          (message: { attachments?: { file: unknown }[] }) =>
             message.attachments?.map((attachment) => attachment.file) ?? [],
         )
+        .filter((file: unknown): file is string => typeof file === 'string')
         .sort(),
     );
     await assetsJourney({ page, origin, sourceId, attachments });

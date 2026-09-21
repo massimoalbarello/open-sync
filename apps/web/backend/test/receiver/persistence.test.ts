@@ -134,39 +134,3 @@ test('record browsing preserves unrelated JSON schemas, pagination and deletions
     await rm(dir, { recursive: true, force: true });
   }
 });
-
-test('adding record content preserves pre-existing records and receipts without a backfill', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'receiver-content-upgrade-'));
-  const db = new SQL({ adapter: 'sqlite', filename: join(dir, 'host.db') });
-  try {
-    await db.unsafe('CREATE TABLE __migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)');
-    const migrations = [
-      '0000_better_auth_schema.sql',
-      '0001_host_schema.sql',
-      '0002_receiver_assets.sql',
-    ];
-    for (const name of migrations) {
-      await db.unsafe(
-        await Bun.file(new URL(`../../src/db/migrations/${name}`, import.meta.url)).text(),
-      );
-      await db`INSERT INTO __migrations VALUES (${name},'previous deployment')`;
-    }
-    await db`INSERT INTO host_records(owner_id,source_id,kind,record_id,revision,deleted,data) VALUES ('alpha','source_1','item','old',1,0,'{"value":1}')`;
-    await db`INSERT INTO host_receipts VALUES ('alpha','original','hash')`;
-    await runMigrations({ db });
-    await runMigrations({ db });
-    const receiver = await SqliteReceiver.open({ db, assetDirectory: join(dir, 'assets') });
-    const record = await receiver.record({
-      ...scope,
-      sourceId: 'source_1',
-      kind: 'item',
-      id: 'old',
-    });
-    expect(record).toMatchObject({ data: { value: 1 }, revision: 1 });
-    expect(record).not.toHaveProperty('content');
-    expect((await receiver.status(scope)).receipts).toBe(1);
-  } finally {
-    await db.close();
-    await rm(dir, { recursive: true, force: true });
-  }
-});

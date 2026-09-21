@@ -1,6 +1,7 @@
 import type { ProviderResponse } from '@context-use/open-sync/definition';
 import type { SyncRecord } from '@context-use/open-sync/delivery';
 import type { JsonObject, JsonValue } from '@context-use/open-sync/json';
+import { checkResponse } from './http';
 
 export function object(value: JsonValue | undefined): JsonObject {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -53,10 +54,7 @@ export function record(value: JsonValue): SyncRecord {
 }
 
 export function readPull(response: ProviderResponse) {
-  const ok = 200;
-  if (response.status !== ok) {
-    throw new Error('GitHub request failed.');
-  }
+  checkResponse(response);
   const body = object(response.body);
   if (body.errors !== undefined) {
     throw new Error('GitHub returned an incomplete GraphQL result.');

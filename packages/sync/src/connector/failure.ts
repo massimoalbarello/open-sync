@@ -1,5 +1,6 @@
 import { SyncError } from '../models/error';
 import type { JsonObject } from '../models/json';
+import { isErrorStatus } from '../models/source-http-error';
 
 /** Only protocol metadata crosses this boundary; messages and payloads can contain credentials. */
 export function connectorFailure(input: {
@@ -36,7 +37,7 @@ export function connectorFailure(input: {
     code: 'connector_request_failed',
     message: 'connector request failed',
     diagnostics,
-    retryAfterMs: retryAfter(input.response?.headers.get('retry-after')),
+    status: recoveryStatus({ code, status: providerStatus ?? input.response?.status }),
   });
 }
 
@@ -46,15 +47,12 @@ function object(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-function retryAfter(value: string | null | undefined): number | undefined {
-  if (!value) {
-    return;
+function recoveryStatus(input: { code: unknown; status: unknown }): number | undefined {
+  const rateLimited = 429;
+  const forbidden = 403;
+  if (input.code === 'rate_limited') {
+    return rateLimited;
   }
-  const millisecondsPerSecond = 1000;
-  const seconds = /^\d+$/.test(value);
-  if (!seconds && !/^[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(value)) {
-    return;
-  }
-  const delay = seconds ? Number(value) * millisecondsPerSecond : Date.parse(value) - Date.now();
-  return Number.isSafeInteger(delay) && delay >= 0 ? delay : undefined;
+  // Connector 1.6.3 conflates quota and permission 403s. Keep retrying until it can classify them.
+  return isErrorStatus(input.status) && input.status !== forbidden ? input.status : undefined;
 }
