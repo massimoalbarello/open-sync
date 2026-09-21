@@ -17,18 +17,7 @@ export function writeRecord(input: {
   if (record.operation === 'delete' && (!previous || previous.deleted === 1)) {
     return;
   }
-  const contentHash =
-    record.operation === 'upsert'
-      ? canonicalJson(
-          record.assetRefs || record.markdownFields
-            ? {
-                data: record.data,
-                assetRefs: record.assetRefs ?? {},
-                markdownFields: record.markdownFields ?? [],
-              }
-            : record.data,
-        ).sha256
-      : previous!.hash;
+  const contentHash = record.operation === 'upsert' ? hashRecord(record) : previous!.hash;
   if (record.operation === 'upsert' && previous?.deleted === 0 && previous.hash === contentHash) {
     return;
   }
@@ -44,4 +33,25 @@ export function writeRecord(input: {
     Number(record.operation === 'delete'),
   );
   return { ...record, eventId: `event_${crypto.randomUUID()}`, revision, contentHash };
+}
+
+function hashRecord(record: Extract<SyncRecord, { operation: 'upsert' }>) {
+  // A tuple cannot collide with a legacy record's arbitrary JSON object.
+  if (record.content) {
+    return canonicalJson([
+      record.data,
+      record.content,
+      record.assetRefs ?? {},
+      record.markdownFields ?? [],
+    ]).sha256;
+  }
+  return canonicalJson(
+    record.assetRefs || record.markdownFields
+      ? {
+          data: record.data,
+          assetRefs: record.assetRefs ?? {},
+          markdownFields: record.markdownFields ?? [],
+        }
+      : record.data,
+  ).sha256;
 }

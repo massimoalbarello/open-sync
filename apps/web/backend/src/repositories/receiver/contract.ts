@@ -1,5 +1,5 @@
 import type { AssetUpload } from '@context-use/open-sync/assets';
-import type { Delivery } from '@context-use/open-sync/delivery';
+import type { Delivery, RecordContent } from '@context-use/open-sync/delivery';
 import type { JsonObject } from '@context-use/open-sync/json';
 export interface ReceiverScope {
   actorId: string;
@@ -16,6 +16,7 @@ export interface ReceivedRecord {
   id: string;
   revision: number;
   data: JsonObject;
+  content?: RecordContent;
   assets: ReceivedAsset[];
 }
 export interface ReceivedAsset {
@@ -25,7 +26,14 @@ export interface ReceivedAsset {
   mediaType: string;
   size: number;
 }
+export interface RecordIdentity {
+  sourceId: string;
+  kind: string;
+  id: string;
+}
 export interface ReceiverRepository {
+  record(input: ReceiverScope & RecordIdentity): Promise<ReceivedRecord | undefined>;
+  assetInfo(input: ReceiverScope & { id: string }): Promise<ReceivedAsset | undefined>;
   assets(input: ReceiverScope & { sourceId?: string; offset: number }): Promise<{
     assets: ReceivedAsset[];
     hasMore: boolean;
@@ -34,9 +42,15 @@ export interface ReceiverRepository {
   acceptAsset(
     input: ReceiverScope & AssetUpload & { sourceId: string; signal: AbortSignal },
   ): Promise<string>;
-  asset(
-    input: ReceiverScope & { id: string },
-  ): Promise<{ name: string; mediaType: string; body: ReadableStream<Uint8Array> } | undefined>;
+  asset(input: ReceiverScope & { id: string }): Promise<
+    | {
+        name: string;
+        mediaType: string;
+        size: number;
+        open(range?: { start: number; end: number }): ReadableStream<Uint8Array>;
+      }
+    | undefined
+  >;
   records(
     input: ReceiverScope & { sourceId?: string; offset: number },
   ): Promise<{ records: ReceivedRecord[]; hasMore: boolean; pageSize: number }>;

@@ -341,6 +341,10 @@ test('placeholder protocol resolves repeated and distinct assets while preservin
     revision: 1,
     contentHash: 'source',
     assetRefs: refs,
+    content: {
+      format: 'markdown' as const,
+      body: '| File | Status |\n| --- | --- |\n| [first](open-sync-asset:a) | ~~pending~~ |\n\n- [x] Read the file',
+    },
     markdownFields: ['body'],
     data: {
       files: ['open-sync-asset:b', 'open-sync-asset:a', 'open-sync-asset:a'],
@@ -365,6 +369,14 @@ test('placeholder protocol resolves repeated and distinct assets while preservin
   });
   expect(resolved).toMatchObject({ contentHash: 'source', data: { files: ['B', 'A', 'A'] } });
   expect(resolved.operation === 'upsert' && resolved.data.body).toContain('`open-sync-asset:a`');
+  expect(resolved.operation === 'upsert' && resolved.content?.body).toMatch(/^\| File\s+\|/m);
+  expect(resolved.operation === 'upsert' && resolved.content?.body).toContain(
+    '[first](https://destination.example/files/A)',
+  );
+  expect(resolved.operation === 'upsert' && resolved.content?.body).toContain('~~pending~~');
+  expect(resolved.operation === 'upsert' && resolved.content?.body).toContain(
+    '* [x] Read the file',
+  );
   expect(() => validateAssetReferences({ ...record, assetRefs: { a: refs.a } })).toThrow();
 });
 

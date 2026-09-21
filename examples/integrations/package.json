@@ -25,6 +25,7 @@
   },
   "devDependencies": {
     "@context-use/open-sync": "workspace:*",
+    "@types/turndown": "^5.0.6",
     "typescript": "catalog:"
   },
   "engines": {
@@ -32,6 +33,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/client": "2.0.0",
+    "turndown": "^7.2.4",
     "zod": "^4.4.3"
   }
 }

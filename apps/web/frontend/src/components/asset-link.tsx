@@ -1,6 +1,7 @@
+import { Link } from '@tanstack/react-router';
 import { Download } from 'lucide-react';
 
-export function AssetLink({ asset }: { asset: { id: string; name: string } }) {
+export function AssetDownload({ asset }: { asset: { id: string; name: string } }) {
   return (
     <a
       href={`/api/receiver/assets/${encodeURIComponent(asset.id)}`}
@@ -11,5 +12,17 @@ export function AssetLink({ asset }: { asset: { id: string; name: string } }) {
       <Download aria-hidden="true" className="size-4 shrink-0" />
       <span className="min-w-0 break-all">{asset.name}</span>
     </a>
+  );
+}
+
+export function AssetLink({ asset }: { asset: { id: string; name: string } }) {
+  return (
+    <Link
+      to="/assets/$id"
+      params={{ id: asset.id }}
+      className="break-all text-sm underline underline-offset-4"
+    >
+      {asset.name}
+    </Link>
   );
 }

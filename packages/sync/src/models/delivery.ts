@@ -4,12 +4,20 @@ import type { DefinitionRef } from './definition';
 import type { Scope } from './identity';
 import type { JsonObject } from './json';
 
+/** Source-authored readable content; it need not duplicate or be derived from data. */
+export interface RecordContent {
+  format: 'markdown';
+  body: string;
+}
+
 export type SyncRecord =
   | {
       operation: 'upsert';
       kind: string;
       id: string;
+      /** Source-defined structured representation, from metadata to the complete record. */
       data: JsonObject;
+      content?: RecordContent;
       assetRefs?: Record<string, AssetRef>;
       markdownFields?: string[];
     }

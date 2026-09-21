@@ -28,6 +28,7 @@ export async function* run(context: SyncContext): AsyncGenerator<SyncPage> {
         operation: 'upsert',
         kind: 'meeting',
         id,
+        content: { format: 'markdown', body: meeting.summary ?? '' },
         data: {
           title: meeting.title,
           notes: meeting.summary ?? '',

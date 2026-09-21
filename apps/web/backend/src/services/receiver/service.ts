@@ -6,6 +6,12 @@ export class ReceiverService {
   acceptAsset(input: Parameters<ReceiverRepository['acceptAsset']>[0]) {
     return this.repository.acceptAsset(input);
   }
+  record(input: Parameters<ReceiverRepository['record']>[0]) {
+    return this.repository.record(input);
+  }
+  assetInfo(input: ReceiverScope & { id: string }) {
+    return this.repository.assetInfo(input);
+  }
   asset(input: ReceiverScope & { id: string }) {
     return this.repository.asset(input);
   }

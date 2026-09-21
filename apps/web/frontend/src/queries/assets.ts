@@ -1,9 +1,12 @@
-import { infiniteQueryOptions } from '@tanstack/react-query';
+import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query';
 import { api } from '../lib/api';
+
+const notFound = 404;
+export const assetKeys = { owner: (userId: string) => ['assets', userId] as const };
 
 export function assetsOptions(input: { userId: string; sourceId?: string }) {
   return infiniteQueryOptions({
-    queryKey: ['assets', input.userId, input.sourceId],
+    queryKey: [...assetKeys.owner(input.userId), 'list', input.sourceId],
     initialPageParam: 0,
     refetchInterval: 5000,
     queryFn: async ({ pageParam, signal }) => {
@@ -18,5 +21,23 @@ export function assetsOptions(input: { userId: string; sourceId?: string }) {
     },
     // biome-ignore lint/complexity/useMaxParams: TanStack Query passes the page, pages and page parameter.
     getNextPageParam: (last, _pages, offset) => (last.hasMore ? offset + last.pageSize : undefined),
+  });
+}
+
+export function assetOptions(input: { userId: string; id: string }) {
+  return queryOptions({
+    queryKey: [...assetKeys.owner(input.userId), 'detail', input.id],
+    queryFn: async ({ signal }) => {
+      const result = await api.api.receiver
+        .assets({ id: input.id })
+        .details.get({ fetch: { signal } });
+      if (result.status === notFound) {
+        return null;
+      }
+      if (result.error) {
+        throw new Error('Could not load this asset.');
+      }
+      return result.data.asset;
+    },
   });
 }

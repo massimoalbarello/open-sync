@@ -2,6 +2,7 @@ import { Elysia, t } from 'elysia';
 import type { Auth } from '#backend/lib/auth/better-auth.ts';
 import { authorizeSyncRequest } from '#backend/routes/sync-authorization.ts';
 import type { ReceiverService } from '#backend/services/receiver/service.ts';
+import { assetResponse } from './asset-response';
 
 export function receiverController(input: {
   receiver: ReceiverService;
@@ -32,6 +33,43 @@ export function receiverController(input: {
       },
     )
     .get(
+      '/records/detail',
+      async ({ scope, query, status }) => {
+        const record = await input.receiver.record({
+          ...scope,
+          sourceId: query.sourceId,
+          kind: query.kind,
+          id: query.id,
+        });
+        return record ? { record } : status('Not Found', { error: 'Not Found' });
+      },
+      {
+        query: t.Object({
+          sourceId: t.String({ minLength: 1, maxLength: 1024 }),
+          kind: t.String({ minLength: 1, maxLength: 1024 }),
+          id: t.String({ minLength: 1, maxLength: 1024 }),
+        }),
+      },
+    )
+    .get(
+      '/assets/:id/details',
+      async ({ scope, params, status }) => {
+        const asset = await input.receiver.assetInfo({ ...scope, id: params.id });
+        return asset ? { asset } : status('Not Found', { error: 'Not Found' });
+      },
+      { params: t.Object({ id: t.String({ pattern: '^asset_[0-9a-f-]{36}$' }) }) },
+    )
+    .get(
+      '/assets/:id/preview',
+      async ({ scope, params, request, status }) => {
+        const asset = await input.receiver.asset({ ...scope, id: params.id });
+        return asset
+          ? assetResponse({ asset, range: request.headers.get('range'), inline: true })
+          : status('Not Found', { error: 'Not Found' });
+      },
+      { params: t.Object({ id: t.String({ pattern: '^asset_[0-9a-f-]{36}$' }) }) },
+    )
+    .get(
       '/assets',
       ({ scope, query }) =>
         input.receiver.assets({ ...scope, sourceId: query.sourceId, offset: query.offset ?? 0 }),
@@ -44,20 +82,12 @@ export function receiverController(input: {
     )
     .get(
       '/assets/:id',
-      async ({ scope, params, status }) => {
+      async ({ scope, params, request, status }) => {
         const asset = await input.receiver.asset({ ...scope, id: params.id });
         if (!asset) {
           return status('Not Found', { error: 'Not Found' });
         }
-        return new Response(asset.body, {
-          headers: {
-            'content-type': asset.mediaType,
-            'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(asset.name)}`,
-            'x-content-type-options': 'nosniff',
-            'content-security-policy': 'sandbox',
-            'cache-control': 'private, no-store',
-          },
-        });
+        return assetResponse({ asset, range: request.headers.get('range'), inline: false });
       },
       { params: t.Object({ id: t.String({ pattern: '^asset_[0-9a-f-]{36}$' }) }) },
     )

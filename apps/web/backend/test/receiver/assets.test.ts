@@ -45,7 +45,17 @@ test('receiver owns its bytes and stable asset IDs, checks integrity, and isolat
       }),
     ).toBe(id);
     const asset = await receiver.asset({ ...owner, id });
-    expect(Buffer.from(await new Response(asset!.body).arrayBuffer())).toEqual(bytes);
+    expect(Buffer.from(await new Response(asset!.open()).arrayBuffer())).toEqual(bytes);
+    const range = { start: 1, end: 3 };
+    expect(Buffer.from(await new Response(asset!.open(range)).arrayBuffer())).toEqual(
+      bytes.subarray(range.start, range.end),
+    );
+    expect(await receiver.assetInfo({ ...owner, id })).toMatchObject({
+      id,
+      name: '../untrusted.bin',
+      size: bytes.length,
+    });
+    expect(await receiver.assetInfo({ actorId: 'bob', ownerId: 'bob', id })).toBeUndefined();
     expect(await receiver.asset({ actorId: 'bob', ownerId: 'bob', id })).toBeUndefined();
     expect(await readdir(assetDirectory)).toHaveLength(1);
     await expect(
