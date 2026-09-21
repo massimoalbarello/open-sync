@@ -1,17 +1,17 @@
 import type { JsonObject } from '@context-use/open-sync/json';
 import { z } from 'zod';
 
-const months = { '3 months': 3, '1 year': 12, '3 years': 36 };
+const months = { 'Last 3 months': 3, 'Last 1 year': 12, 'Last 3 years': 36 };
 export const historyConfigSchema = z.strictObject({
   history: z
-    .enum(['3 months', '1 year', '3 years', 'Unlimited'])
+    .enum(['Last 3 months', 'Last 1 year', 'Last 3 years', 'All'])
     .optional()
-    .meta({ title: 'History', default: 'Unlimited' }),
+    .meta({ title: 'Interval', default: 'All' }),
 });
 
 export function historyStart(input: { config: JsonObject; now: Date }): Date | null {
-  const { history = 'Unlimited' } = historyConfigSchema.parse(input.config);
-  if (history === 'Unlimited') {
+  const { history = 'All' } = historyConfigSchema.parse(input.config);
+  if (history === 'All') {
     return null;
   }
   const start = new Date(input.now);

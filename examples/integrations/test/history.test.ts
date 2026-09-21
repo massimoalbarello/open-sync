@@ -5,27 +5,27 @@ import { historyStart } from '../src/syncs/history';
 import { slackThreads } from '../src/syncs/slack/definition';
 import { fixture, unused } from './fixture';
 
-test('history presets use calendar months, clamp month ends and leave Unlimited unbounded', () => {
+test('history presets use calendar months, clamp month ends and leave All unbounded', () => {
   const now = new Date('2024-05-31T12:34:56.000Z');
-  expect(historyStart({ config: { history: '3 months' }, now })?.toISOString()).toBe(
+  expect(historyStart({ config: { history: 'Last 3 months' }, now })?.toISOString()).toBe(
     '2024-02-29T12:34:56.000Z',
   );
-  expect(historyStart({ config: { history: '1 year' }, now })?.toISOString()).toBe(
+  expect(historyStart({ config: { history: 'Last 1 year' }, now })?.toISOString()).toBe(
     '2023-05-31T12:34:56.000Z',
   );
-  expect(historyStart({ config: { history: '3 years' }, now })?.toISOString()).toBe(
+  expect(historyStart({ config: { history: 'Last 3 years' }, now })?.toISOString()).toBe(
     '2021-05-31T12:34:56.000Z',
   );
-  expect(historyStart({ config: { history: 'Unlimited' }, now })).toBeNull();
+  expect(historyStart({ config: { history: 'All' }, now })).toBeNull();
   expect(historyStart({ config: {}, now })).toBeNull();
   expect(now.toISOString()).toBe('2024-05-31T12:34:56.000Z');
 });
 
 const ranges = [
-  { history: '3 months', count: 1 },
-  { history: '1 year', count: 2 },
-  { history: '3 years', count: 3 },
-  { history: 'Unlimited', count: 4 },
+  { history: 'Last 3 months', count: 1 },
+  { history: 'Last 1 year', count: 2 },
+  { history: 'Last 3 years', count: 3 },
+  { history: 'All', count: 4 },
 ];
 const dayMs = 86_400_000;
 const millisecondsPerSecond = 1000;

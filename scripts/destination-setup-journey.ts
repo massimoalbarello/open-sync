@@ -61,7 +61,7 @@ export async function destinationSetupJourney(input: { page: Page; origin: strin
     await page.getByRole('button', { name: 'Create sync', exact: true }).click();
     assert.deepEqual((await submitted).postDataJSON(), {
       source: 'gmail.threads',
-      config: { history: 'Unlimited' },
+      config: { history: 'All' },
       destination: {
         type: 'archive',
         input: { project: 'research', token: 'synthetic-archive-key', retention: 7 },

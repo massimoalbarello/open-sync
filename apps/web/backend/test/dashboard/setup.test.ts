@@ -130,7 +130,7 @@ test('dashboard creates syncs with an unrelated destination using its own setup 
       ...owner,
       source: 'github.pull-requests',
       destination: { type: 'archive', input: { project: 'research' }, ownerId: 'injected-owner' },
-      config: { history: '1 year' },
+      config: { history: 'Last 1 year' },
     };
     const sync = await dashboard.create(input);
     expect(engine.api.installation({ ...owner, id: sync.id }).config).toEqual(input.config);

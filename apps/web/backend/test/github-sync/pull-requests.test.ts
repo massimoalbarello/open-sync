@@ -5,10 +5,10 @@ const discover = 'SyncDiscover';
 const summary = 'SyncPullSummary';
 
 test.each([
-  { history: '3 months', count: 1 },
-  { history: '1 year', count: 2 },
-  { history: '3 years', count: 3 },
-  { history: 'Unlimited', count: 4 },
+  { history: 'Last 3 months', count: 1 },
+  { history: 'Last 1 year', count: 2 },
+  { history: 'Last 3 years', count: 3 },
+  { history: 'All', count: 4 },
 ])(
   'GitHub applies $history to activity and advances past excluded records',
   async ({ history, count }) => {
