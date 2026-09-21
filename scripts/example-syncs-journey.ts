@@ -146,7 +146,10 @@ async function connectSource(input: {
   );
   await page.getByText('Connected', { exact: true }).waitFor();
   await page.goto(`${origin}/syncs/${syncId}`);
-  await page.getByText('Completed → Local SQLite', { exact: true }).waitFor();
+  await page.getByRole('heading', { name: `${source.name} → Local SQLite`, exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Polling history', exact: true }).click();
+  await page.getByRole('cell', { name: 'Completed', exact: true }).first().waitFor();
+  await page.getByRole('link', { name: 'Overview', exact: true }).click();
   const installation = await (
     await page.request.get(`${origin}/api/open-sync/sync/installations/${syncId}`)
   ).json();

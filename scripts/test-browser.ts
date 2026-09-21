@@ -186,7 +186,9 @@ try {
   assert.equal(refreshedKeySync.sourceId, originalKeySync.sourceId);
   await githubOAuthSuccessJourney({ page, origin: app.origin });
   await page.goto(`${app.origin}/syncs/${syncId}`);
-  await page.getByText('Completed → Local SQLite', { exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Polling history', exact: true }).click();
+  await page.getByRole('cell', { name: 'Completed', exact: true }).first().waitFor();
+  await page.getByRole('link', { name: 'Overview', exact: true }).click();
   assert.equal(await page.getByText('Record schemas', { exact: true }).count(), 0);
   assert.equal(await page.getByText('Source configuration', { exact: true }).count(), 0);
   await page.screenshot({
@@ -293,7 +295,9 @@ try {
   const expectedConnections = 3;
   assert.equal(accounts.connections.length, expectedConnections);
   await page.goto(`${app.origin}/syncs/${oauthSync.id}`);
-  await page.getByText('Completed → Local SQLite', { exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Polling history', exact: true }).click();
+  await page.getByRole('cell', { name: 'Completed', exact: true }).first().waitFor();
+  await page.getByRole('link', { name: 'Overview', exact: true }).click();
   const beforeRun = await (
     await page.request.get(`${app.origin}/api/open-sync/sync/installations/${oauthSync.id}`)
   ).json();
