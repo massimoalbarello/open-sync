@@ -245,6 +245,20 @@ function captureFailure(input: {
   ) {
     throw error;
   }
+  if (error instanceof SyncError && error.status !== undefined) {
+    const tooLarge = 413;
+    if (error.status === tooLarge) {
+      input.repository.captureFailed({
+        lease: input.lease,
+        asset: input.asset,
+        code: 'asset_too_large',
+        terminal: true,
+      });
+      return;
+    }
+    input.repository.captureDeferred({ lease: input.lease, asset: input.asset, code: error.code });
+    throw error;
+  }
   const code =
     error instanceof SyncError &&
     ['asset_too_large', 'asset_storage_full', 'waiting_for_asset_capacity'].includes(error.code)
@@ -259,7 +273,6 @@ function captureFailure(input: {
       code: 'asset_fetch_failed',
       message: 'Asset fetch failed.',
       diagnostics: error instanceof SyncError ? error.diagnostics : undefined,
-      status: error instanceof SyncError ? error.status : undefined,
     });
   }
 }

@@ -137,6 +137,21 @@ export class SqliteAssets implements AssetRepository {
       );
     }).immediate();
   }
+  captureDeferred(input: Parameters<AssetRepository['captureDeferred']>[0]): void {
+    const { db } = this.input;
+    db.transaction(() => {
+      assertRun({ db, lease: input.lease });
+      db.query(
+        "UPDATE assets SET attempt=MAX(0,attempt-1),error_code=? WHERE owner_id=? AND source_id=? AND id=? AND version=? AND state='pending'",
+      ).run(
+        input.code,
+        input.lease.ownerId,
+        input.lease.installation.sourceId,
+        input.asset.id,
+        input.asset.version,
+      );
+    }).immediate();
+  }
   availableBytes(): number {
     const row = this.input.db
       .query<{ bytes: number }, []>(

@@ -50,6 +50,11 @@ function gmailResponse(request: Request) {
   if (url.pathname.endsWith('/messages/email-1/attachments/fixture-attachment')) {
     return Response.json({ data: Buffer.from('external attachment').toString('base64url') });
   }
+  if (url.pathname.endsWith('/messages/email-1/attachments/oversized-attachment')) {
+    // Exercise the published Connector proxy's 20 MiB response guard without allocating the payload.
+    const responseBytes = 22_020_096;
+    return Response.json({ data: '' }, { headers: { 'content-length': String(responseBytes) } });
+  }
   if (url.pathname.endsWith('/threads')) {
     const query = url.searchParams.get('q') ?? '';
     const oldest = Number(query.match(/after:(\d+)/)?.[1] ?? 0);
@@ -108,6 +113,12 @@ function gmailMessage(input: { id: string; date: string; text: string }) {
                 filename: 'attachment.bin',
                 mimeType: 'application/octet-stream',
                 body: { attachmentId: 'fixture-attachment' },
+              },
+              {
+                partId: '3',
+                filename: 'oversized.bin',
+                mimeType: 'application/octet-stream',
+                body: { attachmentId: 'oversized-attachment' },
               },
             ]
           : []),

@@ -7,6 +7,7 @@ import { accepted, alpha, configure, fixture, page, storage } from './support';
 const retryMs = 30_000;
 const rateLimited = 429;
 const forbidden = 403;
+const unavailable = 503;
 
 test.each(
   Object.values({
@@ -116,14 +117,15 @@ test.each(
   }
 });
 
-test.each([rateLimited, forbidden])(
-  'asset fetch HTTP %s retains its engine recovery policy',
+test.each([rateLimited, forbidden, unavailable])(
+  'asset fetch HTTP %s retains engine recovery across restart without exhausting the attachment',
   async (status) => {
     const files = storage();
     const events: SyncEvent[] = [];
-    const now = Date.now();
-    const clock = spyOn(Date, 'now').mockReturnValue(now);
-    const engine = createSyncRuntime({
+    let now = Date.now();
+    const clock = spyOn(Date, 'now').mockImplementation(() => now);
+    let rejected = true;
+    const options = {
       databasePath: files.path,
       definitions: [
         {
@@ -136,7 +138,10 @@ test.each([rateLimited, forbidden])(
                 version: '1',
                 name: 'file.bin',
                 mediaType: 'application/octet-stream',
-                read: () => Promise.reject(new SourceHttpError({ status })),
+                read: () =>
+                  rejected
+                    ? Promise.reject(new SourceHttpError({ status }))
+                    : Promise.resolve(new Blob(['attachment']).stream()),
               });
               yield { ...page, complete: true };
             },
@@ -144,22 +149,37 @@ test.each([rateLimited, forbidden])(
         },
       ],
       destinationTypes: { local: accepted },
-      onEvent: (event) => events.push(event),
-    });
+      timing: { assetAttempts: 1 },
+      onEvent: (event: SyncEvent) => events.push(event),
+    };
+    let engine = createSyncRuntime(options);
     try {
       const installation = await configure(engine);
+      const scope = { ...alpha, id: installation.id };
+      const delays = Object.values({ first: 30_000, second: 60_000, third: 120_000 });
+      for (const [index, delay] of delays.entries()) {
+        await engine.tick();
+        expect(engine.api.installation(scope)).toMatchObject({
+          enabled: status !== forbidden,
+          checkpoint: 1,
+          status: `source_http_${status}`,
+          nextDueAt: now + delay,
+        });
+        expect(events.at(-1)?.fields).toEqual({
+          httpStatus: status,
+          failureCount: index + 1,
+          ...(status === forbidden ? { paused: true } : { retryAfterMs: delay }),
+        });
+        await engine.close();
+        engine = createSyncRuntime(options);
+        now += delay;
+        if (status === forbidden) {
+          await engine.api.setEnabled({ ...scope, enabled: true });
+        }
+      }
+      rejected = false;
       await engine.tick();
-      expect(engine.api.installation({ ...alpha, id: installation.id })).toMatchObject({
-        enabled: status === rateLimited,
-        checkpoint: 1,
-        status: 'asset_fetch_failed',
-        nextDueAt: now + retryMs,
-      });
-      expect(events.at(-1)?.fields).toEqual({
-        httpStatus: status,
-        failureCount: 1,
-        ...(status === rateLimited ? { retryAfterMs: retryMs } : { paused: true }),
-      });
+      expect(engine.api.installation(scope)).toMatchObject({ enabled: true, status: 'succeeded' });
     } finally {
       await engine.close();
       clock.mockRestore();
