@@ -1,4 +1,4 @@
-// Test composition root: only external provider and receiver HTTP boundaries are replaced. The real host,
+// Test composition root: only external provider HTTP boundaries are replaced. The real host,
 // passkey verification, Connector, sync worker and SQLite stores run unchanged.
 import { pull } from '../apps/web/backend/test/github-sync/fixture';
 import { exampleProviderResponse } from './example-provider-fixtures';

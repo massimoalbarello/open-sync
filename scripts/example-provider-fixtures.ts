@@ -31,9 +31,6 @@ export async function exampleProviderResponse(request: Request): Promise<Respons
     }
     return await granolaResponse(request);
   }
-  if (url.hostname === 'receiver.example') {
-    return new Response(null, { status: 401 });
-  }
 }
 
 function gmailResponse(request: Request) {

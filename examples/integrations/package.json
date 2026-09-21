@@ -9,8 +9,7 @@
     "./syncs/gmail": "./src/syncs/gmail/definition.ts",
     "./syncs/slack": "./src/syncs/slack/definition.ts",
     "./syncs/granola": "./src/syncs/granola/definition.ts",
-    "./destinations/local": "./src/destinations/local/definition.ts",
-    "./destinations/http": "./src/destinations/http/definition.ts"
+    "./destinations/local": "./src/destinations/local/definition.ts"
   },
   "files": [
     "src"

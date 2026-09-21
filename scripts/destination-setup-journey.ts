@@ -8,10 +8,14 @@ type Page = Awaited<ReturnType<typeof virtualPasskeyBrowser>>['page'];
 export async function destinationSetupJourney(input: { page: Page; origin: string }) {
   const { page, origin } = input;
   const pattern = '**/api/open-sync/sync/destination-types';
+  const catalog = await (
+    await page.request.get(`${origin}/api/open-sync/sync/destination-types`)
+  ).json();
   await page.route(pattern, (route) =>
     route.fulfill({
       json: {
         types: [
+          ...catalog.types,
           {
             type: 'archive',
             name: 'Archive',
@@ -40,6 +44,15 @@ export async function destinationSetupJourney(input: { page: Page; origin: strin
   );
   try {
     await page.goto(`${origin}/syncs/new?source=gmail.threads`);
+    await page.getByLabel('Destination', { exact: true }).click();
+    await page.getByRole('option', { name: 'Archive', exact: true }).click();
+    await page.getByLabel('Archive token', { exact: true }).fill('discard-on-switch');
+    await page.getByLabel('Destination', { exact: true }).click();
+    await page.getByRole('option', { name: 'Local SQLite', exact: true }).click();
+    assert.equal(await page.getByLabel('Archive token', { exact: true }).count(), 0);
+    await page.getByLabel('Destination', { exact: true }).click();
+    await page.getByRole('option', { name: 'Archive', exact: true }).click();
+    assert.equal(await page.getByLabel('Archive token', { exact: true }).inputValue(), '');
     await page.getByLabel('Project', { exact: true }).fill('research');
     await page.getByLabel('Archive token', { exact: true }).fill('synthetic-archive-key');
     assert.equal(
@@ -76,12 +89,9 @@ export async function destinationSetupJourney(input: { page: Page; origin: strin
   }
   // Authoritative validation rejects both invalid destination settings and malformed envelopes safely.
   const before = await (await page.request.get(`${origin}/api/open-sync/sync/destinations`)).json();
-  for (const settings of [
-    { endpoint: 'http://receiver.example', apiKey: 'synthetic-secret' },
-    ['synthetic-secret'],
-  ]) {
+  for (const settings of [{ unexpected: 'synthetic-secret' }, ['synthetic-secret']]) {
     const rejected = await page.request.post(`${origin}/api/dashboard/syncs`, {
-      data: { source: 'gmail.threads', destination: { type: 'http', input: settings } },
+      data: { source: 'gmail.threads', destination: { type: 'local', input: settings } },
       headers: { origin },
     });
     assert.ok(!rejected.ok());

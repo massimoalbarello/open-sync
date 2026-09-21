@@ -58,21 +58,12 @@ import { gmailThreads } from '@open-sync/examples/syncs/gmail';
 import { slackThreads } from '@open-sync/examples/syncs/slack';
 import { granolaMeetings } from '@open-sync/examples/syncs/granola';
 import { localDestination } from '@open-sync/examples/destinations/local';
-import { httpDestination } from '@open-sync/examples/destinations/http';
 for (const source of [githubPullRequests, gmailThreads, slackThreads, granolaMeetings]) {
   const definition = await source.load();
   if (typeof definition.run !== 'function') throw new Error('Missing source implementation');
 }
 const local = localDestination({ accept: async () => true });
-const http = httpDestination({ secret: 'package-test-secret' });
-const config = await http.setup.prepare({
-  scope: { ownerId: 'owner', actorId: 'owner' },
-  input: { endpoint: 'https://example.com/records', apiKey: 'package-test-api-key' },
-});
-if (typeof local.deliver !== 'function' || typeof http.deliver !== 'function' ||
-    JSON.stringify(config).includes('package-test-api-key')) {
-  throw new Error('Invalid packaged destination setup');
-}
+if (typeof local.deliver !== 'function') throw new Error('Missing destination implementation');
 `,
   );
   await run({ cwd: temporary, command: ['bun', 'adapter.ts'] });

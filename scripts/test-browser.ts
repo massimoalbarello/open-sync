@@ -103,11 +103,8 @@ try {
   });
   await page.getByRole('option', { name: 'GitHub pull requests', exact: true }).click();
   await page.getByLabel('Destination', { exact: true }).click();
-  await page.getByRole('option', { name: 'External API', exact: true }).waitFor();
-  assert.deepEqual(await page.getByRole('option').allTextContents(), [
-    'Local SQLite',
-    'External API',
-  ]);
+  await page.getByRole('option', { name: 'Local SQLite', exact: true }).waitFor();
+  assert.deepEqual(await page.getByRole('option').allTextContents(), ['Local SQLite']);
   await page.screenshot({
     path: 'artifacts/create-sync-destinations.png',
     fullPage: true,

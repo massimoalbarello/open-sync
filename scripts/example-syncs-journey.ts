@@ -31,46 +31,11 @@ export async function exampleSyncsJourney(input: { page: Page; origin: string })
   for (const source of sources) {
     await connectSource({ ...input, source });
   }
-  const { page, origin } = input;
   await historySetupJourney(input);
   await destinationSetupJourney(input);
-  await page.goto(`${origin}/syncs/new?source=gmail.threads`);
-  await page.getByLabel('Destination', { exact: true }).click();
-  await page.getByRole('option', { name: 'External API', exact: true }).click();
-  await page.getByLabel('API key', { exact: true }).fill('discard-on-switch');
-  await page.getByLabel('Destination', { exact: true }).click();
-  await page.getByRole('option', { name: 'Local SQLite', exact: true }).click();
-  assert.equal(await page.getByLabel('API key', { exact: true }).count(), 0);
-  await page.getByLabel('Destination', { exact: true }).click();
-  await page.getByRole('option', { name: 'External API', exact: true }).click();
-  assert.equal(await page.getByLabel('API key', { exact: true }).inputValue(), '');
-  await page.getByRole('button', { name: 'Create sync', exact: true }).click();
-  await page.getByText('Endpoint URL is required.', { exact: true }).waitFor();
-  await page.getByLabel('Endpoint URL', { exact: true }).fill('https://receiver.example/records');
-  await page.getByLabel('API key', { exact: true }).fill('synthetic-destination-key');
-  assert.equal(await page.getByLabel('API key', { exact: true }).getAttribute('type'), 'password');
-  await page.screenshot({
-    path: 'artifacts/external-api-destination.png',
-    fullPage: true,
-    animations: 'disabled',
-  });
-  await page.getByRole('button', { name: 'Create sync', exact: true }).click();
-  await page.waitForURL(/\/syncs\/sync_/);
-  await page.goto(`${origin}/delivery`);
-  await page.getByText('blocked · http 401', { exact: true }).waitFor();
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`${origin}/syncs/new?source=granola.meetings&destination=http`);
-  await page.getByLabel('Endpoint URL').waitFor();
-  assert.ok(await page.evaluate('document.documentElement.scrollWidth <= window.innerWidth'));
-  await page.screenshot({
-    path: 'artifacts/external-api-mobile.png',
-    fullPage: true,
-    animations: 'disabled',
-  });
-  await page.setViewportSize({ width: 1280, height: 720 });
   await providerSetupJourney(input);
   console.log(
-    'Example journeys passed: Gmail OAuth, Slack OAuth, Granola OAuth/MCP, local records and external API rejection.',
+    'Example journeys passed: Gmail OAuth, Slack OAuth, Granola OAuth/MCP, and local records.',
   );
 }
 
