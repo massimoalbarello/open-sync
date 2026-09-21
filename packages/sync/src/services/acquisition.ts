@@ -1,7 +1,7 @@
 import type { Logger } from '../execution/diagnostics';
 import { bindProvider, type ProviderGateway } from '../execution/provider';
 import type { SourceAssets } from '../models/asset';
-import { fail, SyncError } from '../models/error';
+import { SyncError } from '../models/error';
 import { retryDelay, type Timing } from '../models/limits';
 import type { Registry } from '../models/registry';
 import { identifier } from '../models/validation';
@@ -251,6 +251,11 @@ function captureFailure(input: {
   const terminal = code === 'asset_too_large' || input.attempt >= input.attempts;
   input.repository.captureFailed({ lease: input.lease, asset: input.asset, code, terminal });
   if (!terminal) {
-    fail('asset_fetch_failed');
+    throw new SyncError({
+      code: 'asset_fetch_failed',
+      message: 'Asset fetch failed.',
+      diagnostics: error instanceof SyncError ? error.diagnostics : undefined,
+      retryAfterMs: error instanceof SyncError ? error.retryAfterMs : undefined,
+    });
   }
 }

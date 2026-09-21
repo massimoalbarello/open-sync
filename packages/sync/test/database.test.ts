@@ -3,10 +3,11 @@ import { expect, test } from 'bun:test';
 import { openDatabase } from '../src/db/client';
 import { repositories, storage } from './support';
 
+const preRetrySchemaVersion = 3;
 const previousSchemaVersion = 4;
 const futureSchemaVersion = 6;
 
-test.each([1, 2, 3, previousSchemaVersion, futureSchemaVersion])(
+test.each([1, 2, preRetrySchemaVersion, previousSchemaVersion, futureSchemaVersion])(
   'schema version %i is rejected without upgrading or deleting data',
   (version) => {
     const files = storage();

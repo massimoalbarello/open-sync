@@ -128,7 +128,18 @@ async function connectSource(input: {
   const installation = await (
     await page.request.get(`${origin}/api/open-sync/sync/installations/${syncId}`)
   ).json();
-  await page.goto(`${origin}/records?sourceId=${encodeURIComponent(installation.sourceId)}`);
+  await verifyRecords({ ...input, sourceId: installation.sourceId });
+  console.log(`${source.name}: OAuth and local delivery passed.`);
+}
+
+async function verifyRecords(input: {
+  page: Page;
+  origin: string;
+  source: (typeof sources)[number];
+  sourceId: string;
+}) {
+  const { page, origin, source, sourceId } = input;
+  await page.goto(`${origin}/records?sourceId=${encodeURIComponent(sourceId)}`);
   await page
     .getByRole('list', { name: 'Received records' })
     .getByRole('listitem')
@@ -136,7 +147,7 @@ async function connectSource(input: {
     .waitFor({ timeout: 180_000 });
   const records = await (
     await page.request.get(
-      `${origin}/api/receiver/records?offset=0&sourceId=${encodeURIComponent(installation.sourceId)}`,
+      `${origin}/api/receiver/records?offset=0&sourceId=${encodeURIComponent(sourceId)}`,
     )
   ).json();
   assert.equal(records.records[0].kind, source.kind);
@@ -151,7 +162,7 @@ async function connectSource(input: {
       records.records[0].assets.map((asset: { id: string }) => asset.id),
       attachments.map((attachment) => attachment.file),
     );
-    await assetsJourney({ page, origin, sourceId: installation.sourceId, attachments });
+    await assetsJourney({ page, origin, sourceId, attachments });
     const expected = ['inline attachment', 'external attachment'];
     for (const [index, attachment] of attachments.entries()) {
       const response = await page.request.get(`${origin}/api/receiver/assets/${attachment.file}`);
@@ -188,5 +199,4 @@ async function connectSource(input: {
       animations: 'disabled',
     });
   }
-  console.log(`${source.name}: OAuth and local delivery passed.`);
 }
