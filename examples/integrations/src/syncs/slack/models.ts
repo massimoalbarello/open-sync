@@ -1,17 +1,31 @@
 import { z } from 'zod';
 
 export const channelSchema = z.object({ id: z.string().min(1), name: z.string().optional() });
+export const fileSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().optional(),
+  title: z.string().optional(),
+  mimetype: z.string().optional(),
+  is_external: z.boolean().optional(),
+});
 export const messageSchema = z.strictObject({
   id: z.string().min(1),
   body: z.string(),
   author: z.string().nullable(),
   sentAt: z.iso.datetime({ offset: true }),
+  files: z.array(fileSchema).optional(),
 });
 export const threadSchema = z.strictObject({
   channel: z.string(),
   channelId: z.string(),
   url: z.url(),
-  messages: z.array(messageSchema).min(1),
+  messages: z
+    .array(
+      messageSchema.omit({ files: true }).extend({
+        attachments: z.array(z.strictObject({ name: z.string(), file: z.string() })).optional(),
+      }),
+    )
+    .min(1),
 });
 export const providerMessageSchema = z.object({
   ts: z.string().regex(/^\d+\.\d+$/),
@@ -20,6 +34,7 @@ export const providerMessageSchema = z.object({
   bot_id: z.string().optional(),
   thread_ts: z.string().optional(),
   reply_count: z.number().int().nonnegative().optional(),
+  files: z.array(fileSchema).optional(),
 });
 export const checkpointSchema = z.strictObject({
   account: z.string().nullable(),

@@ -2,7 +2,16 @@ import { Button } from '@repo/ui/button';
 import { cn } from '@repo/ui/class-names';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, Link, Outlet, redirect, useNavigate } from '@tanstack/react-router';
-import { ArrowRightLeft, Database, ListChecks, LogOut, Menu, Plug, RefreshCw } from 'lucide-react';
+import {
+  ArrowRightLeft,
+  Database,
+  Files,
+  ListChecks,
+  LogOut,
+  Menu,
+  Plug,
+  RefreshCw,
+} from 'lucide-react';
 import { useState } from 'react';
 import { sessionOptions, signOut } from '../queries/session';
 
@@ -21,6 +30,7 @@ const sections = [
   { to: '/providers', label: 'Providers', icon: Plug },
   { to: '/syncs', label: 'Syncs', icon: RefreshCw },
   { to: '/records', label: 'Records', icon: Database },
+  { to: '/assets', label: 'Assets', icon: Files },
   { to: '/delivery', label: 'Queue', icon: ListChecks },
 ] as const;
 

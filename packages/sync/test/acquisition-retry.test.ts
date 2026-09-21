@@ -1,8 +1,11 @@
 import { expect, spyOn, test } from 'bun:test';
 import type { SyncEvent } from '../src/execution/diagnostics';
+import type { SyncContext } from '../src/models/definition';
 import { SyncError } from '../src/models/error';
-import { defaultTiming } from '../src/models/limits';
+import { defaultLimits, defaultTiming } from '../src/models/limits';
 import { Registry } from '../src/models/registry';
+import { DirectoryAssets } from '../src/repositories/assets/filesystem';
+import { SqliteAssets } from '../src/repositories/assets/sqlite';
 import { createSyncRuntime } from '../src/runtime';
 import { AcquisitionService } from '../src/services/acquisition';
 import { accepted, alpha, beta, configure, fixture, page, repositories, storage } from './support';
@@ -25,6 +28,14 @@ test.each(['paused', 'interrupted', 'timed_out', 'waiting_for_capacity'])(
     });
     const service = new AcquisitionService({
       repository: f.acquisition,
+      assets: new SqliteAssets({
+        db: f.db,
+        maxBytes: defaultLimits.maxPendingAssetBytes,
+        maxDeliveryBytes: defaultLimits.maxPendingBytes,
+        maxMaterializedBytes: defaultLimits.maxMaterializedBytes,
+      }),
+      files: new DirectoryAssets(`${f.files.path}.assets`),
+      maxAssetBytes: defaultLimits.maxAssetBytes,
       registry: new Registry({
         definitions: [
           {
@@ -155,56 +166,74 @@ test('source failures back off durably despite partial progress and pruned histo
   }
 });
 
-test('a provider cooldown is a lower bound and healthy checkpoint yields reset backoff', async () => {
-  const files = storage();
-  let now = Date.now();
-  const clock = spyOn(Date, 'now').mockImplementation(() => now);
-  let cooldown = 120_000;
-  let failing = true;
-  const options = {
-    databasePath: files.path,
-    definitions: [
-      {
-        ...fixture,
-        load: () => ({
-          // biome-ignore lint/suspicious/useAwait: The fixture implements the asynchronous execution boundary.
-          async *run() {
-            if (failing) {
-              throw new SyncError({
-                code: 'connector_request_failed',
-                message: 'failure',
-                retryAfterMs: cooldown,
-              });
-            }
-            yield page;
-          },
-        }),
-      },
-    ],
-    destinationTypes: { local: accepted },
-    timing: { retryMs, maxPages: 1 },
-  };
-  const engine = createSyncRuntime(options);
-  try {
-    const installation = await configure(engine);
-    const scope = { ...alpha, id: installation.id };
-    await engine.tick();
-    expect(engine.api.installation(scope).nextDueAt).toBe(now + cooldown);
-    now += cooldown;
-    cooldown = 1;
-    await engine.tick();
-    const secondDelay = 60_000;
-    expect(engine.api.installation(scope).nextDueAt).toBe(now + secondDelay);
-    now += secondDelay;
-    failing = false;
-    await engine.tick();
-    expect(engine.api.installation(scope)).toMatchObject({ status: 'yielded', nextDueAt: now });
-    failing = true;
-    await engine.tick();
-    expect(engine.api.installation(scope).nextDueAt).toBe(now + retryMs);
-  } finally {
-    await engine.close();
-    clock.mockRestore();
-    files.close();
-  }
-});
+test.each(['records', 'assets'])(
+  'a provider cooldown for %s is a lower bound and healthy checkpoint yields reset backoff',
+  async (mode) => {
+    const files = storage();
+    let now = Date.now();
+    const clock = spyOn(Date, 'now').mockImplementation(() => now);
+    const events: SyncEvent[] = [];
+    let cooldown = 120_000;
+    let failing = true;
+    const options = {
+      databasePath: files.path,
+      definitions: [
+        {
+          ...fixture,
+          load: () => ({
+            async *run(context: SyncContext) {
+              if (failing) {
+                const failure = new SyncError({
+                  code: 'connector_request_failed',
+                  message: 'private upstream payload',
+                  diagnostics: { httpStatus: 429 },
+                  retryAfterMs: cooldown,
+                });
+                if (mode === 'assets') {
+                  await context.assets.capture({
+                    id: 'file',
+                    version: '1',
+                    name: 'file.bin',
+                    mediaType: 'application/octet-stream',
+                    read: () => Promise.reject(failure),
+                  });
+                } else {
+                  throw failure;
+                }
+              }
+              yield page;
+            },
+          }),
+        },
+      ],
+      destinationTypes: { local: accepted },
+      timing: { retryMs, maxPages: 1, assetAttempts: 4 },
+      onEvent: (event: SyncEvent) => events.push(event),
+    };
+    const engine = createSyncRuntime(options);
+    try {
+      const installation = await configure(engine);
+      const scope = { ...alpha, id: installation.id };
+      await engine.tick();
+      expect(engine.api.installation(scope).nextDueAt).toBe(now + cooldown);
+      expect(events.at(-1)?.fields).toMatchObject({ httpStatus: 429, retryAfterMs: cooldown });
+      expect(JSON.stringify(events)).not.toContain('private upstream payload');
+      now += cooldown;
+      cooldown = 1;
+      await engine.tick();
+      const secondDelay = 60_000;
+      expect(engine.api.installation(scope).nextDueAt).toBe(now + secondDelay);
+      now += secondDelay;
+      failing = false;
+      await engine.tick();
+      expect(engine.api.installation(scope)).toMatchObject({ status: 'yielded', nextDueAt: now });
+      failing = true;
+      await engine.tick();
+      expect(engine.api.installation(scope).nextDueAt).toBe(now + retryMs);
+    } finally {
+      await engine.close();
+      clock.mockRestore();
+      files.close();
+    }
+  },
+);

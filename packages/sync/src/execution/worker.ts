@@ -13,7 +13,7 @@ export class Worker implements WorkerControl {
   readonly #lifetime = new AbortController();
   #timer?: ReturnType<typeof setInterval>;
   #acquisition?: Promise<void>;
-  #delivery?: Promise<void>;
+  readonly #deliveries = new Set<Promise<void>>();
   #active?: { ownerId: string; id: string; abort: AbortController };
   #closing?: Promise<void>;
   constructor(
@@ -22,6 +22,7 @@ export class Worker implements WorkerControl {
       delivery: DeliveryService;
       timing: Timing;
       log: Logger;
+      cleanup(): Promise<void>;
     },
   ) {}
   ensureOpen(): void {
@@ -45,10 +46,13 @@ export class Worker implements WorkerControl {
     this.#acquisition ??= this.acquire().finally(() => {
       this.#acquisition = undefined;
     });
-    this.#delivery ??= this.input.delivery.execute(this.signal()).finally(() => {
-      this.#delivery = undefined;
-    });
-    return Promise.all([this.#acquisition, this.#delivery]).then(() => undefined);
+    while (this.#deliveries.size < this.input.timing.deliveryConcurrency) {
+      const delivery = this.input.delivery.execute(this.signal()).finally(() => {
+        this.#deliveries.delete(delivery);
+      });
+      this.#deliveries.add(delivery);
+    }
+    return Promise.all([this.#acquisition, ...this.#deliveries]).then(() => this.input.cleanup());
   }
   private signal(extra?: AbortSignal): AbortSignal {
     return AbortSignal.any([
@@ -85,6 +89,6 @@ export class Worker implements WorkerControl {
       clearInterval(this.#timer);
     }
     this.#lifetime.abort('interrupted');
-    await Promise.allSettled([this.#acquisition, this.#delivery]);
+    await Promise.allSettled([this.#acquisition, ...this.#deliveries]);
   }
 }

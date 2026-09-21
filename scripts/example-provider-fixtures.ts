@@ -47,6 +47,9 @@ function gmailResponse(request: Request) {
       historyId: '1',
     });
   }
+  if (url.pathname.endsWith('/messages/email-1/attachments/fixture-attachment')) {
+    return Response.json({ data: Buffer.from('external attachment').toString('base64url') });
+  }
   if (url.pathname.endsWith('/threads')) {
     const query = url.searchParams.get('q') ?? '';
     const oldest = Number(query.match(/after:(\d+)/)?.[1] ?? 0);
@@ -80,13 +83,35 @@ function gmailMessage(input: { id: string; date: string; text: string }) {
     internalDate: String(Date.parse(input.date)),
     snippet: input.text,
     payload: {
-      mimeType: 'text/plain',
+      mimeType: 'multipart/mixed',
       headers: [
         { name: 'Subject', value: 'Lunch' },
         { name: 'From', value: 'sam@example.com' },
         { name: 'To', value: 'alice@example.com' },
       ],
-      body: { data: Buffer.from(input.text).toString('base64url') },
+      parts: [
+        {
+          partId: '0',
+          mimeType: 'text/plain',
+          body: { data: Buffer.from(input.text).toString('base64url') },
+        },
+        ...(input.id === 'email-1'
+          ? [
+              {
+                partId: '1',
+                filename: 'attachment.bin',
+                mimeType: 'application/octet-stream',
+                body: { data: Buffer.from('inline attachment').toString('base64url') },
+              },
+              {
+                partId: '2',
+                filename: 'attachment.bin',
+                mimeType: 'application/octet-stream',
+                body: { attachmentId: 'fixture-attachment' },
+              },
+            ]
+          : []),
+      ],
     },
   };
 }

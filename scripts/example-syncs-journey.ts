@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import type { virtualPasskeyBrowser } from '@repo/browser-testing/browser';
+import { assetsEmptyJourney, assetsJourney, resumeAssetDelivery } from './assets-journey';
 import { copyAuthorizationJourney } from './copy-authorization-journey';
 import { destinationSetupJourney } from './destination-setup-journey';
 import { historySetupJourney } from './history-setup-journey';
@@ -7,6 +8,8 @@ import { providerSetupJourney } from './provider-setup-journey';
 import { sourceRetryJourney } from './source-retry-journey';
 
 type Page = Awaited<ReturnType<typeof virtualPasskeyBrowser>>['page'];
+const successStatus = 200;
+const notFoundStatus = 404;
 const sources = [
   {
     service: 'gmail',
@@ -29,6 +32,7 @@ const sources = [
 ];
 
 export async function exampleSyncsJourney(input: { page: Page; origin: string }) {
+  await assetsEmptyJourney(input);
   for (const source of sources) {
     await connectSource({ ...input, source });
   }
@@ -46,6 +50,11 @@ async function connectSource(input: {
   source: (typeof sources)[number];
 }) {
   const { page, origin, source } = input;
+  if (source.service === 'gmail') {
+    await page.goto(`${origin}/delivery`);
+    await page.getByRole('button', { name: 'Pause delivery', exact: true }).click();
+    await page.getByRole('button', { name: 'Resume delivery', exact: true }).waitFor();
+  }
   await page.route(source.authorization, (route) =>
     route.fulfill({
       status: 200,
@@ -124,7 +133,21 @@ async function connectSource(input: {
   const installation = await (
     await page.request.get(`${origin}/api/open-sync/sync/installations/${syncId}`)
   ).json();
-  await page.goto(`${origin}/records?sourceId=${encodeURIComponent(installation.sourceId)}`);
+  if (source.service === 'gmail') {
+    await resumeAssetDelivery({ page, origin, sourceId: installation.sourceId });
+  }
+  await verifyRecords({ ...input, sourceId: installation.sourceId });
+  console.log(`${source.name}: OAuth and local delivery passed.`);
+}
+
+async function verifyRecords(input: {
+  page: Page;
+  origin: string;
+  source: (typeof sources)[number];
+  sourceId: string;
+}) {
+  const { page, origin, source, sourceId } = input;
+  await page.goto(`${origin}/records?sourceId=${encodeURIComponent(sourceId)}`);
   await page
     .getByRole('list', { name: 'Received records' })
     .getByRole('listitem')
@@ -132,10 +155,38 @@ async function connectSource(input: {
     .waitFor({ timeout: 180_000 });
   const records = await (
     await page.request.get(
-      `${origin}/api/receiver/records?offset=0&sourceId=${encodeURIComponent(installation.sourceId)}`,
+      `${origin}/api/receiver/records?offset=0&sourceId=${encodeURIComponent(sourceId)}`,
     )
   ).json();
   assert.equal(records.records[0].kind, source.kind);
+  if (source.service === 'gmail') {
+    const attachments = records.records[0].data.messages[0].attachments as {
+      name: string;
+      file: string;
+    }[];
+    assert.equal(attachments.length, 2);
+    assert.notEqual(attachments[0]!.file, attachments[1]!.file);
+    assert.deepEqual(
+      records.records[0].assets.map((asset: { id: string }) => asset.id),
+      attachments.map((attachment) => attachment.file),
+    );
+    await assetsJourney({ page, origin, sourceId, attachments });
+    const expected = ['inline attachment', 'external attachment'];
+    for (const [index, attachment] of attachments.entries()) {
+      const response = await page.request.get(`${origin}/api/receiver/assets/${attachment.file}`);
+      assert.equal(response.status(), successStatus);
+      assert.equal(await response.text(), expected[index]);
+      assert.match(response.headers()['content-disposition']!, /^attachment;/);
+    }
+    assert.equal(
+      (
+        await page.request.get(
+          `${origin}/api/receiver/assets/asset_00000000-0000-0000-0000-000000000000`,
+        )
+      ).status(),
+      notFoundStatus,
+    );
+  }
   assert.ok(!JSON.stringify(records).includes('fixture-token'));
   if (source.kind === 'thread') {
     assert.equal(records.records.length, 1);
@@ -156,5 +207,4 @@ async function connectSource(input: {
       animations: 'disabled',
     });
   }
-  console.log(`${source.name}: OAuth and local delivery passed.`);
 }

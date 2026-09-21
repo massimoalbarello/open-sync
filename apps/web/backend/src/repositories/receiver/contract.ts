@@ -1,3 +1,4 @@
+import type { AssetUpload } from '@context-use/open-sync/assets';
 import type { Delivery } from '@context-use/open-sync/delivery';
 import type { JsonObject } from '@context-use/open-sync/json';
 export interface ReceiverScope {
@@ -15,11 +16,31 @@ export interface ReceivedRecord {
   id: string;
   revision: number;
   data: JsonObject;
+  assets: ReceivedAsset[];
+}
+export interface ReceivedAsset {
+  id: string;
+  sourceId: string;
+  name: string;
+  mediaType: string;
+  size: number;
 }
 export interface ReceiverRepository {
+  assets(input: ReceiverScope & { sourceId?: string; offset: number }): Promise<{
+    assets: ReceivedAsset[];
+    hasMore: boolean;
+    pageSize: number;
+  }>;
+  acceptAsset(
+    input: ReceiverScope & AssetUpload & { sourceId: string; signal: AbortSignal },
+  ): Promise<string>;
+  asset(
+    input: ReceiverScope & { id: string },
+  ): Promise<{ name: string; mediaType: string; body: ReadableStream<Uint8Array> } | undefined>;
   records(
     input: ReceiverScope & { sourceId?: string; offset: number },
   ): Promise<{ records: ReceivedRecord[]; hasMore: boolean; pageSize: number }>;
+  isPaused(scope: ReceiverScope): Promise<boolean>;
   status(scope: ReceiverScope): Promise<ReceiverStatus>;
   setPaused(input: ReceiverScope & { paused: boolean }): Promise<void>;
   accept(input: ReceiverScope & { delivery: Delivery }): Promise<boolean>;

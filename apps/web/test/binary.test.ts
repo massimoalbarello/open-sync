@@ -40,6 +40,7 @@ test('standalone binary embeds frontend and migrations and preserves state on re
       expect(migrations.map((migration) => migration.name)).toEqual([
         '0000_better_auth_schema.sql',
         '0001_host_schema.sql',
+        '0002_receiver_assets.sql',
       ]);
     } finally {
       await db.close();

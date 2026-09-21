@@ -24,6 +24,7 @@ export async function fixture(input: {
     destinationTypes: {
       test: {
         version: '1',
+        acceptsAssets: true,
         configSchema: { type: 'object' as const },
         deliver: ({ delivery }: { delivery: Delivery }) => {
           deliveries.push(delivery);
@@ -43,6 +44,7 @@ export async function fixture(input: {
   });
   const resource = { ...owner, id: installation.id };
   return {
+    deliveries,
     get engine() {
       return engine;
     },

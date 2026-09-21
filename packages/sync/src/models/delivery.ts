@@ -1,13 +1,22 @@
 import type { Schema } from '@cfworker/json-schema';
+import type { AssetRef, DeliveryAsset, DestinationAssets } from './asset';
 import type { DefinitionRef } from './definition';
 import type { Scope } from './identity';
 import type { JsonObject } from './json';
 
 export type SyncRecord =
-  | { operation: 'upsert'; kind: string; id: string; data: JsonObject }
+  | {
+      operation: 'upsert';
+      kind: string;
+      id: string;
+      data: JsonObject;
+      assetRefs?: Record<string, AssetRef>;
+      markdownFields?: string[];
+    }
   | { operation: 'delete'; kind: string; id: string };
 export interface Deliverable {
   records: readonly SyncRecord[];
+  assets?: readonly AssetRef[];
 }
 export type DeliveredRecord = SyncRecord & {
   eventId: string;
@@ -15,13 +24,13 @@ export type DeliveredRecord = SyncRecord & {
   contentHash: string;
 };
 export interface Delivery {
-  version: 1;
+  version: 1 | 2;
   id: string;
   ownerId: string;
   sourceId: string;
   installationId: string;
   definition: DefinitionRef;
-  deliverable: { records: DeliveredRecord[] };
+  deliverable: { records: DeliveredRecord[]; assets?: DeliveryAsset[] };
 }
 export type DeliveryResult =
   | { status: 'accepted' }
@@ -33,6 +42,8 @@ export interface DestinationType {
   /** Pin endpoint/interpretation changes to a new version. Existing work is never rerouted. */
   version: string;
   configSchema: Schema;
+  /** Declares that deliver consumes assets, either as a bundle or with assetsFirst. */
+  acceptsAssets?: boolean;
   /** User input is validated before preparation; only the resulting config is persisted. */
   setup?: {
     schema: Schema;
@@ -44,6 +55,7 @@ export interface DestinationType {
     config: JsonObject;
     delivery: Delivery;
     signal: AbortSignal;
+    assets?: DestinationAssets;
   }): Promise<DeliveryResult>;
 }
 export interface Destination {

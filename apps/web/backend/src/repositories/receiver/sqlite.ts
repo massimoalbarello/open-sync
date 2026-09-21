@@ -1,29 +1,76 @@
+import { join } from 'node:path';
 import type { DeliveredRecord, Delivery } from '@context-use/open-sync/delivery';
 import { canonicalJson } from '@context-use/open-sync/json';
 import type { SQL, TransactionSQL } from 'bun';
+import { acceptAsset, recoverAssetFiles } from './assets';
+import { browseAssets, relateAssets } from './browse-assets';
 import type { ReceiverRepository, ReceiverScope } from './contract';
 
 export class SqliteReceiver implements ReceiverRepository {
-  constructor(private readonly db: SQL) {}
+  private readonly db: SQL;
+  private readonly assetDirectory: string;
+  private constructor(input: { db: SQL; assetDirectory: string }) {
+    this.db = input.db;
+    this.assetDirectory = input.assetDirectory;
+  }
+  /** Open before starting uploads; this receiver exclusively owns its asset directory. */
+  static async open(input: { db: SQL; assetDirectory: string }) {
+    await recoverAssetFiles({ db: input.db, directory: input.assetDirectory });
+    return new SqliteReceiver(input);
+  }
+  acceptAsset(input: Parameters<ReceiverRepository['acceptAsset']>[0]) {
+    return acceptAsset({ ...input, db: this.db, directory: this.assetDirectory });
+  }
+  assets(input: Parameters<ReceiverRepository['assets']>[0]) {
+    return browseAssets({ ...input, db: this.db });
+  }
+  async asset(input: ReceiverScope & { id: string }) {
+    const [row] = await this.db<
+      { file_id: string; name: string; media_type: string }[]
+    >`SELECT file_id,name,media_type FROM host_assets WHERE owner_id=${input.ownerId} AND id=${input.id}`;
+    if (!row) {
+      return;
+    }
+    return {
+      name: row.name,
+      mediaType: row.media_type,
+      body: Bun.file(join(this.assetDirectory, row.file_id)).stream(),
+    };
+  }
   async records(input: ReceiverScope & { sourceId?: string; offset: number }) {
     const limit = 50;
     const sourceId = input.sourceId ?? null;
     const rows = await this.db<
-      { source_id: string; kind: string; record_id: string; revision: number; data: string }[]
-    >`SELECT source_id,kind,record_id,revision,data FROM host_records
+      {
+        source_id: string;
+        kind: string;
+        record_id: string;
+        revision: number;
+        data: string;
+        asset_ids: string;
+      }[]
+    >`SELECT source_id,kind,record_id,revision,data,asset_ids FROM host_records
       WHERE owner_id=${input.ownerId} AND deleted=0 AND (${sourceId} IS NULL OR source_id=${sourceId})
       ORDER BY source_id,kind,record_id LIMIT ${limit + 1} OFFSET ${input.offset}`;
     return {
-      records: rows.slice(0, limit).map((row) => ({
-        sourceId: String(row.source_id),
-        kind: String(row.kind),
-        id: String(row.record_id),
-        revision: Number(row.revision),
-        data: JSON.parse(String(row.data)) as import('@context-use/open-sync/json').JsonObject,
-      })),
+      records: await relateAssets({
+        ...input,
+        db: this.db,
+        records: rows.slice(0, limit).map((row) => ({
+          sourceId: String(row.source_id),
+          kind: String(row.kind),
+          id: String(row.record_id),
+          revision: Number(row.revision),
+          assetIds: JSON.parse(row.asset_ids) as string[],
+          data: JSON.parse(String(row.data)) as import('@context-use/open-sync/json').JsonObject,
+        })),
+      }),
       hasMore: rows.length > limit,
       pageSize: limit,
     };
+  }
+  isPaused(scope: ReceiverScope) {
+    return isPaused({ db: this.db, scope });
   }
   async status(scope: ReceiverScope) {
     const [status] = await this.db`SELECT
@@ -47,8 +94,7 @@ export class SqliteReceiver implements ReceiverRepository {
     }
     const bodyHash = canonicalJson(input.delivery).sha256;
     return await this.db.begin(async (tx) => {
-      const [settings] = await tx`SELECT paused FROM host_settings WHERE owner_id=${input.ownerId}`;
-      if (settings?.paused) {
+      if (await isPaused({ db: tx, scope: input })) {
         return false;
       }
       const [receipt] =
@@ -80,7 +126,24 @@ async function applyRecord(input: {
 }): Promise<void> {
   const { tx, ownerId, sourceId, record } = input;
   const data = record.operation === 'upsert' ? canonicalJson(record.data).json : null;
-  await tx`INSERT INTO host_records VALUES (${ownerId},${sourceId},${record.kind},${record.id},${record.revision},${Number(record.operation === 'delete')},${data})
-    ON CONFLICT(owner_id,source_id,kind,record_id) DO UPDATE SET revision=excluded.revision,deleted=excluded.deleted,data=excluded.data
+  const references = record.operation === 'upsert' ? Object.values(record.assetRefs ?? {}) : [];
+  const assets = references.length
+    ? await tx<
+        { id: string }[]
+      >`SELECT DISTINCT a.id FROM json_each(${JSON.stringify(references)}) ref
+        JOIN host_assets a ON a.owner_id=${ownerId} AND a.source_id=${sourceId}
+        AND a.asset_id=json_extract(ref.value,'$.id') AND a.asset_version=json_extract(ref.value,'$.version')
+        ORDER BY cast(ref.key AS INTEGER)`
+    : [];
+  const assetIds = JSON.stringify(assets.map((asset) => asset.id));
+  await tx`INSERT INTO host_records(owner_id,source_id,kind,record_id,revision,deleted,data,asset_ids)
+    VALUES (${ownerId},${sourceId},${record.kind},${record.id},${record.revision},${Number(record.operation === 'delete')},${data},${assetIds})
+    ON CONFLICT(owner_id,source_id,kind,record_id) DO UPDATE SET revision=excluded.revision,deleted=excluded.deleted,data=excluded.data,asset_ids=excluded.asset_ids
     WHERE excluded.revision>host_records.revision`;
+}
+
+async function isPaused(input: { db: SQL | TransactionSQL; scope: ReceiverScope }) {
+  const [settings] =
+    await input.db`SELECT paused FROM host_settings WHERE owner_id=${input.scope.ownerId}`;
+  return Boolean(settings?.paused);
 }

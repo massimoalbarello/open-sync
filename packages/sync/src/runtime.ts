@@ -14,6 +14,8 @@ import {
 } from './models/limits';
 import { Registry } from './models/registry';
 import { SqliteAcquisition } from './repositories/acquisition/sqlite';
+import { DirectoryAssets } from './repositories/assets/filesystem';
+import { SqliteAssets } from './repositories/assets/sqlite';
 import { SqliteCatalog } from './repositories/catalog/sqlite';
 import { SqliteDeliveries } from './repositories/delivery/sqlite';
 import { AcquisitionService } from './services/acquisition';
@@ -22,6 +24,8 @@ import { SyncManagement } from './services/management';
 
 export interface SyncRuntimeOptions {
   databasePath: string;
+  /** Private directory dedicated to queued asset bytes. */
+  assetDirectory?: string;
   definitions: readonly SyncRegistration[];
   destinationTypes: Readonly<Record<string, DestinationType>>;
   connector?: ProviderGateway;
@@ -50,18 +54,38 @@ export function createSyncRuntime(options: SyncRuntimeOptions) {
       catalog.register(definition);
     }
     const deliveries = new SqliteDeliveries(db);
+    const assets = new SqliteAssets({
+      db,
+      maxBytes: limits.maxPendingAssetBytes,
+      maxDeliveryBytes: limits.maxPendingBytes,
+      maxMaterializedBytes: limits.maxMaterializedBytes,
+    });
+    const files = new DirectoryAssets(options.assetDirectory ?? `${options.databasePath}.assets`);
     const log = safeLogger(options.onEvent);
     const worker = new Worker({
       acquisition: new AcquisitionService({
         repository: new SqliteAcquisition({ db, limits, historyLimit: timing.historyLimit }),
         registry,
+        assets,
+        files,
+        maxAssetBytes: limits.maxAssetBytes,
         gateway: options.connector,
         timing,
         log,
       }),
-      delivery: new DeliveryService({ repository: deliveries, registry, timing }),
+      delivery: new DeliveryService({ repository: deliveries, registry, timing, assets, files }),
       timing,
       log,
+      async cleanup() {
+        const garbage = assets.garbage();
+        if (!garbage) {
+          return;
+        }
+        for (const id of garbage.remove) {
+          await files.remove(id);
+        }
+        await files.sweep({ retain: garbage.retain, before: Date.now() - timing.leaseMs });
+      },
     });
     const api = new SyncManagement({
       catalog,

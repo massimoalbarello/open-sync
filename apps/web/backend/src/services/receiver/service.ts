@@ -3,6 +3,18 @@ import type { ReceiverRepository, ReceiverScope } from '#backend/repositories/re
 
 export class ReceiverService {
   constructor(private readonly repository: ReceiverRepository) {}
+  acceptAsset(input: Parameters<ReceiverRepository['acceptAsset']>[0]) {
+    return this.repository.acceptAsset(input);
+  }
+  asset(input: ReceiverScope & { id: string }) {
+    return this.repository.asset(input);
+  }
+  assets(input: ReceiverScope & { sourceId?: string; offset: number }) {
+    return this.repository.assets(input);
+  }
+  isPaused(scope: ReceiverScope) {
+    return this.repository.isPaused(scope);
+  }
   status(scope: ReceiverScope) {
     return this.repository.status(scope);
   }

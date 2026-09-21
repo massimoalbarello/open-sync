@@ -132,6 +132,7 @@ test('a stalled attempt times out; pausing preserves its poll and reprocessing c
         if (checkpoint === 0) {
           yield page;
         }
+        signal.throwIfAborted();
         await new Promise<void>((resolve) =>
           signal.addEventListener('abort', () => resolve(), { once: true }),
         );
@@ -143,11 +144,13 @@ test('a stalled attempt times out; pausing preserves its poll and reprocessing c
     databasePath: files.path,
     definitions: [registration],
     destinationTypes: { local: accepted },
-    timing: { timeoutMs: 100, leaseMs: 200 },
+    timing: { timeoutMs: 100, maxPages: 1 },
   });
   try {
     const installation = await configure(engine);
     const scope = { ...alpha, id: installation.id };
+    // Commit the page before testing the stalled attempt, independent of filesystem latency.
+    await engine.tick();
     await engine.tick();
     const timedOut = engine.api.polls(scope).polls[0]!;
     expect(timedOut).toMatchObject({ state: 'retrying', recordsProcessed: 1 });

@@ -36,7 +36,7 @@ export class SqliteAcquisition implements AcquisitionRepository {
           records.push(changed);
         }
       }
-      enqueue({ db, installation, records, limits });
+      enqueue({ db, installation, records, limits, assets: page.deliverable.assets });
       db.query(
         'UPDATE installations SET checkpoint=?,checkpoint_revision=checkpoint_revision+1 WHERE owner_id=? AND id=?',
       ).run(canonicalJson(page.checkpoint).json, installation.ownerId, installation.id);

@@ -1,5 +1,6 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { createFileRoute, Link } from '@tanstack/react-router';
+import { AssetLink } from '../../components/asset-link';
 import { InfiniteScroll } from '../../components/infinite-scroll';
 import { JsonView } from '../../components/json-view';
 import { SectionPage } from '../../components/section-page';
@@ -47,6 +48,21 @@ function Records() {
                 <JsonView value={record.data} />
               </div>
             </details>
+            {record.assets.length > 0 && (
+              <div className="mt-4 space-y-2">
+                <h2 className="font-medium text-muted-foreground text-xs">Related assets</h2>
+                <ul
+                  aria-label={`Assets for ${record.kind} ${record.id}`}
+                  className="flex flex-wrap gap-x-6 gap-y-2"
+                >
+                  {record.assets.map((asset) => (
+                    <li key={asset.id}>
+                      <AssetLink asset={asset} />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </li>
         ))}
       </ul>

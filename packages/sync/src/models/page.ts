@@ -1,3 +1,5 @@
+import { assetKey } from './asset';
+import { validateAssetReferences } from './asset-references';
 import type { SyncDefinition, SyncPage } from './definition';
 import type { SyncRecord } from './delivery';
 import { fail } from './error';
@@ -23,12 +25,13 @@ export function preparePage(input: {
       fail('invalid_page');
     }
     if (
-      Object.keys(page.deliverable).some((key) => key !== 'records') ||
+      Object.keys(page.deliverable).some((key) => !['records', 'assets'].includes(key)) ||
       !Array.isArray(page.deliverable.records) ||
       page.deliverable.records.length > input.limits.maxPageRecords
     ) {
       fail('invalid_page');
     }
+    validatePageAssets({ page, limits: input.limits });
     validate({ value: page.checkpoint, schema: input.definition.checkpointSchema });
     const identities = new Set<string>();
     for (const record of page.deliverable.records) {
@@ -53,7 +56,7 @@ function validateRecord(input: { record: SyncRecord; definition: SyncDefinition 
   }
   const fields =
     record.operation === 'upsert'
-      ? ['operation', 'kind', 'id', 'data']
+      ? ['operation', 'kind', 'id', 'data', 'assetRefs', 'markdownFields']
       : ['operation', 'kind', 'id'];
   if (Object.keys(record).some((key) => !fields.includes(key))) {
     fail('invalid_record');
@@ -62,8 +65,38 @@ function validateRecord(input: { record: SyncRecord; definition: SyncDefinition 
     if (!record.data || Array.isArray(record.data) || typeof record.data !== 'object') {
       fail('invalid_record');
     }
+    validateAssetReferences(record);
     validate({ value: record.data, schema: definition.kinds[record.kind]! });
   } else if (record.operation !== 'delete') {
     fail('invalid_record');
+  }
+}
+
+function validatePageAssets(input: { page: SyncPage; limits: QueueLimits }) {
+  const assets = input.page.deliverable.assets ?? [];
+  if (!Array.isArray(assets) || assets.length > input.limits.maxPageAssets) {
+    fail('invalid_assets');
+  }
+  const keys = new Set<string>();
+  for (const asset of assets) {
+    identifier(asset.id);
+    identifier(asset.version);
+    if (
+      Object.keys(asset).some((key) => !['id', 'version'].includes(key)) ||
+      keys.has(assetKey(asset))
+    ) {
+      fail('invalid_asset');
+    }
+    keys.add(assetKey(asset));
+  }
+  for (const record of input.page.deliverable.records) {
+    if (record.operation === 'upsert') {
+      for (const ref of Object.values(record.assetRefs ?? {})) {
+        keys.add(assetKey(ref));
+      }
+    }
+  }
+  if (keys.size > input.limits.maxPageAssets) {
+    fail('invalid_assets');
   }
 }

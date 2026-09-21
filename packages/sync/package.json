@@ -9,7 +9,10 @@
     "./json": "./src/models/json.ts",
     "./http": "./src/http/index.ts",
     "./engine": "./src/runtime.ts",
-    "./build": "./src/build.ts"
+    "./build": "./src/build.ts",
+    "./assets": "./src/models/asset.ts",
+    "./assets/delivery": "./src/delivery/assets-first.ts",
+    "./assets/references": "./src/models/asset-references.ts"
   },
   "files": [
     "src"
@@ -22,9 +25,12 @@
   },
   "dependencies": {
     "@cfworker/json-schema": "4.1.1",
+    "@oomol-lab/open-connector": "1.6.3",
+    "@types/mdast": "4.0.4",
     "elysia": "^1.4.30",
-    "minisearch": "^7.2.0",
-    "@oomol-lab/open-connector": "1.6.3"
+    "mdast-util-from-markdown": "2.0.3",
+    "mdast-util-to-markdown": "2.1.2",
+    "minisearch": "^7.2.0"
   },
   "devDependencies": {
     "typescript": "catalog:"
