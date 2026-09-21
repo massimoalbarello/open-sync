@@ -4,6 +4,7 @@ import { copyAuthorizationJourney } from './copy-authorization-journey';
 import { destinationSetupJourney } from './destination-setup-journey';
 import { historySetupJourney } from './history-setup-journey';
 import { providerSetupJourney } from './provider-setup-journey';
+import { sourceRetryJourney } from './source-retry-journey';
 
 type Page = Awaited<ReturnType<typeof virtualPasskeyBrowser>>['page'];
 const sources = [
@@ -115,6 +116,9 @@ async function connectSource(input: {
   await page.goto(`${origin}/syncs/${syncId}`);
   await page.getByRole('heading', { name: `${source.name} → Local SQLite`, exact: true }).waitFor();
   await page.getByRole('link', { name: 'Polling history', exact: true }).click();
+  if (source.service === 'slack') {
+    await sourceRetryJourney({ page, origin, syncId });
+  }
   await page.getByRole('cell', { name: 'Completed', exact: true }).first().waitFor();
   await page.getByRole('link', { name: 'Overview', exact: true }).click();
   const installation = await (

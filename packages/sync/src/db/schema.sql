@@ -13,6 +13,7 @@ CREATE TABLE installations (
   enabled INTEGER NOT NULL, binding_epoch INTEGER NOT NULL DEFAULT 1,
   checkpoint TEXT NOT NULL, checkpoint_revision INTEGER NOT NULL DEFAULT 0,
   interval_ms INTEGER NOT NULL, next_due_at INTEGER NOT NULL, status TEXT NOT NULL,
+  failure_count INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY(owner_id, id), UNIQUE(owner_id, source_id),
   FOREIGN KEY(owner_id, destination_id) REFERENCES destinations(owner_id, id)
 );

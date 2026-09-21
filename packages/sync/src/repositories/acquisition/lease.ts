@@ -50,8 +50,8 @@ export function claimRun(input: {
         return;
       }
       const row = db
-        .query<{ id: string; owner_id: string }, [number]>(
-          'SELECT id,owner_id FROM installations WHERE enabled=1 AND next_due_at<=? ORDER BY next_due_at,id LIMIT 1',
+        .query<{ id: string; owner_id: string; failure_count: number }, [number]>(
+          'SELECT id,owner_id,failure_count FROM installations WHERE enabled=1 AND next_due_at<=? ORDER BY next_due_at,id LIMIT 1',
         )
         .get(Date.now());
       if (!row) {
@@ -67,6 +67,7 @@ export function claimRun(input: {
         workerId: crypto.randomUUID(),
         generation: 1,
         checkpointRevision: installation.checkpointRevision,
+        failureCount: row.failure_count,
       };
       db.query(`INSERT INTO runs(owner_id,id,installation_id,definition_ref,binding_epoch,worker_id,generation,expires_at,state,started_at,poll_id)
       VALUES (?,?,?,?,?,?,?,?,'running',?,?)`).run(
@@ -119,6 +120,7 @@ export function finishRun(input: {
   lease: RunLease;
   state: string;
   delay: number;
+  failureCount?: number;
 }): void {
   updatePoll({
     db: input.db,
@@ -130,6 +132,14 @@ export function finishRun(input: {
     .query('UPDATE runs SET state=?,completed_at=? WHERE owner_id=? AND id=?')
     .run(input.state, Date.now(), input.lease.ownerId, input.lease.id);
   input.db
-    .query('UPDATE installations SET status=?,next_due_at=? WHERE owner_id=? AND id=?')
-    .run(input.state, Date.now() + input.delay, input.lease.ownerId, input.lease.installation.id);
+    .query(
+      'UPDATE installations SET status=?,next_due_at=?,failure_count=COALESCE(?,failure_count) WHERE owner_id=? AND id=?',
+    )
+    .run(
+      input.state,
+      Date.now() + input.delay,
+      input.failureCount ?? null,
+      input.lease.ownerId,
+      input.lease.installation.id,
+    );
 }
