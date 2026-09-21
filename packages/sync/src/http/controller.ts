@@ -22,7 +22,11 @@ export function createSyncController(input: {
   authorize(request: Request): Scope | null | Promise<Scope | null>;
 }) {
   return new Elysia({ prefix: '/sync' })
-    .onError(({ error }) => syncErrorResponse(error))
+    .onError(({ error, code, status }) =>
+      code === 'VALIDATION'
+        ? status('Unprocessable Content', { error: 'invalid_input' })
+        : syncErrorResponse(error),
+    )
     .resolve(async ({ request, status }) => {
       const scope = await input.authorize(request);
       if (!scope) {
@@ -41,6 +45,12 @@ export function createSyncController(input: {
         body: t.Object({ type: identifier, config }),
       },
     )
+    .post(
+      '/destinations/setup',
+      ({ scope, body }) =>
+        input.api.setupDestination({ ...body, input: body.input as JsonObject, ...scope }),
+      { body: t.Object({ type: identifier, input: config }) },
+    )
     .get('/installations', ({ scope }) => ({ installations: input.api.installations(scope) }))
     .post(
       '/installations',
@@ -53,20 +63,20 @@ export function createSyncController(input: {
       ({ scope, params }) => input.api.installation({ ...scope, id: params.id }),
       resourceParams,
     )
-    .get(
-      '/installations/:id/runs',
-      ({ scope, params, query }) =>
-        input.api.runs({ ...scope, id: params.id, offset: query.offset }),
-      {
-        ...resourceParams,
-        query: t.Object({ offset: t.Optional(t.Integer({ minimum: 0, maximum: 1000000 })) }),
-      },
-    )
     .patch(
       '/installations/:id',
       ({ scope, params, body }) =>
         input.api.setEnabled({ ...scope, id: params.id, enabled: body.enabled }),
       { ...resourceParams, body: t.Object({ enabled: t.Boolean() }) },
+    )
+    .get(
+      '/installations/:id/polls',
+      ({ scope, params, query }) =>
+        input.api.polls({ ...scope, id: params.id, offset: query.offset }),
+      {
+        ...resourceParams,
+        query: t.Object({ offset: t.Optional(t.Integer({ minimum: 0, maximum: 1000000 })) }),
+      },
     )
     .post(
       '/installations/:id/run',

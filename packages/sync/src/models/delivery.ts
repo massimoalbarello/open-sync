@@ -33,6 +33,11 @@ export interface DestinationType {
   /** Pin endpoint/interpretation changes to a new version. Existing work is never rerouted. */
   version: string;
   configSchema: Schema;
+  /** User input is validated before preparation; only the resulting config is persisted. */
+  setup?: {
+    schema: Schema;
+    prepare(input: { scope: Scope; input: JsonObject }): JsonObject | Promise<JsonObject>;
+  };
   /** Accepted means durable acceptance of the whole delivery. Receivers must tolerate retries. */
   deliver(input: {
     scope: Scope;

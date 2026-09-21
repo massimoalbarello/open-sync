@@ -72,7 +72,7 @@ export class Worker implements WorkerControl {
   }
   async cancel(input: Resource): Promise<void> {
     if (this.#active?.ownerId === input.ownerId && this.#active.id === input.id) {
-      this.#active.abort.abort();
+      this.#active.abort.abort('paused');
       await this.#acquisition;
     }
   }
@@ -84,7 +84,7 @@ export class Worker implements WorkerControl {
     if (this.#timer) {
       clearInterval(this.#timer);
     }
-    this.#lifetime.abort();
+    this.#lifetime.abort('interrupted');
     await Promise.allSettled([this.#acquisition, this.#delivery]);
   }
 }

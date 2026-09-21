@@ -2,17 +2,7 @@ import { Button } from '@repo/ui/button';
 import { cn } from '@repo/ui/class-names';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, Link, Outlet, redirect, useNavigate } from '@tanstack/react-router';
-import {
-  ArrowRightLeft,
-  Database,
-  Download,
-  ListChecks,
-  LogOut,
-  Menu,
-  Plug,
-  RefreshCw,
-  Upload,
-} from 'lucide-react';
+import { ArrowRightLeft, Database, ListChecks, LogOut, Menu, Plug, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { sessionOptions, signOut } from '../queries/session';
 
@@ -32,8 +22,6 @@ const sections = [
   { to: '/syncs', label: 'Syncs', icon: RefreshCw },
   { to: '/records', label: 'Records', icon: Database },
   { to: '/delivery', label: 'Queue', icon: ListChecks },
-  { to: '/sources', label: 'Sources', icon: Download },
-  { to: '/destinations', label: 'Destinations', icon: Upload },
 ] as const;
 
 function Workspace() {

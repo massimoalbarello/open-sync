@@ -20,7 +20,16 @@ export class Registry {
       Object.entries(input.destinations).map(([name, type]) => {
         identifier(name);
         identifier(type.version);
-        return [name, { ...type, configSchema: structuredClone(type.configSchema) }];
+        return [
+          name,
+          {
+            ...type,
+            configSchema: structuredClone(type.configSchema),
+            setup: type.setup
+              ? { ...type.setup, schema: structuredClone(type.setup.schema) }
+              : undefined,
+          },
+        ];
       }),
     );
     for (const registration of input.definitions) {
@@ -62,6 +71,7 @@ export class Registry {
       name: entry.name,
       description: entry.description,
       configSchema: structuredClone(entry.configSchema),
+      setupSchema: structuredClone(entry.setup?.schema ?? entry.configSchema),
     }));
   }
   destination(name: string): DestinationType {

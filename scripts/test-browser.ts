@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { virtualPasskeyBrowser } from '@repo/browser-testing/browser';
+import { exampleSyncsJourney } from './example-syncs-journey';
 import {
   githubOAuthJourney,
   githubOAuthReconnectJourney,
@@ -9,8 +10,9 @@ import {
 import { startIsolatedApp } from './isolated-app';
 import { ownerRegistrationJourney } from './owner-registration-journey';
 
-const fixtureRecordCount = 65;
+const fixtureRecordCount = 100;
 const drainTimeoutMs = 120_000;
+const interactionTimeoutMs = 30_000;
 const wideViewport = { width: 1920, height: 1080 };
 
 const app = await startIsolatedApp({
@@ -29,6 +31,7 @@ let browser: Awaited<ReturnType<typeof virtualPasskeyBrowser>> | undefined;
 try {
   browser = await virtualPasskeyBrowser({ headless: true });
   const { page } = browser;
+  page.setDefaultTimeout(interactionTimeoutMs);
   await mkdir('artifacts', { recursive: true });
   await ownerRegistrationJourney({ page, app });
   const requests: string[] = [];
@@ -79,33 +82,35 @@ try {
   await app.restartServer();
   await githubOAuthJourney({ page, origin: app.origin });
 
-  await page.getByRole('link', { name: 'Sources', exact: true }).click();
-  await page.getByRole('heading', { name: 'GitHub pull requests', exact: true }).waitFor();
-  assert.equal(await page.locator('main li').count(), 1);
-  assert.equal(await page.getByText('Configuration schema', { exact: true }).count(), 0);
-  assert.ok(
-    (await page.getByRole('link', { name: 'Configure provider' }).getAttribute('href'))?.startsWith(
-      '/providers/github',
-    ),
+  assert.deepEqual(
+    await page.getByRole('navigation', { name: 'Workspace' }).getByRole('link').allTextContents(),
+    ['Providers', 'Syncs', 'Records', 'Queue'],
   );
-  await page.screenshot({
-    path: 'artifacts/sources-catalog.png',
-    fullPage: true,
-    animations: 'disabled',
-  });
-  await page.getByRole('link', { name: 'Destinations', exact: true }).click();
-  await page.getByRole('heading', { name: 'Local SQLite', exact: true }).waitFor();
-  assert.equal(await page.locator('main li').count(), 1);
-  assert.equal(await page.getByRole('button', { name: 'Add destination' }).count(), 0);
-  await page.screenshot({
-    path: 'artifacts/destinations.png',
-    fullPage: true,
-    animations: 'disabled',
-  });
   await page.getByRole('link', { name: 'Syncs', exact: true }).click();
   await page.getByRole('link', { name: 'Create sync', exact: true }).click();
   await page.getByLabel('Source', { exact: true }).click();
+  await page.getByRole('option', { name: 'Granola meetings', exact: true }).waitFor();
+  assert.deepEqual(await page.getByRole('option').allTextContents(), [
+    'GitHub pull requests',
+    'Gmail threads',
+    'Slack threads',
+    'Granola meetings',
+  ]);
+  await page.screenshot({
+    path: 'artifacts/create-sync-sources.png',
+    fullPage: true,
+    animations: 'disabled',
+  });
   await page.getByRole('option', { name: 'GitHub pull requests', exact: true }).click();
+  await page.getByLabel('Destination', { exact: true }).click();
+  await page.getByRole('option', { name: 'Local SQLite', exact: true }).waitFor();
+  assert.deepEqual(await page.getByRole('option').allTextContents(), ['Local SQLite']);
+  await page.screenshot({
+    path: 'artifacts/create-sync-destinations.png',
+    fullPage: true,
+    animations: 'disabled',
+  });
+  await page.getByRole('option', { name: 'Local SQLite', exact: true }).click();
   assert.equal(await page.locator('main textarea').count(), 0);
   assert.equal(await page.getByLabel('Account', { exact: true }).count(), 0);
   await page.screenshot({
@@ -128,6 +133,8 @@ try {
     data: { paused: true },
   });
   assert.ok(settings.ok());
+  assert.equal(await page.getByRole('button', { name: 'API key', exact: true }).count(), 0);
+  await page.goto(`${app.origin}/providers/github`);
   await page.getByRole('button', { name: 'API key', exact: true }).click();
   const status = await (
     await page.request.get(`${app.origin}/api/open-sync/providers/github`)
@@ -150,9 +157,15 @@ try {
   const originalKeySync = await (
     await page.request.get(`${app.origin}/api/open-sync/sync/installations/${syncId}`)
   ).json();
-  await page.goto(
-    `${app.origin}/providers/github?connectionId=${originalKeySync.connection.id}&syncId=${syncId}`,
+  assert.equal(originalKeySync.connection, undefined);
+  assert.equal(originalKeySync.enabled, false);
+  const keyAccounts = await (
+    await page.request.get(`${app.origin}/api/open-sync/providers/github`)
+  ).json();
+  const keyConnection = keyAccounts.connections.find(
+    (connection: { authType: string }) => connection.authType === 'api_key',
   );
+  await page.goto(`${app.origin}/providers/github?connectionId=${keyConnection.id}`);
   await page.getByRole('heading', { name: /^Reconnect / }).waitFor();
   assert.equal(await page.getByRole('button', { name: 'OAuth', exact: true }).count(), 0);
   await page.getByLabel(keyLabel, { exact: true }).fill('browser-test-replacement-key');
@@ -168,8 +181,11 @@ try {
   ).json();
   assert.deepEqual(refreshedKeySync.connection, originalKeySync.connection);
   assert.equal(refreshedKeySync.sourceId, originalKeySync.sourceId);
-  await page.getByRole('link', { name: 'View sync', exact: true }).click();
-  await page.getByText('succeeded → Local SQLite', { exact: true }).waitFor();
+  await githubOAuthSuccessJourney({ page, origin: app.origin });
+  await page.goto(`${app.origin}/syncs/${syncId}`);
+  await page.getByRole('link', { name: 'Polling history', exact: true }).click();
+  await page.getByRole('cell', { name: 'Completed', exact: true }).first().waitFor();
+  await page.getByRole('link', { name: 'Overview', exact: true }).click();
   assert.equal(await page.getByText('Record schemas', { exact: true }).count(), 0);
   assert.equal(await page.getByText('Source configuration', { exact: true }).count(), 0);
   await page.screenshot({
@@ -178,10 +194,28 @@ try {
     animations: 'disabled',
   });
   await page.getByRole('link', { name: 'Polling history', exact: true }).click();
-  await page.getByRole('cell', { name: 'succeeded', exact: true }).waitFor();
+  await page.getByRole('cell', { name: 'Completed', exact: true }).waitFor();
+  await page.getByRole('columnheader', { name: 'Records processed', exact: true }).waitFor();
+  assert.equal(await page.getByRole('columnheader', { name: 'Pages', exact: true }).count(), 0);
+  await page.getByText('2 attempts', { exact: true }).click();
+  await page.getByText(/Continuing from checkpoint/).waitFor();
+  const polls = await (
+    await page.request.get(`${app.origin}/api/open-sync/sync/installations/${syncId}/polls`)
+  ).json();
+  assert.equal(polls.polls.length, 1);
+  assert.equal(polls.polls[0].recordsProcessed, fixtureRecordCount);
+  assert.equal(polls.polls[0].recordsChanged, fixtureRecordCount);
+  assert.equal(polls.polls[0].attempts[0].recordsProcessed, 0);
+  await page.screenshot({
+    path: 'artifacts/polling-history.png',
+    fullPage: true,
+    animations: 'disabled',
+  });
   await page.getByRole('link', { name: 'Queue', exact: true }).click();
   await page
-    .getByText('65 records waiting · 0 deliveries blocked · Delivery paused', { exact: true })
+    .getByText(`${fixtureRecordCount} records waiting · 0 deliveries blocked · Delivery paused`, {
+      exact: true,
+    })
     .waitFor();
   const deliveries = page.getByRole('list', { name: 'Pending deliveries' }).getByRole('listitem');
   const dataPageSize = 50;
@@ -192,7 +226,9 @@ try {
   assert.equal(await deliveries.count(), fixtureRecordCount);
   await page.screenshot({ path: 'artifacts/queue.png', animations: 'disabled' });
   await page.getByRole('button', { name: 'Resume delivery', exact: true }).click();
-  await page.getByText('65 records received', { exact: true }).waitFor({ timeout: drainTimeoutMs });
+  await page
+    .getByText(`${fixtureRecordCount} records received`, { exact: true })
+    .waitFor({ timeout: drainTimeoutMs });
   await page.getByText('Nothing waiting for delivery', { exact: true }).waitFor();
   await page.getByRole('link', { name: 'Records', exact: true }).click();
   const records = page.getByRole('list', { name: 'Received records' }).getByRole('listitem');
@@ -253,9 +289,12 @@ try {
   const accounts = await (
     await page.request.get(`${app.origin}/api/open-sync/providers/github`)
   ).json();
-  assert.equal(accounts.connections.length, 2);
+  const expectedConnections = 3;
+  assert.equal(accounts.connections.length, expectedConnections);
   await page.goto(`${app.origin}/syncs/${oauthSync.id}`);
-  await page.getByText('succeeded → Local SQLite', { exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Polling history', exact: true }).click();
+  await page.getByRole('cell', { name: 'Completed', exact: true }).first().waitFor();
+  await page.getByRole('link', { name: 'Overview', exact: true }).click();
   const beforeRun = await (
     await page.request.get(`${app.origin}/api/open-sync/sync/installations/${oauthSync.id}`)
   ).json();
@@ -286,8 +325,6 @@ try {
     'Syncs',
     'Records',
     'Queue',
-    'Sources',
-    'Destinations',
   ]);
   await page.getByRole('link', { name: 'Queue', exact: true }).click();
   assert.equal(
@@ -302,7 +339,7 @@ try {
   assert.equal(
     (
       await page.request.post(`${app.origin}/api/dashboard/syncs`, {
-        data: { source: 'github.pull-requests', destination: 'local' },
+        data: { source: 'github.pull-requests', destination: { type: 'local', input: {} } },
         headers: { origin: app.origin },
       })
     ).status(),
@@ -316,19 +353,18 @@ try {
     (await page.request.get(`${app.origin}/api/open-sync/sync/installations/${syncId}`)).status(),
     unauthorized,
   );
-  for (const section of [
-    '/providers',
-    '/sources',
-    '/destinations',
-    '/syncs',
-    '/records',
-    '/delivery',
-  ]) {
+  for (const section of ['/providers', '/syncs', '/syncs/new', '/records', '/delivery']) {
     await page.goto(`${app.origin}${section}`);
     await page.getByRole('button', { name: 'Sign in with a passkey' }).waitFor();
   }
   await page.getByRole('button', { name: 'Sign in with a passkey' }).click();
   await page.getByRole('heading', { name: 'Syncs', exact: true }).waitFor();
+  // Both additional GitHub installations can still be delivering their backfills.
+  await page.getByRole('link', { name: 'Queue', exact: true }).click();
+  await page
+    .getByText('Nothing waiting for delivery', { exact: true })
+    .waitFor({ timeout: 2 * drainTimeoutMs });
+  await exampleSyncsJourney({ page, origin: app.origin });
   console.log(
     'Browser journey passed: paginated catalogs, provider setup, deferred authorization, GitHub syncs, infinite records and queue, responsive layout and real passkeys.',
   );

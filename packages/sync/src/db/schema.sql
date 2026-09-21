@@ -16,15 +16,27 @@ CREATE TABLE installations (
   PRIMARY KEY(owner_id, id), UNIQUE(owner_id, source_id),
   FOREIGN KEY(owner_id, destination_id) REFERENCES destinations(owner_id, id)
 );
+CREATE TABLE polls (
+  owner_id TEXT NOT NULL, id TEXT NOT NULL, installation_id TEXT NOT NULL,
+  state TEXT NOT NULL, started_at INTEGER NOT NULL, completed_at INTEGER,
+  records_processed INTEGER NOT NULL DEFAULT 0, records_changed INTEGER NOT NULL DEFAULT 0,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY(owner_id, id),
+  FOREIGN KEY(owner_id, installation_id) REFERENCES installations(owner_id, id)
+);
+CREATE UNIQUE INDEX one_open_poll ON polls(owner_id, installation_id) WHERE completed_at IS NULL;
 CREATE TABLE runs (
   owner_id TEXT NOT NULL, id TEXT NOT NULL, installation_id TEXT NOT NULL,
   definition_ref TEXT NOT NULL, binding_epoch INTEGER NOT NULL,
   worker_id TEXT NOT NULL, generation INTEGER NOT NULL, expires_at INTEGER NOT NULL,
-  checkpoint_revision INTEGER NOT NULL, state TEXT NOT NULL, started_at INTEGER NOT NULL,
-  completed_at INTEGER, pages INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY(owner_id, id), FOREIGN KEY(owner_id, installation_id) REFERENCES installations(owner_id, id)
+  poll_id TEXT NOT NULL, state TEXT NOT NULL, started_at INTEGER NOT NULL, completed_at INTEGER,
+  records_processed INTEGER NOT NULL DEFAULT 0, records_changed INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY(owner_id, id),
+  FOREIGN KEY(owner_id, installation_id) REFERENCES installations(owner_id, id),
+  FOREIGN KEY(owner_id, poll_id) REFERENCES polls(owner_id, id)
 );
 CREATE UNIQUE INDEX one_acquisition ON runs((1)) WHERE state='running';
+CREATE INDEX poll_attempts ON runs(owner_id, poll_id, started_at);
 CREATE TABLE records (
   owner_id TEXT NOT NULL, installation_id TEXT NOT NULL, kind TEXT NOT NULL, id TEXT NOT NULL,
   hash TEXT NOT NULL, revision INTEGER NOT NULL, deleted INTEGER NOT NULL,
@@ -42,4 +54,3 @@ CREATE TABLE deliveries (
   FOREIGN KEY(owner_id, destination_id) REFERENCES destinations(owner_id, id)
 );
 CREATE INDEX deliveries_due ON deliveries(state, due_at);
-PRAGMA user_version = 1;

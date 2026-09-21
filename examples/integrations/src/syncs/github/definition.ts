@@ -1,5 +1,7 @@
 import type { SyncRegistration } from '@context-use/open-sync/definition';
-import { checkpointSchema, initialCheckpoint, jsonSchema } from './acquisition/state';
+import { jsonSchema } from '../../schema';
+import { historyConfigSchema } from '../history';
+import { checkpointSchema, initialCheckpoint } from './acquisition/state';
 import { run } from './pull-requests';
 
 export const githubPullRequests = {
@@ -15,7 +17,7 @@ export const githubPullRequests = {
       actions: [],
       proxyPostPaths: ['/graphql'],
     },
-    configSchema: { type: 'object', additionalProperties: false },
+    configSchema: jsonSchema(historyConfigSchema),
     checkpointSchema: jsonSchema(checkpointSchema),
     initialCheckpoint,
     kinds: {

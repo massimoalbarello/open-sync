@@ -52,7 +52,7 @@ export async function githubOAuthSuccessJourney(input: {
     fullPage: true,
     animations: 'disabled',
   });
-  await page.getByRole('button', { name: 'Connect account', exact: true }).click();
+  await page.getByRole('button', { name: /^Connect (another )?account$/ }).click();
   await page.getByRole('heading', { name: 'Consent boundary' }).waitFor();
   const authorization = new URL(page.url());
   const state = authorization.searchParams.get('state');
@@ -60,7 +60,7 @@ export async function githubOAuthSuccessJourney(input: {
   await page.goto(
     `${origin}/api/open-sync/oauth/callback?code=browser-test-code&state=${encodeURIComponent(state)}`,
   );
-  await page.getByText('Connected', { exact: true }).waitFor();
+  await page.getByText('Connected', { exact: true }).first().waitFor();
   assert.equal(new URL(page.url()).pathname, '/providers/github');
 }
 
@@ -80,7 +80,7 @@ export async function githubOAuthReconnectJourney(input: {
   const accountBounds = await accountsSection.boundingBox();
   assert.ok(appBounds && accountBounds && appBounds.y + appBounds.height < accountBounds.y);
   await accountsSection.getByRole('link', { name: 'Back to accounts' }).click();
-  await accountsSection.getByText('Connected', { exact: true }).waitFor();
+  await accountsSection.getByText('Connected', { exact: true }).first().waitFor();
   assert.equal(new URL(page.url()).searchParams.has('connectionId'), false);
   await accountsSection.locator(`a[href*="connectionId=${connectionId}"]`).click();
   await accountsSection.getByRole('heading', { name: /^Reconnect / }).waitFor();
@@ -107,6 +107,6 @@ export async function githubOAuthReconnectJourney(input: {
   await page.goto(
     `${origin}/api/open-sync/oauth/callback?code=browser-test-code&state=${encodeURIComponent(state)}`,
   );
-  await page.getByText('Connected', { exact: true }).waitFor();
+  await page.getByText('Connected', { exact: true }).first().waitFor();
   assert.equal(new URL(page.url()).pathname, '/providers/github');
 }

@@ -6,3 +6,10 @@ export const authLabels: Record<RuntimeProviderSetup['auth'][number]['type'], st
   custom_credential: 'Credentials',
   no_auth: 'No authentication',
 };
+
+export function accountActionLabel(input: { connectionId?: string; hasAccounts: boolean }) {
+  if (input.connectionId) {
+    return 'Reconnect account';
+  }
+  return input.hasAccounts ? 'Connect another account' : 'Connect account';
+}

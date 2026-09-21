@@ -5,7 +5,7 @@ import { CheckCircle2 } from 'lucide-react';
 import { useState } from 'react';
 import { type loadProvider, providerKeys, saveCredentials } from '../../../queries/providers';
 import { syncKeys } from '../../../queries/sync';
-import { authLabels } from './auth-label';
+import { accountActionLabel, authLabels } from './auth-label';
 import { CredentialForm } from './credential-form';
 import { AuthorizationForm, OAuthPanel } from './oauth-panel';
 
@@ -13,6 +13,7 @@ export function AuthorizationPanel(input: {
   userId: string;
   service: string;
   connectionId?: string;
+  oauthOnly?: boolean;
   status: Awaited<ReturnType<typeof loadProvider>>;
 }) {
   const client = useQueryClient();
@@ -34,19 +35,23 @@ export function AuthorizationPanel(input: {
     },
   });
   const { status } = input;
-  const auth = status.setup.auth.find((entry) => entry.type === method) ?? status.setup.auth[0];
+  const methods = input.oauthOnly
+    ? status.setup.auth.filter((entry) => entry.type === 'oauth2')
+    : status.setup.auth;
+  const auth = methods.find((entry) => entry.type === method) ?? methods[0];
   if (input.connectionId && !target?.authType) {
     return <p role="alert">This account is unavailable. Reload the provider page to try again.</p>;
   }
   const accounts = status.connections.filter((connection) => connection.authType === auth?.type);
+  const manualOAuth = auth?.type === 'oauth2' && !status.setup.oauthClient?.automaticRegistration;
   return (
     <div className="space-y-8">
-      {!target && status.setup.auth.length > 1 && (
+      {!target && methods.length > 1 && (
         <fieldset
           className="inline-flex flex-wrap gap-1 rounded-lg bg-muted p-1"
           aria-label="Authentication methods"
         >
-          {status.setup.auth.map((entry) => (
+          {methods.map((entry) => (
             <Button
               key={entry.type}
               variant={entry.type === auth?.type ? 'default' : 'ghost'}
@@ -61,42 +66,22 @@ export function AuthorizationPanel(input: {
           ))}
         </fieldset>
       )}
-      {auth?.type === 'oauth2' && (
-        <OAuthPanel {...input} auth={auth} client={status.setup.oauthClient} />
-      )}
+      {manualOAuth && <OAuthPanel {...input} auth={auth} client={status.setup.oauthClient} />}
       <section
         aria-labelledby="accounts-heading"
-        className={auth?.type === 'oauth2' ? 'space-y-6 border-t pt-8' : 'space-y-6'}
+        className={manualOAuth ? 'space-y-6 border-t pt-8' : 'space-y-6'}
       >
         <h2 id="accounts-heading" className="font-medium">
           Accounts
         </h2>
-        {target ? (
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h3 className="font-medium text-sm">Reconnect {target.account}</h3>
-              <Link
-                to="/providers/$service"
-                params={{ service: input.service }}
-                search={(previous) => ({ syncId: previous.syncId })}
-                className="text-muted-foreground text-sm underline underline-offset-4"
-              >
-                Back to accounts
-              </Link>
-            </div>
-            <p className="text-muted-foreground text-sm">
-              Use the same account to keep your existing syncs.
-            </p>
-          </div>
-        ) : (
-          <ConnectedAccounts service={input.service} accounts={accounts} />
-        )}
+        <ConnectedAccounts service={input.service} accounts={accounts} target={target} />
         {auth?.type === 'oauth2' && (
           <AuthorizationForm
             service={input.service}
             connectionId={input.connectionId}
+            hasAccounts={accounts.length > 0}
             auth={auth}
-            disabled={!status.setup.oauthClient?.configured}
+            client={status.setup.oauthClient}
           />
         )}
         {(auth?.type === 'api_key' || auth?.type === 'custom_credential') && (
@@ -109,7 +94,10 @@ export function AuthorizationPanel(input: {
             <CredentialForm
               key={auth.type}
               fields={auth.fields}
-              label={target ? 'Reconnect account' : 'Connect account'}
+              label={accountActionLabel({
+                connectionId: input.connectionId,
+                hasAccounts: accounts.length > 0,
+              })}
               onSubmit={(values) =>
                 save.mutateAsync({
                   service: input.service,
@@ -132,7 +120,28 @@ export function AuthorizationPanel(input: {
 function ConnectedAccounts(input: {
   service: string;
   accounts: Awaited<ReturnType<typeof loadProvider>>['connections'];
+  target?: Awaited<ReturnType<typeof loadProvider>>['connections'][number];
 }) {
+  if (input.target) {
+    return (
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="font-medium text-sm">Reconnect {input.target.account}</h3>
+          <Link
+            to="/providers/$service"
+            params={{ service: input.service }}
+            search={(previous) => ({ syncId: previous.syncId })}
+            className="text-muted-foreground text-sm underline underline-offset-4"
+          >
+            Back to accounts
+          </Link>
+        </div>
+        <p className="text-muted-foreground text-sm">
+          Use the same account to keep your existing syncs.
+        </p>
+      </div>
+    );
+  }
   if (!input.accounts.length) {
     return <p className="text-muted-foreground text-sm">No account connected.</p>;
   }

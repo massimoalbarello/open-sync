@@ -1,8 +1,43 @@
 import { expect, test } from 'bun:test';
-import { fixture, owner } from './fixture';
+import { fixture, owner, pull } from './fixture';
 
 const discover = 'SyncDiscover';
 const summary = 'SyncPullSummary';
+
+test.each([
+  { history: 'Last 3 months', count: 1 },
+  { history: 'Last 1 year', count: 2 },
+  { history: 'Last 3 years', count: 3 },
+  { history: 'All', count: 4 },
+])(
+  'GitHub applies $history to activity and advances past excluded records',
+  async ({ history, count }) => {
+    const f = await fixture({ history });
+    const dayMs = 86_400_000;
+    const agesInDays = { older: 2000, pastThreeYears: 700, pastYear: 200, recent: 60 };
+    const drainTicks = Object.keys(agesInDays).length + 1;
+    f.pulls.splice(
+      0,
+      f.pulls.length,
+      ...Object.values(agesInDays).map((days) => ({
+        ...pull(String(days)),
+        updatedAt: new Date(Date.now() - days * dayMs).toISOString(),
+      })),
+    );
+    try {
+      for (let tick = 0; tick < drainTicks; tick++) {
+        await f.engine.tick();
+      }
+      expect(f.engine.api.installation({ ...owner, id: f.installation.id }).status).toBe(
+        'succeeded',
+      );
+      expect((await f.receiver.status(owner)).records).toBe(count);
+      expect(f.requests.filter((request) => request.query.includes(summary))).toHaveLength(count);
+    } finally {
+      await f.close();
+    }
+  },
+);
 
 test('GitHub resumes committed pages after restart, then polls only updates since its saved watermark', async () => {
   const f = await fixture();

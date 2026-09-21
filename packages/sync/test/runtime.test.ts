@@ -192,6 +192,11 @@ test('shutdown aborts trusted execution, closes the iterator, and leaves a resum
     const restarted = createSyncRuntime({ ...f.options, definitions: [fixture] });
     try {
       expect(restarted.api.installations(alpha)[0]?.checkpoint).toBe(1);
+      const installation = restarted.api.installations(alpha)[0]!;
+      expect(restarted.api.polls({ ...alpha, id: installation.id }).polls[0]).toMatchObject({
+        state: 'interrupted',
+        recordsProcessed: 1,
+      });
     } finally {
       await restarted.close();
     }

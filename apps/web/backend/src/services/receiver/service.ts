@@ -1,4 +1,4 @@
-import type { DestinationType } from '@context-use/open-sync/delivery';
+import type { Delivery } from '@context-use/open-sync/delivery';
 import type { ReceiverRepository, ReceiverScope } from '#backend/repositories/receiver/contract.ts';
 
 export class ReceiverService {
@@ -12,20 +12,7 @@ export class ReceiverService {
   records(input: ReceiverScope & { sourceId?: string; offset: number }) {
     return this.repository.records(input);
   }
-  destination(): DestinationType {
-    return {
-      name: 'Local SQLite',
-      description:
-        'Stores each record as JSON in this application. Accepts all record kinds and schemas.',
-      version: '1',
-      configSchema: { type: 'object', additionalProperties: false },
-      deliver: async ({ scope, delivery, signal }) => {
-        signal.throwIfAborted();
-        const accepted = await this.repository.accept({ ...scope, delivery });
-        return accepted
-          ? { status: 'accepted' }
-          : { status: 'retry', retryAfterMs: 1000, code: 'receiver_paused' };
-      },
-    };
+  accept(input: ReceiverScope & { delivery: Delivery }) {
+    return this.repository.accept(input);
   }
 }

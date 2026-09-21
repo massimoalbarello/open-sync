@@ -4,8 +4,8 @@ import { createFileRoute, Link } from '@tanstack/react-router';
 import { SectionPage } from '../../components/section-page';
 import { catalogOptions } from '../../queries/catalog';
 import { runSync, setEnabled, syncDetailOptions, syncKeys } from '../../queries/sync';
-
 import { PollingHistory } from './-syncs/polling-history';
+import { SyncAccount } from './-syncs/sync-account';
 
 const millisecondsPerMinute = 60_000;
 type Section = 'overview' | 'history';
@@ -40,7 +40,12 @@ function SyncDetail() {
   const error = query.error || catalog.error || enable.error || run.error;
   return (
     <SectionPage
-      title={source?.name ?? sync?.definition.id ?? 'Sync'}
+      title={
+        sync
+          ? `${source?.name ?? sync.definition.id} → ${type?.name ?? destination?.type ?? 'Unavailable destination'}`
+          : 'Sync'
+      }
+      subtitle={<SyncAccount connection={sync?.connection} connections={query.data?.connections} />}
       action={
         <Link to="/syncs" className="text-sm underline">
           All syncs
@@ -55,34 +60,28 @@ function SyncDetail() {
       )}
       {sync && (
         <div className="space-y-7">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <p className="text-muted-foreground text-sm">
-              {needsAuthorization ? 'Waiting for authorization' : sync.status.replaceAll('_', ' ')}{' '}
-              → {type?.name ?? destination?.type ?? 'Unavailable destination'}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                disabled={enable.isPending || !!needsAuthorization}
-                onClick={() => enable.mutate({ id, enabled: !sync.enabled })}
-              >
-                {sync.enabled ? 'Pause' : 'Resume'}
-              </Button>
-              <Button
-                variant="outline"
-                disabled={!sync.enabled || sync.status === 'running' || run.isPending}
-                onClick={() => run.mutate({ id, backfill: false })}
-              >
-                Run now
-              </Button>
-              <Button
-                variant="ghost"
-                disabled={!sync.enabled || sync.status === 'running' || run.isPending}
-                onClick={() => run.mutate({ id, backfill: true })}
-              >
-                Reprocess
-              </Button>
-            </div>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              variant="outline"
+              disabled={enable.isPending || !!needsAuthorization}
+              onClick={() => enable.mutate({ id, enabled: !sync.enabled })}
+            >
+              {sync.enabled ? 'Pause' : 'Resume'}
+            </Button>
+            <Button
+              variant="outline"
+              disabled={!sync.enabled || sync.status === 'running' || run.isPending}
+              onClick={() => run.mutate({ id, backfill: false })}
+            >
+              Run now
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={!sync.enabled || sync.status === 'running' || run.isPending}
+              onClick={() => run.mutate({ id, backfill: true })}
+            >
+              Reprocess
+            </Button>
           </div>
           {needsAuthorization && (
             <Link

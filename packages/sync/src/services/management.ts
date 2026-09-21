@@ -4,7 +4,7 @@ import type { ConnectionRef } from '../models/definition';
 import { fail } from '../models/error';
 import type { Resource, Scope } from '../models/identity';
 import type { CreateInstallation } from '../models/installation';
-import type { JsonObject } from '../models/json';
+import { canonicalJson, type JsonObject } from '../models/json';
 import { positive, type QueueLimits } from '../models/limits';
 import type { Registry } from '../models/registry';
 import { identifier, validate } from '../models/validation';
@@ -36,11 +36,11 @@ export class SyncManagement {
     this.guard(scope);
     return this.input.registry.destinationTypes();
   }
-  runs(input: Resource & { offset?: number }) {
+  polls(input: Resource & { offset?: number }) {
     this.guard(input);
     const offset = input.offset ?? 0;
     positive(offset + 1);
-    return this.input.catalog.runs({ ...input, offset });
+    return this.input.catalog.polls({ ...input, offset });
   }
   destinations(scope: Scope) {
     this.guard(scope);
@@ -58,6 +58,43 @@ export class SyncManagement {
       version: type.version,
     });
     return { id, type: input.type, version };
+  }
+  async setupDestination(input: Scope & { type: string; input: JsonObject }) {
+    const scope = { actorId: input.actorId, ownerId: input.ownerId };
+    this.guard(scope);
+    const type = this.input.registry.destination(input.type);
+    const values = validate({
+      value: input.input,
+      schema: type.setup?.schema ?? type.configSchema,
+    }) as JsonObject;
+    let prepared = values;
+    if (type.setup) {
+      try {
+        prepared = await type.setup.prepare({
+          scope: { ...scope },
+          input: values,
+        });
+      } catch {
+        // Destination errors can contain setup secrets. Do not expose or log them.
+        fail('destination_setup_failed');
+      }
+    }
+    this.guard(scope);
+    const config = validate({ value: prepared, schema: type.configSchema }) as JsonObject;
+    // Reuse identical configuration within one owner (including destinations needing no setup).
+    // Keep comparison and creation synchronous so concurrent setup cannot create duplicates.
+    const json = canonicalJson(config).json;
+    const existing = this.input.catalog
+      .destinations(scope)
+      .find(
+        (entry) =>
+          entry.type === input.type &&
+          entry.version === type.version &&
+          canonicalJson(entry.config).json === json,
+      );
+    return existing
+      ? { id: existing.id, type: existing.type, version: existing.version }
+      : this.createDestination({ ...scope, type: input.type, config });
   }
   async createInstallation(input: CreateInstallation) {
     this.guard(input);

@@ -29,7 +29,7 @@ export class AcquisitionService {
       await this.consume(input);
     } catch (error) {
       const code = signal.aborted
-        ? 'cancelled'
+        ? abortCode(signal)
         : error instanceof SyncError
           ? error.code
           : 'execution_failed';
@@ -40,6 +40,9 @@ export class AcquisitionService {
   private async consume(input: { lease: RunLease; signal: AbortSignal }): Promise<void> {
     const { repository, registry, timing } = this.input;
     const { lease, signal } = input;
+    // Leave a quarter of the hard deadline for the final page and iterator cleanup.
+    const workBudgetFraction = 0.75;
+    const yieldAt = performance.now() + timing.timeoutMs * workBudgetFraction;
     const entry = registry.definition(lease.installation.definition);
     const provider = await bindProvider({
       actorId: lease.actorId,
@@ -76,7 +79,7 @@ export class AcquisitionService {
         this.finish({ lease, state: 'waiting_for_capacity', delay: timing.retryMs });
         return;
       }
-      if (pages >= timing.maxPages) {
+      if (pages >= timing.maxPages || performance.now() >= yieldAt) {
         this.finish({ lease, state: 'yielded', delay: 0 });
         return;
       }
@@ -97,4 +100,11 @@ export class AcquisitionService {
       }
     }
   }
+}
+
+function abortCode(signal: AbortSignal): string {
+  if (signal.reason instanceof DOMException && signal.reason.name === 'TimeoutError') {
+    return 'timed_out';
+  }
+  return signal.reason === 'paused' ? 'paused' : 'interrupted';
 }

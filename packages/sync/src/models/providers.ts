@@ -1,7 +1,18 @@
 import type { RuntimeProviderSetup } from '@oomol-lab/open-connector';
-export type ProviderSetup = RuntimeProviderSetup;
-
 import type { Scope } from './identity';
+export type ProviderSetup = Omit<RuntimeProviderSetup, 'oauthClient'> & {
+  oauthClient?: NonNullable<RuntimeProviderSetup['oauthClient']> & {
+    automaticRegistration?: boolean;
+  };
+};
+
+/** Host-registered provider code. Open Sync persists the result through encrypted Connector storage. */
+export type OAuthClientRegistration = (input: {
+  redirectUri: string;
+  scopes: readonly string[];
+  signal: AbortSignal;
+}) => Promise<{ clientId: string; clientSecret?: string }>;
+
 export type ProviderScope = Scope;
 export interface ProviderConnection {
   id: string;

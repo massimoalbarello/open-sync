@@ -1,13 +1,32 @@
 import type { ProviderSetup as RuntimeProviderSetup } from '@context-use/open-sync';
 import { Button } from '@repo/ui/button';
 import { Checkbox } from '@repo/ui/checkbox';
+import { Input } from '@repo/ui/input';
 import { useForm } from '@tanstack/react-form';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useId, useState } from 'react';
 import { configureOAuth, connectProvider, providerKeys } from '../../../queries/providers';
+import { accountActionLabel } from './auth-label';
 import { CredentialForm } from './credential-form';
 
 type OAuth = Extract<RuntimeProviderSetup['auth'][number], { type: 'oauth2' }>;
+
+async function startAuthorization({
+  intent,
+  ...input
+}: Parameters<typeof connectProvider>[0] & { intent: 'open' | 'copy' }) {
+  const result = await connectProvider(input);
+  if (intent === 'open') {
+    window.location.assign(result.authorizationUrl);
+    return null;
+  }
+  try {
+    await navigator.clipboard.writeText(result.authorizationUrl);
+    return { ...result, copied: true };
+  } catch {
+    return { ...result, copied: false };
+  }
+}
 
 function changePermission(input: {
   options: NonNullable<OAuth['authorizationOptions']>;
@@ -35,24 +54,24 @@ function changePermission(input: {
 export function AuthorizationForm(input: {
   service: string;
   connectionId?: string;
+  hasAccounts: boolean;
   auth: OAuth;
-  disabled: boolean;
+  client: RuntimeProviderSetup['oauthClient'];
 }) {
   const id = useId();
-  const connect = useMutation({
-    mutationFn: connectProvider,
-    onSuccess: (result) => window.location.assign(result.authorizationUrl),
-  });
+  const connect = useMutation({ mutationFn: startAuthorization });
   const options = input.auth.authorizationOptions;
   const form = useForm({
+    onSubmitMeta: 'open' as 'open' | 'copy',
     defaultValues: {
       selected:
         options
           ?.filter((option) => option.required || option.defaultSelected)
           .map((option) => option.id) ?? [],
     },
-    onSubmit: async ({ value }) => {
+    onSubmit: async ({ value, meta }) => {
       await connect.mutateAsync({
+        intent: meta,
         service: input.service,
         connectionId: input.connectionId,
         authorizationOptionIds: options ? value.selected : undefined,
@@ -70,7 +89,7 @@ export function AuthorizationForm(input: {
       {options && (
         <details>
           <summary className="cursor-pointer text-muted-foreground text-sm">Permissions</summary>
-          <fieldset className="mt-4 space-y-4">
+          <fieldset className="mt-4 space-y-4" disabled={connect.isPending}>
             <legend className="sr-only">Permissions</legend>
             <form.Field name="selected">
               {(field) =>
@@ -86,6 +105,7 @@ export function AuthorizationForm(input: {
                       checked={field.state.value.includes(option.id)}
                       disabled={option.required}
                       onCheckedChange={(checked) => {
+                        connect.reset();
                         field.handleChange(
                           changePermission({
                             options,
@@ -115,13 +135,49 @@ export function AuthorizationForm(input: {
           {connect.error.message}
         </p>
       )}
-      <Button type="submit" disabled={connect.isPending || input.disabled}>
-        {connect.isPending
-          ? 'Connecting…'
-          : input.connectionId
-            ? 'Reconnect account'
-            : 'Connect account'}
-      </Button>
+      <fieldset
+        className="flex flex-wrap items-center gap-3"
+        disabled={
+          connect.isPending || !(input.client?.configured || input.client?.automaticRegistration)
+        }
+      >
+        <legend className="sr-only">Authorize account</legend>
+        <Button
+          type="submit"
+          variant={input.hasAccounts && !input.connectionId ? 'outline' : 'default'}
+        >
+          {accountActionLabel(input)}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => void form.handleSubmit('copy').catch(() => undefined)}
+        >
+          Copy authorization link
+        </Button>
+      </fieldset>
+      {connect.isPending && (
+        <p role="status" className="text-muted-foreground text-sm">
+          Preparing authorization…
+        </p>
+      )}
+      {connect.data && (
+        <div className="space-y-2">
+          <p role="status" className="text-muted-foreground text-sm">
+            {connect.data.copied
+              ? 'Authorization link copied.'
+              : 'Could not copy automatically. Select and copy the link below.'}
+          </p>
+          {!connect.data.copied && (
+            <Input
+              aria-label="Authorization link"
+              readOnly
+              value={connect.data.authorizationUrl}
+              onFocus={(event) => event.currentTarget.select()}
+            />
+          )}
+        </div>
+      )}
     </form>
   );
 }
@@ -155,12 +211,12 @@ export function OAuthPanel(input: {
         )}
       </div>
       {!showFields && <p className="text-muted-foreground text-sm">OAuth app configured.</p>}
-      <div className="space-y-2 text-sm">
-        <p className="text-muted-foreground">Authorization callback URL</p>
-        <code className="block break-all">{input.client?.expectedRedirectUri}</code>
-      </div>
       {showFields && (
         <div className="space-y-5">
+          <div className="space-y-2 text-sm">
+            <p className="text-muted-foreground">Authorization callback URL</p>
+            <code className="block break-all">{input.client?.expectedRedirectUri}</code>
+          </div>
           {input.auth.clientSetup?.docsUrl && (
             <a
               href={input.auth.clientSetup.docsUrl}

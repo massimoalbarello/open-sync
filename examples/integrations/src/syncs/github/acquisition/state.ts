@@ -1,5 +1,5 @@
 // Adapted for Open Sync from massimoalbarello/open-connector.
-import type { SyncContext, SyncDefinition } from '@context-use/open-sync/definition';
+import type { SyncContext } from '@context-use/open-sync/definition';
 import { z } from 'zod';
 import { object, request } from './response';
 
@@ -20,10 +20,6 @@ export const initialCheckpoint: Checkpoint = {
   watermark: null,
   reconciledAt: null,
 };
-// Definition metadata must be plain JSON. Zod also attaches non-enumerable runtime helpers.
-export function jsonSchema(schema: z.ZodType): SyncDefinition['configSchema'] {
-  return JSON.parse(JSON.stringify(z.toJSONSchema(schema))) as SyncDefinition['configSchema'];
-}
 export async function beginCycle(context: SyncContext): Promise<Checkpoint> {
   const checkpoint = checkpointSchema.parse(context.checkpoint);
   const viewer = object(
