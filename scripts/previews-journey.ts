@@ -123,11 +123,7 @@ export async function previewsJourney(input: {
   await page.goto(`${recordUrl}-missing`);
   await page.getByText('This record is no longer available.', { exact: true }).waitFor();
 }
-async function markdownSafety(input: {
-  page: Page;
-  record: ReceivedRecord;
-  recordUrl: string;
-}) {
+async function markdownSafety(input: { page: Page; record: ReceivedRecord; recordUrl: string }) {
   const { page, record, recordUrl } = input;
   const endpoint = '**/api/receiver/records/detail?*';
   const asset = record.assets.find((item) => item.name === 'photo.jpg')!;
