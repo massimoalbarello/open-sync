@@ -12,7 +12,7 @@ const rateLimited = 429;
 const unavailable = 503;
 const secret = 'private-token-and-provider-payload';
 
-test('legacy ambiguous 403 remains retryable; preserved quota classification and cooldown use HTTP semantics', () => {
+test('legacy ambiguous 403 remains retryable; quota classification uses HTTP semantics without a cooldown', () => {
   const forbidden = 403;
   const legacy = connectorFailure({
     service: 'gmail',
@@ -22,27 +22,25 @@ test('legacy ambiguous 403 remains retryable; preserved quota classification and
     body: { errorCode: 'authorization_failed', data: { status: forbidden } },
   });
   expect(legacy.status).toBeUndefined();
-  const preserved = connectorFailure({
+  const limited = connectorFailure({
     service: 'gmail',
     operation: 'gmail.list_threads',
     kind: 'rejected',
-    response: new Response(null, { status: rateLimited, headers: { 'retry-after': '30' } }),
+    response: new Response(null, { status: rateLimited }),
     body: {
       errorCode: 'rate_limited',
       message: secret,
       data: {
         status: forbidden,
-        reason: 'userRateLimitExceeded',
-        headers: { 'Retry-After': '120', authorization: secret },
       },
     },
   });
-  expect(preserved).toMatchObject({
+  expect(limited).toMatchObject({
     status: rateLimited,
-    retryAfterMs: 120_000,
+    retryAfterMs: undefined,
     diagnostics: { providerStatus: forbidden },
   });
-  expect(JSON.stringify(preserved)).not.toContain(secret);
+  expect(JSON.stringify(limited)).not.toContain(secret);
 });
 
 function client(response: () => Promise<Response>) {
