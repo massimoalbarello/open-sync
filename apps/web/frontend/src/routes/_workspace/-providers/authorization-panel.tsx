@@ -5,7 +5,7 @@ import { CheckCircle2 } from 'lucide-react';
 import { useState } from 'react';
 import { type loadProvider, providerKeys, saveCredentials } from '../../../queries/providers';
 import { syncKeys } from '../../../queries/sync';
-import { authLabels } from './auth-label';
+import { accountActionLabel, authLabels } from './auth-label';
 import { CredentialForm } from './credential-form';
 import { AuthorizationForm, OAuthPanel } from './oauth-panel';
 
@@ -79,6 +79,7 @@ export function AuthorizationPanel(input: {
           <AuthorizationForm
             service={input.service}
             connectionId={input.connectionId}
+            hasAccounts={accounts.length > 0}
             auth={auth}
             client={status.setup.oauthClient}
           />
@@ -93,7 +94,10 @@ export function AuthorizationPanel(input: {
             <CredentialForm
               key={auth.type}
               fields={auth.fields}
-              label={target ? 'Reconnect account' : 'Connect account'}
+              label={accountActionLabel({
+                connectionId: input.connectionId,
+                hasAccounts: accounts.length > 0,
+              })}
               onSubmit={(values) =>
                 save.mutateAsync({
                   service: input.service,

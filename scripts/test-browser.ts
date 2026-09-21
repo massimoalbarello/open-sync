@@ -13,6 +13,7 @@ import { ownerRegistrationJourney } from './owner-registration-journey';
 const fixtureRecordCount = 65;
 const sourceCount = 4;
 const drainTimeoutMs = 120_000;
+const interactionTimeoutMs = 30_000;
 const wideViewport = { width: 1920, height: 1080 };
 
 const app = await startIsolatedApp({
@@ -31,6 +32,7 @@ let browser: Awaited<ReturnType<typeof virtualPasskeyBrowser>> | undefined;
 try {
   browser = await virtualPasskeyBrowser({ headless: true });
   const { page } = browser;
+  page.setDefaultTimeout(interactionTimeoutMs);
   await mkdir('artifacts', { recursive: true });
   await ownerRegistrationJourney({ page, app });
   const requests: string[] = [];
@@ -87,8 +89,12 @@ try {
   assert.equal(await page.getByText('Configuration schema', { exact: true }).count(), 0);
   assert.ok(
     (
-      await page.getByRole('link', { name: 'Configure provider' }).first().getAttribute('href')
-    )?.startsWith('/providers/github'),
+      await page
+        .locator('li')
+        .filter({ has: page.getByRole('heading', { name: 'GitHub pull requests' }) })
+        .getByRole('link', { name: 'Create sync' })
+        .getAttribute('href')
+    )?.startsWith('/syncs/new?source=github.pull-requests'),
   );
   await page.screenshot({
     path: 'artifacts/sources-catalog.png',

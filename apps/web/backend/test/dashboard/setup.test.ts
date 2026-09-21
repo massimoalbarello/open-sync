@@ -150,3 +150,73 @@ test('dashboard creates syncs with an unrelated destination using its own setup 
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('sync creation binds the selected owned OAuth account and refuses ambiguous or unavailable accounts before setup', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dashboard-accounts-'));
+  const owner = { actorId: 'alice', ownerId: 'alice' };
+  const engine = createSyncRuntime({
+    databasePath: join(directory, 'sync.db'),
+    definitions: [githubPullRequests],
+    destinationTypes: {
+      local: {
+        version: '1',
+        configSchema: { type: 'object' },
+        deliver: () => Promise.resolve({ status: 'accepted' }),
+      },
+    },
+    connector: {
+      bind: () =>
+        Promise.resolve({
+          action: () => Promise.reject(new Error('unused')),
+          get: () => Promise.reject(new Error('unused')),
+          post: () => Promise.reject(new Error('unused')),
+        }),
+    },
+  });
+  const status: OpenSyncRuntime['providers']['status'] = (scope) => {
+    expect(scope).toMatchObject({ ...owner, service: 'github' });
+    return Promise.resolve({
+      provider: {
+        service: 'github',
+        displayName: 'GitHub',
+        iconUrl: null,
+        categories: [],
+        scenario: '',
+        authTypes: ['oauth2'],
+      },
+      setup: { service: 'github', auth: [] },
+      connections: [
+        { id: 'personal', account: 'Personal', status: 'active', authType: 'oauth2' },
+        { id: 'work', account: 'Work', status: 'active', authType: 'oauth2' },
+        { id: 'expired', account: 'Expired', status: 'reauth_required', authType: 'oauth2' },
+        { id: 'key', account: 'API key', status: 'active', authType: 'api_key' },
+      ],
+    });
+  };
+  const dashboard = new DashboardService({ api: engine.api, providers: { status } });
+  const input = {
+    ...owner,
+    source: 'github.pull-requests',
+    destination: { type: 'local', input: {} },
+  };
+  try {
+    for (const connectionId of [undefined, 'another-owner-account', 'expired', 'key']) {
+      await expect(dashboard.create({ ...input, connectionId })).rejects.toThrow(
+        'Select a connected account',
+      );
+    }
+    expect(engine.api.destinations(owner)).toHaveLength(0);
+    expect(engine.api.installations(owner)).toHaveLength(0);
+    for (const connectionId of ['personal', 'work']) {
+      const created = await dashboard.create({ ...input, connectionId });
+      const saved = engine.api.installation({ ...owner, id: created.id });
+      expect(created.authorizeService).toBeUndefined();
+      expect(saved.connection).toEqual({ id: connectionId, service: 'github' });
+      expect(saved.enabled).toBe(true);
+    }
+    expect(new Set(engine.api.installations(owner).map((entry) => entry.sourceId)).size).toBe(2);
+  } finally {
+    await engine.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

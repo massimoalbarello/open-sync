@@ -6,6 +6,7 @@ import { BadRequestError } from '#backend/lib/errors.ts';
 const pollIntervalMs = 900_000;
 export type CreateSync = {
   source: string;
+  connectionId?: string;
   destination: { type: string; input: JsonObject };
 };
 
@@ -26,16 +27,16 @@ export class DashboardService {
     if (!definition || !type) {
       throw new BadRequestError('Select an available source and destination.');
     }
-    const provider = definition.provider
-      ? await this.sync.providers.status({ ...scope, service: definition.provider.service })
+    const connection = definition.provider
+      ? await this.selectAccount({
+          ...scope,
+          service: definition.provider.service,
+          connectionId: input.connectionId,
+        })
       : undefined;
-    const account = provider?.connections.find(
-      (connection) => connection.status === 'active' && connection.authType === 'oauth2',
-    );
-    const connection =
-      account && definition.provider
-        ? { id: account.id, service: definition.provider.service }
-        : undefined;
+    if (input.connectionId && !connection) {
+      throw new BadRequestError('Select a connected account for this source.');
+    }
     const destination = await this.sync.api.setupDestination({
       ...scope,
       type: input.destination.type,
@@ -71,6 +72,24 @@ export class DashboardService {
       id: installation.id,
       authorizeService: !installation.connection ? definition.provider?.service : undefined,
     };
+  }
+
+  private async selectAccount(input: Scope & { service: string; connectionId?: string }) {
+    const status = await this.sync.providers.status(input);
+    const accounts = status.connections.filter(
+      (entry) => entry.status === 'active' && entry.authType === 'oauth2',
+    );
+    if (input.connectionId) {
+      const account = accounts.find((entry) => entry.id === input.connectionId);
+      if (!account) {
+        throw new BadRequestError('Select a connected account for this source.');
+      }
+      return { id: account.id, service: input.service };
+    }
+    if (accounts.length > 1) {
+      throw new BadRequestError('Select a connected account for this source.');
+    }
+    return accounts[0] ? { id: accounts[0].id, service: input.service } : undefined;
   }
 
   async connectWaiting(input: Scope & { connection: { id: string; service: string } }) {

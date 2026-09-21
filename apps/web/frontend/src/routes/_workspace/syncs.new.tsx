@@ -6,6 +6,7 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useId } from 'react';
 import { SectionPage } from '../../components/section-page';
 import { catalogOptions, createSync, type loadCatalog } from '../../queries/catalog';
+import { providerSetupOptions } from '../../queries/providers';
 import { syncKeys } from '../../queries/sync';
 import { SetupInput } from './-syncs/setup-input';
 import { fieldError, setupError, setupFields, setupInput } from './-syncs/setup-schema';
@@ -64,6 +65,7 @@ function SyncForm(input: {
   const form = useForm({
     defaultValues: {
       source: search.source ?? '',
+      connectionId: '',
       destination: search.destination ?? catalog.types[0]?.type ?? '',
       values: [] as string[],
     },
@@ -74,6 +76,7 @@ function SyncForm(input: {
       }
       await create.mutateAsync({
         source: value.source,
+        connectionId: value.connectionId || undefined,
         destination: {
           type: type.type,
           input: setupInput({ fields: setupFields(type.setupSchema), values: value.values }),
@@ -83,6 +86,24 @@ function SyncForm(input: {
     },
     validators: {
       onSubmit: ({ value }) => {
+        const source = catalog.sources.find((entry) => entry.id === value.source);
+        if (source?.provider) {
+          const status = client.getQueryData(
+            providerSetupOptions({ userId, service: source.provider.service }).queryKey,
+          );
+          if (!status) {
+            return 'Wait for accounts to load, then try again.';
+          }
+          const accounts = status.connections.filter(
+            (entry) => entry.status === 'active' && entry.authType === 'oauth2',
+          );
+          if (
+            (accounts.length > 1 || value.connectionId) &&
+            !accounts.some((entry) => entry.id === value.connectionId)
+          ) {
+            return 'Select a connected account for this source.';
+          }
+        }
         const type = catalog.types.find((entry) => entry.type === value.destination);
         if (!type) {
           return 'Select a destination.';
@@ -129,7 +150,10 @@ function SyncForm(input: {
               <Select
                 id="sync-source"
                 value={field.state.value}
-                onValueChange={field.handleChange}
+                onValueChange={(value) => {
+                  field.handleChange(value);
+                  form.resetField('connectionId');
+                }}
                 options={catalog.sources.map((source) => ({
                   value: source.id,
                   label: source.name ?? source.id,
@@ -143,6 +167,25 @@ function SyncForm(input: {
             </div>
           )}
         </form.Field>
+        <form.Subscribe selector={(state) => state.values.source}>
+          {(source) => {
+            const service = catalog.sources.find((entry) => entry.id === source)?.provider?.service;
+            return (
+              service && (
+                <form.Field name="connectionId">
+                  {(field) => (
+                    <AccountSelection
+                      userId={userId}
+                      service={service}
+                      value={field.state.value}
+                      onChange={field.handleChange}
+                    />
+                  )}
+                </form.Field>
+              )
+            );
+          }}
+        </form.Subscribe>
         <form.Field
           name="destination"
           validators={{
@@ -236,5 +279,48 @@ function SyncForm(input: {
         </Button>
       </form>
     </>
+  );
+}
+
+function AccountSelection(input: {
+  userId: string;
+  service: string;
+  value: string;
+  onChange(value: string): void;
+}) {
+  const query = useQuery(providerSetupOptions(input));
+  if (query.isPending) {
+    return <p className="text-muted-foreground text-sm">Loading accounts…</p>;
+  }
+  if (query.error) {
+    return (
+      <div role="alert" className="space-y-2 text-sm">
+        <p>{query.error.message}</p>
+        <Button type="button" variant="outline" onClick={() => void query.refetch()}>
+          Try again
+        </Button>
+      </div>
+    );
+  }
+  const accounts = query.data.connections.filter(
+    (entry) => entry.status === 'active' && entry.authType === 'oauth2',
+  );
+  if (accounts.length < 2) {
+    return accounts[0] ? (
+      <p className="text-muted-foreground text-sm">Account: {accounts[0].account}</p>
+    ) : null;
+  }
+  return (
+    <div className="space-y-2">
+      <label htmlFor="sync-account" className="font-medium text-sm">
+        Account
+      </label>
+      <Select
+        id="sync-account"
+        value={input.value}
+        onValueChange={input.onChange}
+        options={accounts.map((entry) => ({ value: entry.id, label: entry.account }))}
+      />
+    </div>
   );
 }

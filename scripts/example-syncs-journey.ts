@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import type { virtualPasskeyBrowser } from '@repo/browser-testing/browser';
 import { copyAuthorizationJourney } from './copy-authorization-journey';
 import { destinationSetupJourney } from './destination-setup-journey';
+import { providerSetupJourney } from './provider-setup-journey';
 
 type Page = Awaited<ReturnType<typeof virtualPasskeyBrowser>>['page'];
 const sources = [
@@ -79,6 +80,7 @@ export async function exampleSyncsJourney(input: { page: Page; origin: string })
     animations: 'disabled',
   });
   await page.setViewportSize({ width: 1280, height: 720 });
+  await providerSetupJourney(input);
   console.log(
     'Example journeys passed: Gmail OAuth, Slack OAuth, Granola OAuth/MCP, local records and external API rejection.',
   );

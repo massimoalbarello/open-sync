@@ -6,6 +6,7 @@ import { useForm } from '@tanstack/react-form';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useId, useState } from 'react';
 import { configureOAuth, connectProvider, providerKeys } from '../../../queries/providers';
+import { accountActionLabel } from './auth-label';
 import { CredentialForm } from './credential-form';
 
 type OAuth = Extract<RuntimeProviderSetup['auth'][number], { type: 'oauth2' }>;
@@ -53,6 +54,7 @@ function changePermission(input: {
 export function AuthorizationForm(input: {
   service: string;
   connectionId?: string;
+  hasAccounts: boolean;
   auth: OAuth;
   client: RuntimeProviderSetup['oauthClient'];
 }) {
@@ -140,8 +142,11 @@ export function AuthorizationForm(input: {
         }
       >
         <legend className="sr-only">Authorize account</legend>
-        <Button type="submit">
-          {input.connectionId ? 'Reconnect account' : 'Connect account'}
+        <Button
+          type="submit"
+          variant={input.hasAccounts && !input.connectionId ? 'outline' : 'default'}
+        >
+          {accountActionLabel(input)}
         </Button>
         <Button
           type="button"
@@ -206,12 +211,12 @@ export function OAuthPanel(input: {
         )}
       </div>
       {!showFields && <p className="text-muted-foreground text-sm">OAuth app configured.</p>}
-      <div className="space-y-2 text-sm">
-        <p className="text-muted-foreground">Authorization callback URL</p>
-        <code className="block break-all">{input.client?.expectedRedirectUri}</code>
-      </div>
       {showFields && (
         <div className="space-y-5">
+          <div className="space-y-2 text-sm">
+            <p className="text-muted-foreground">Authorization callback URL</p>
+            <code className="block break-all">{input.client?.expectedRedirectUri}</code>
+          </div>
           {input.auth.clientSetup?.docsUrl && (
             <a
               href={input.auth.clientSetup.docsUrl}

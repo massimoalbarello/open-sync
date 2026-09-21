@@ -20,9 +20,14 @@ export async function copyAuthorizationJourney(input: {
   assert.ok(manualUrl.searchParams.get('state'));
   await manual.focus();
   assert.ok(
-    await manual.evaluate(
-      '(element) => element.selectionStart === 0 && element.selectionEnd === element.value.length',
-    ),
+    await manual.evaluate((element) => {
+      const input = element as unknown as {
+        selectionStart: number;
+        selectionEnd: number;
+        value: string;
+      };
+      return input.selectionStart === 0 && input.selectionEnd === input.value.length;
+    }),
   );
   await page.setViewportSize({ width: 390, height: 844 });
   assert.ok(await page.evaluate('document.documentElement.scrollWidth <= window.innerWidth'));

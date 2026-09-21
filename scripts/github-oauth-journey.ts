@@ -52,7 +52,7 @@ export async function githubOAuthSuccessJourney(input: {
     fullPage: true,
     animations: 'disabled',
   });
-  await page.getByRole('button', { name: 'Connect account', exact: true }).click();
+  await page.getByRole('button', { name: /^Connect (another )?account$/ }).click();
   await page.getByRole('heading', { name: 'Consent boundary' }).waitFor();
   const authorization = new URL(page.url());
   const state = authorization.searchParams.get('state');

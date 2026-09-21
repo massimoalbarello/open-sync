@@ -3,8 +3,10 @@ let granolaRegistrationAttempts = 0;
 export async function exampleProviderResponse(request: Request): Promise<Response | undefined> {
   const url = new URL(request.url);
   if (url.hostname === 'oauth2.googleapis.com') {
+    const fields = new URLSearchParams(await request.text());
+    const work = fields.get('code') === 'work-account-code';
     return Response.json({
-      access_token: 'gmail-fixture-token',
+      access_token: work ? 'gmail-work-fixture-token' : 'gmail-fixture-token',
       refresh_token: 'gmail-refresh',
       token_type: 'Bearer',
       expires_in: 3600,
@@ -12,7 +14,7 @@ export async function exampleProviderResponse(request: Request): Promise<Respons
     });
   }
   if (url.hostname === 'gmail.googleapis.com') {
-    return gmailResponse(url);
+    return gmailResponse(request);
   }
   if (url.hostname === 'slack.com') {
     return slackResponse(url);
@@ -34,10 +36,13 @@ export async function exampleProviderResponse(request: Request): Promise<Respons
   }
 }
 
-function gmailResponse(url: URL) {
+function gmailResponse(request: Request) {
+  const url = new URL(request.url);
   if (url.pathname.endsWith('/profile')) {
     return Response.json({
-      emailAddress: 'alice@example.com',
+      emailAddress: request.headers.get('authorization')?.includes('gmail-work-fixture-token')
+        ? 'work@example.com'
+        : 'alice@example.com',
       messagesTotal: 1,
       threadsTotal: 1,
       historyId: '1',
