@@ -3,6 +3,7 @@ import type { DeliveredRecord, Delivery } from '@context-use/open-sync/delivery'
 import { canonicalJson } from '@context-use/open-sync/json';
 import type { SQL, TransactionSQL } from 'bun';
 import { acceptAsset } from './assets';
+import { browseAssets, relateAssets } from './browse-assets';
 import type { ReceiverRepository, ReceiverScope } from './contract';
 
 export class SqliteReceiver implements ReceiverRepository {
@@ -17,6 +18,9 @@ export class SqliteReceiver implements ReceiverRepository {
       throw new Error('Receiver asset directory is required');
     }
     return acceptAsset({ ...input, db: this.db, directory: this.assetDirectory });
+  }
+  assets(input: Parameters<ReceiverRepository['assets']>[0]) {
+    return browseAssets({ ...input, db: this.db });
   }
   async asset(input: ReceiverScope & { id: string }) {
     const [row] = await this.db<
@@ -40,13 +44,17 @@ export class SqliteReceiver implements ReceiverRepository {
       WHERE owner_id=${input.ownerId} AND deleted=0 AND (${sourceId} IS NULL OR source_id=${sourceId})
       ORDER BY source_id,kind,record_id LIMIT ${limit + 1} OFFSET ${input.offset}`;
     return {
-      records: rows.slice(0, limit).map((row) => ({
-        sourceId: String(row.source_id),
-        kind: String(row.kind),
-        id: String(row.record_id),
-        revision: Number(row.revision),
-        data: JSON.parse(String(row.data)) as import('@context-use/open-sync/json').JsonObject,
-      })),
+      records: await relateAssets({
+        ...input,
+        db: this.db,
+        records: rows.slice(0, limit).map((row) => ({
+          sourceId: String(row.source_id),
+          kind: String(row.kind),
+          id: String(row.record_id),
+          revision: Number(row.revision),
+          data: JSON.parse(String(row.data)) as import('@context-use/open-sync/json').JsonObject,
+        })),
+      }),
       hasMore: rows.length > limit,
       pageSize: limit,
     };

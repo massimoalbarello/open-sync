@@ -30,9 +30,11 @@
     "@tanstack/react-form": "^1.33.5",
     "@tanstack/react-query": "^5.102.8",
     "@tanstack/react-router": "^1.170.32",
+    "@types/mdast": "4.0.4",
     "better-auth": "catalog:",
     "elysia": "^1.4.30",
     "lucide-react": "^1.37.0",
+    "mdast-util-from-markdown": "2.0.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tailwindcss": "^4.3.3"

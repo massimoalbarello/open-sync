@@ -79,12 +79,13 @@ try {
   });
   await page.getByRole('button', { name: 'Save OAuth app', exact: true }).click();
   await page.getByRole('button', { name: 'Edit OAuth app', exact: true }).waitFor();
+  await page.goto('about:blank');
   await app.restartServer();
   await githubOAuthJourney({ page, origin: app.origin });
 
   assert.deepEqual(
     await page.getByRole('navigation', { name: 'Workspace' }).getByRole('link').allTextContents(),
-    ['Providers', 'Syncs', 'Records', 'Queue'],
+    ['Providers', 'Syncs', 'Records', 'Assets', 'Queue'],
   );
   await page.getByRole('link', { name: 'Syncs', exact: true }).click();
   await page.getByRole('link', { name: 'Create sync', exact: true }).click();
@@ -123,8 +124,10 @@ try {
     .getByText('Your sync is saved. Connect your account to start syncing.', { exact: true })
     .waitFor();
   const syncId = new URL(page.url()).searchParams.get('syncId')!;
+  const savedSyncUrl = page.url();
+  await page.goto('about:blank');
   await app.restartServer();
-  await page.reload();
+  await page.goto(savedSyncUrl);
   await page
     .getByText('Your sync is saved. Connect your account to start syncing.', { exact: true })
     .waitFor();
@@ -324,6 +327,7 @@ try {
     'Providers',
     'Syncs',
     'Records',
+    'Assets',
     'Queue',
   ]);
   await page.getByRole('link', { name: 'Queue', exact: true }).click();
@@ -353,7 +357,26 @@ try {
     (await page.request.get(`${app.origin}/api/open-sync/sync/installations/${syncId}`)).status(),
     unauthorized,
   );
-  for (const section of ['/providers', '/syncs', '/syncs/new', '/records', '/delivery']) {
+  assert.equal(
+    (await page.request.get(`${app.origin}/api/receiver/assets`)).status(),
+    unauthorized,
+  );
+  assert.equal(
+    (
+      await page.request.get(
+        `${app.origin}/api/receiver/assets/asset_00000000-0000-0000-0000-000000000000`,
+      )
+    ).status(),
+    unauthorized,
+  );
+  for (const section of [
+    '/providers',
+    '/syncs',
+    '/syncs/new',
+    '/records',
+    '/assets',
+    '/delivery',
+  ]) {
     await page.goto(`${app.origin}${section}`);
     await page.getByRole('button', { name: 'Sign in with a passkey' }).waitFor();
   }
@@ -369,7 +392,13 @@ try {
     'Browser journey passed: paginated catalogs, provider setup, deferred authorization, GitHub syncs, infinite records and queue, responsive layout and real passkeys.',
   );
 } catch (error) {
-  console.error(await browser?.page.locator('body').innerText());
+  console.error(error);
+  console.error(
+    await browser?.page
+      .locator('body')
+      .innerText({ timeout: 5000 })
+      .catch(() => 'Page unavailable'),
+  );
   throw error;
 } finally {
   await browser?.close();

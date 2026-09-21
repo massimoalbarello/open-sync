@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WorkspaceRouteImport } from './routes/_workspace'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as WorkspaceAssetsRouteImport } from './routes/_workspace/assets'
 import { Route as WorkspaceDeliveryRouteImport } from './routes/_workspace/delivery'
 import { Route as WorkspaceRecordsRouteImport } from './routes/_workspace/records'
 import { Route as WorkspaceProvidersIndexRouteImport } from './routes/_workspace/providers.index'
@@ -33,6 +34,11 @@ const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
   getParentRoute: () => rootRouteImport,
+} as any)
+const WorkspaceAssetsRoute = WorkspaceAssetsRouteImport.update({
+  id: '/assets',
+  path: '/assets',
+  getParentRoute: () => WorkspaceRoute,
 } as any)
 const WorkspaceDeliveryRoute = WorkspaceDeliveryRouteImport.update({
   id: '/delivery',
@@ -74,6 +80,7 @@ const WorkspaceSyncsNewRoute = WorkspaceSyncsNewRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/assets': typeof WorkspaceAssetsRoute
   '/delivery': typeof WorkspaceDeliveryRoute
   '/records': typeof WorkspaceRecordsRoute
   '/providers/$service': typeof WorkspaceProvidersServiceRoute
@@ -85,6 +92,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/assets': typeof WorkspaceAssetsRoute
   '/delivery': typeof WorkspaceDeliveryRoute
   '/records': typeof WorkspaceRecordsRoute
   '/providers/$service': typeof WorkspaceProvidersServiceRoute
@@ -98,6 +106,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_workspace': typeof WorkspaceRouteWithChildren
   '/login': typeof LoginRoute
+  '/_workspace/assets': typeof WorkspaceAssetsRoute
   '/_workspace/delivery': typeof WorkspaceDeliveryRoute
   '/_workspace/records': typeof WorkspaceRecordsRoute
   '/_workspace/providers/$service': typeof WorkspaceProvidersServiceRoute
@@ -111,6 +120,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
+    | '/assets'
     | '/delivery'
     | '/records'
     | '/providers/$service'
@@ -122,6 +132,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/login'
+    | '/assets'
     | '/delivery'
     | '/records'
     | '/providers/$service'
@@ -134,6 +145,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_workspace'
     | '/login'
+    | '/_workspace/assets'
     | '/_workspace/delivery'
     | '/_workspace/records'
     | '/_workspace/providers/$service'
@@ -171,6 +183,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_workspace/assets': {
+      id: '/_workspace/assets'
+      path: '/assets'
+      fullPath: '/assets'
+      preLoaderRoute: typeof WorkspaceAssetsRouteImport
+      parentRoute: typeof WorkspaceRoute
     }
     '/_workspace/delivery': {
       id: '/_workspace/delivery'
@@ -225,6 +244,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface WorkspaceRouteChildren {
+  WorkspaceAssetsRoute: typeof WorkspaceAssetsRoute
   WorkspaceDeliveryRoute: typeof WorkspaceDeliveryRoute
   WorkspaceRecordsRoute: typeof WorkspaceRecordsRoute
   WorkspaceProvidersServiceRoute: typeof WorkspaceProvidersServiceRoute
@@ -235,6 +255,7 @@ interface WorkspaceRouteChildren {
 }
 
 const WorkspaceRouteChildren: WorkspaceRouteChildren = {
+  WorkspaceAssetsRoute: WorkspaceAssetsRoute,
   WorkspaceDeliveryRoute: WorkspaceDeliveryRoute,
   WorkspaceRecordsRoute: WorkspaceRecordsRoute,
   WorkspaceProvidersServiceRoute: WorkspaceProvidersServiceRoute,

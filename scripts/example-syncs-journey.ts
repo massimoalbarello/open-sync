@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import type { virtualPasskeyBrowser } from '@repo/browser-testing/browser';
+import { assetsEmptyJourney, assetsJourney } from './assets-journey';
 import { copyAuthorizationJourney } from './copy-authorization-journey';
 import { destinationSetupJourney } from './destination-setup-journey';
 import { historySetupJourney } from './history-setup-journey';
@@ -31,6 +32,7 @@ const sources = [
 ];
 
 export async function exampleSyncsJourney(input: { page: Page; origin: string }) {
+  await assetsEmptyJourney(input);
   for (const source of sources) {
     await connectSource({ ...input, source });
   }
@@ -145,6 +147,11 @@ async function connectSource(input: {
     }[];
     assert.equal(attachments.length, 2);
     assert.notEqual(attachments[0]!.file, attachments[1]!.file);
+    assert.deepEqual(
+      records.records[0].assets.map((asset: { id: string }) => asset.id),
+      attachments.map((attachment) => attachment.file),
+    );
+    await assetsJourney({ page, origin, sourceId: installation.sourceId, attachments });
     const expected = ['inline attachment', 'external attachment'];
     for (const [index, attachment] of attachments.entries()) {
       const response = await page.request.get(`${origin}/api/receiver/assets/${attachment.file}`);

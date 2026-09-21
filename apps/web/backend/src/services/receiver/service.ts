@@ -9,6 +9,9 @@ export class ReceiverService {
   asset(input: ReceiverScope & { id: string }) {
     return this.repository.asset(input);
   }
+  assets(input: ReceiverScope & { sourceId?: string; offset: number }) {
+    return this.repository.assets(input);
+  }
   status(scope: ReceiverScope) {
     return this.repository.status(scope);
   }

@@ -16,8 +16,21 @@ export interface ReceivedRecord {
   id: string;
   revision: number;
   data: JsonObject;
+  assets: ReceivedAsset[];
+}
+export interface ReceivedAsset {
+  id: string;
+  sourceId: string;
+  name: string;
+  mediaType: string;
+  size: number;
 }
 export interface ReceiverRepository {
+  assets(input: ReceiverScope & { sourceId?: string; offset: number }): Promise<{
+    assets: ReceivedAsset[];
+    hasMore: boolean;
+    pageSize: number;
+  }>;
   acceptAsset(
     input: ReceiverScope & AssetUpload & { sourceId: string; signal: AbortSignal },
   ): Promise<string>;

@@ -32,6 +32,17 @@ export function receiverController(input: {
       },
     )
     .get(
+      '/assets',
+      ({ scope, query }) =>
+        input.receiver.assets({ ...scope, sourceId: query.sourceId, offset: query.offset ?? 0 }),
+      {
+        query: t.Object({
+          sourceId: t.Optional(t.String({ minLength: 1, maxLength: 1024 })),
+          offset: t.Optional(t.Integer({ minimum: 0, maximum: 1000000 })),
+        }),
+      },
+    )
+    .get(
       '/assets/:id',
       async ({ scope, params, status }) => {
         const asset = await input.receiver.asset({ ...scope, id: params.id });
