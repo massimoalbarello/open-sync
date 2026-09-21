@@ -55,20 +55,11 @@ function Assets() {
       )}
       <ul aria-label="Received assets" className="divide-y divide-border">
         {assets.map((asset) => (
-          <li key={asset.id} className="flex flex-wrap items-center justify-between gap-4 py-4">
-            <div className="min-w-0 flex-1 space-y-2">
-              <AssetLink asset={asset} />
-              <p className="break-words text-muted-foreground text-sm">
-                {asset.mediaType} · {formatSize(asset.size)}
-              </p>
-            </div>
-            <Link
-              to="/records"
-              search={{ sourceId: asset.sourceId }}
-              className="text-muted-foreground text-sm underline underline-offset-4"
-            >
-              Source records
-            </Link>
+          <li key={asset.id} className="space-y-2 py-4">
+            <AssetLink asset={asset} />
+            <p className="break-words text-muted-foreground text-sm">
+              {asset.mediaType} · {formatSize(asset.size)}
+            </p>
           </li>
         ))}
       </ul>

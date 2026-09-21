@@ -56,8 +56,6 @@ export async function assetsJourney(input: {
     fullPage: true,
     animations: 'disabled',
   });
-  await assets.getByRole('link', { name: 'Source records', exact: true }).first().click();
-  assert.equal(new URL(page.url()).searchParams.get('sourceId'), sourceId);
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto(recordsUrl);
   await related.getByRole('link').first().waitFor();
