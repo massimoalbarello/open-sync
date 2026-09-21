@@ -1,4 +1,4 @@
-import type { Nodes } from 'mdast';
+import type { Definition, Nodes } from 'mdast';
 import { fromMarkdown } from 'mdast-util-from-markdown';
 import { toMarkdown } from 'mdast-util-to-markdown';
 import {
@@ -116,42 +116,52 @@ function transformMarkdown(input: {
   resolve(input: { key: string; markdown: boolean }): { value: JsonValue; failed: boolean };
 }): string {
   const tree = fromMarkdown(input.body);
+  const definitions = markdownDefinitions(tree);
   let changed = false;
   const walk = (node: Nodes): Nodes => {
+    // Expand reference links so a failed asset becomes visible at every use.
+    if (node.type === 'linkReference' || node.type === 'imageReference') {
+      const definition = definitions.get(node.identifier);
+      if (definition && assetPlaceholderKey(definition.url) !== undefined) {
+        node =
+          node.type === 'imageReference'
+            ? { type: 'image', url: definition.url, title: definition.title, alt: node.alt }
+            : {
+                type: 'link',
+                url: definition.url,
+                title: definition.title,
+                children: node.children,
+              };
+      }
+    }
     const resolved = resolveMarkdownNode({ node, resolve: input.resolve });
     changed ||= resolved.changed;
     node = resolved.node;
     if ('children' in node) {
-      node.children = node.children.map(walk) as typeof node.children;
+      node.children = node.children
+        .filter(
+          (child) => child.type !== 'definition' || assetPlaceholderKey(child.url) === undefined,
+        )
+        .map(walk) as typeof node.children;
     }
     return node;
   };
-  // Expand reference-style links before resolving so failure becomes visible at every use.
-  const definitions = new Map(
-    tree.children
-      .filter((node) => node.type === 'definition')
-      .map((node) => [node.identifier, node]),
-  );
-  const expand = (node: Nodes): Nodes => {
-    if (node.type === 'linkReference' || node.type === 'imageReference') {
-      const definition = definitions.get(node.identifier);
-      if (definition && assetPlaceholderKey(definition.url) !== undefined) {
-        return node.type === 'imageReference'
-          ? { type: 'image', url: definition.url, title: definition.title, alt: node.alt }
-          : { type: 'link', url: definition.url, title: definition.title, children: node.children };
-      }
-    }
-    if ('children' in node) {
-      node.children = node.children.map(expand) as typeof node.children;
-    }
-    return node;
-  };
-  expand(tree);
-  tree.children = tree.children.filter(
-    (node) => node.type !== 'definition' || assetPlaceholderKey(node.url) === undefined,
-  );
   walk(tree);
   return changed ? toMarkdown(tree) : input.body;
+}
+
+function markdownDefinitions(root: Nodes): Map<string, Definition> {
+  const definitions = new Map<string, Definition>();
+  const visit = (node: Nodes) => {
+    if (node.type === 'definition' && !definitions.has(node.identifier)) {
+      definitions.set(node.identifier, node);
+    }
+    if ('children' in node) {
+      node.children.forEach(visit);
+    }
+  };
+  visit(root);
+  return definitions;
 }
 
 function resolveMarkdownNode(input: {

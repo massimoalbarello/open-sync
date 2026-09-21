@@ -368,6 +368,48 @@ test('placeholder protocol resolves repeated and distinct assets while preservin
   expect(() => validateAssetReferences({ ...record, assetRefs: { a: refs.a } })).toThrow();
 });
 
+test.each([
+  '[file][ref]\n\n> [ref]: open-sync-asset:a',
+  '[file][ref]\n\n- [ref]: open-sync-asset:a',
+  '[file][ref]\n\n[ref]: open-sync-asset:a\n[ref]: https://wrong.example/file',
+])(
+  'Markdown asset references follow nested definitions and first-definition precedence: %s',
+  (body) => {
+    const ref = { id: 'first', version: '1' };
+    const record = {
+      operation: 'upsert' as const,
+      kind: 'note',
+      id: '1',
+      eventId: 'event',
+      revision: 1,
+      contentHash: 'source',
+      assetRefs: { a: ref },
+      markdownFields: ['body'],
+      data: { body },
+    };
+    validateAssetReferences(record);
+    for (const outcome of [
+      { status: 'accepted' as const, reference: 'A' },
+      { status: 'failed' as const, code: 'unavailable' },
+    ]) {
+      const resolved = resolveRecordAssets({
+        record,
+        assets: [{ ...ref, name: 'file', mediaType: 'text/plain', size: 1, sha256: 'hash' }],
+        outcomes: new Map([[assetKey(ref), outcome]]),
+        rendering,
+      });
+      expect(resolved.operation === 'upsert' && resolved.data.body).toContain(
+        outcome.status === 'accepted'
+          ? '[file](https://destination.example/files/A)'
+          : 'Attachment unavailable',
+      );
+      expect(resolved.operation === 'upsert' && resolved.data.body).not.toContain(
+        'open-sync-asset:',
+      );
+    }
+  },
+);
+
 test('a failed acquisition retains completed captures for restart without advancing the checkpoint', async () => {
   let reads = 0;
   let failPage = true;
