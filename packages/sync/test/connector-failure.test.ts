@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test';
+import { expect, spyOn, test } from 'bun:test';
 import { createConnectorClient } from '../src/connector/client';
 import { connectorFailure } from '../src/connector/failure';
 import type { SyncEvent } from '../src/execution/diagnostics';
@@ -37,7 +37,6 @@ test('legacy ambiguous 403 remains retryable; quota classification uses HTTP sem
   });
   expect(limited).toMatchObject({
     status: rateLimited,
-    retryAfterMs: undefined,
     diagnostics: { providerStatus: forbidden },
   });
   expect(JSON.stringify(limited)).not.toContain(secret);
@@ -61,9 +60,12 @@ function client(response: () => Promise<Response>) {
   });
 }
 
-test('connector failure diagnostics reach scoped runtime logs without credentials or upstream payloads', async () => {
+test('connector failures use engine backoff despite timing headers and retain only safe scoped diagnostics', async () => {
   const files = storage();
   const events: SyncEvent[] = [];
+  let now = Date.now();
+  const clock = spyOn(Date, 'now').mockImplementation(() => now);
+  let retryAfter = '120';
   const connector = client(() =>
     Promise.resolve(
       Response.json(
@@ -74,7 +76,7 @@ test('connector failure diagnostics reach scoped runtime logs without credential
           data: { status: rateLimited, details: { secret } },
           meta: { secret },
         },
-        { status: rateLimited, headers: { 'retry-after': '120', 'set-cookie': secret } },
+        { status: rateLimited, headers: { 'retry-after': retryAfter, 'set-cookie': secret } },
       ),
     ),
   );
@@ -119,14 +121,35 @@ test('connector failure diagnostics reach scoped runtime logs without credential
           providerStatus: rateLimited,
           httpStatus: rateLimited,
           failureCount: 1,
-          retryAfterMs: 120_000,
+          retryAfterMs: 30_000,
         },
       },
     ]);
     expect(JSON.stringify(events)).not.toContain(secret);
-    expect(engine.api.installation({ ...alpha, id: installation.id }).checkpoint).toBe(0);
+    const scope = { ...alpha, id: installation.id };
+    const firstDelay = 30_000;
+    const secondDelay = 60_000;
+    expect(engine.api.installation(scope)).toMatchObject({
+      checkpoint: 0,
+      nextDueAt: now + firstDelay,
+    });
+    now += firstDelay;
+    const providerDelay = 120_000;
+    retryAfter = new Date(now + providerDelay).toUTCString();
+    await engine.tick();
+    expect(engine.api.installation(scope)).toMatchObject({
+      checkpoint: 0,
+      nextDueAt: now + secondDelay,
+    });
+    expect(events.at(-1)?.fields).toMatchObject({
+      httpStatus: rateLimited,
+      failureCount: 2,
+      retryAfterMs: secondDelay,
+    });
+    expect(JSON.stringify(events)).not.toContain(secret);
   } finally {
     await engine.close();
+    clock.mockRestore();
     files.close();
   }
 });
@@ -174,48 +197,11 @@ test.each([
   });
 });
 
-test.each(['-1', 'nonsense', 'Infinity', '1.5', '99999999999999999', '9999-12-31'])(
-  'invalid Retry-After %s is ignored',
-  async (retryAfter) => {
-    const provider = await client(() =>
-      Promise.resolve(
-        Response.json(
-          { success: false },
-          {
-            status: rateLimited,
-            headers: { 'retry-after': retryAfter },
-          },
-        ),
-      ),
-    ).bind({ ...alpha, connection, requirements, signal: new AbortController().signal });
-    await expect(provider.get({ path: '/conversations.replies' })).rejects.toMatchObject({
-      retryAfterMs: undefined,
-    });
-  },
-);
-
-test('HTTP-date cooldowns are preserved and caller aborts are not recast as connector failures', async () => {
-  const minute = 60_000;
-  const future = Date.now() + minute;
+test('caller aborts are not recast as connector failures', async () => {
   const abort = new AbortController();
   const provider = await client(() =>
-    Promise.resolve(
-      Response.json(
-        { success: false },
-        {
-          status: rateLimited,
-          headers: { 'retry-after': new Date(future).toUTCString() },
-        },
-      ),
-    ),
+    Promise.reject(new Error('Unexpected provider operation')),
   ).bind({ ...alpha, connection, requirements, signal: abort.signal });
-  const error = await provider
-    .get({ path: '/conversations.replies' })
-    .catch((error: unknown) => error);
-  expect(error).toMatchObject({ code: 'connector_request_failed' });
-  const tolerance = 2000;
-  expect((error as { retryAfterMs: number }).retryAfterMs).toBeGreaterThan(minute - tolerance);
-  expect((error as { retryAfterMs: number }).retryAfterMs).toBeLessThanOrEqual(minute);
   abort.abort('paused');
   await expect(provider.get({ path: '/conversations.replies' })).rejects.toBe('paused');
 });

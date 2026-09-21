@@ -6,7 +6,6 @@ type Page = Awaited<ReturnType<typeof virtualPasskeyBrowser>>['page'];
 export async function sourceRetryJourney(input: { page: Page; origin: string; syncId: string }) {
   const { page, origin, syncId } = input;
   const retryMs = 30_000;
-  const cooldownMs = 60_000;
   const retryTimeoutMs = 120_000;
   const clockToleranceMs = 1000;
   const installationPath = `/api/open-sync/sync/installations/${syncId}`;
@@ -17,7 +16,7 @@ export async function sourceRetryJourney(input: { page: Page; origin: string; sy
   const first = await (await page.request.get(`${origin}${installationPath}/polls`)).json();
   const firstAttempt = first.polls[0].attempts[0];
   assert.equal(firstAttempt.state, 'source_http_429');
-  assert.ok(Math.abs(before.nextDueAt - firstAttempt.completedAt - cooldownMs) < clockToleranceMs);
+  assert.ok(Math.abs(before.nextDueAt - firstAttempt.completedAt - retryMs) < clockToleranceMs);
 
   const secondResponse = await page.waitForResponse(
     async (response) => {
@@ -36,7 +35,7 @@ export async function sourceRetryJourney(input: { page: Page; origin: string; sy
   const second = (await secondResponse.json()).polls[0].attempts[0];
   const retried = await (await page.request.get(`${origin}${installationPath}`)).json();
   assert.deepEqual(retried.checkpoint, before.checkpoint);
-  assert.ok(second.startedAt >= firstAttempt.completedAt + cooldownMs);
+  assert.ok(second.startedAt >= firstAttempt.completedAt + retryMs);
   assert.ok(Math.abs(retried.nextDueAt - second.completedAt - retryMs * 2) < clockToleranceMs);
   assert.equal(await page.getByText('private-upstream-detail', { exact: false }).count(), 0);
   await page
@@ -61,6 +60,6 @@ export async function sourceRetryJourney(input: { page: Page; origin: string; sy
   });
   await page.getByRole('button', { name: 'Pause', exact: true }).waitFor();
   console.log(
-    'Source retry journey passed: 60s cooldown, HTTP 503 recovery, permission pause and checkpoint-preserving resume.',
+    'Source retry journey passed: engine-owned 30s/60s backoff, HTTP 503 recovery, permission pause and checkpoint-preserving resume.',
   );
 }

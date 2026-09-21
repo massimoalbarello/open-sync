@@ -1,6 +1,6 @@
 import { SyncError } from '../models/error';
 import type { JsonObject } from '../models/json';
-import { isErrorStatus, retryAfter } from '../models/source-http-error';
+import { isErrorStatus } from '../models/source-http-error';
 
 /** Only protocol metadata crosses this boundary; messages and payloads can contain credentials. */
 export function connectorFailure(input: {
@@ -38,7 +38,6 @@ export function connectorFailure(input: {
     message: 'connector request failed',
     diagnostics,
     status: recoveryStatus({ code, status: providerStatus ?? input.response?.status }),
-    retryAfterMs: retryAfter(input.response?.headers.get('retry-after')),
   });
 }
 

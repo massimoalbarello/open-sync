@@ -1,4 +1,4 @@
-import { expect, spyOn, test } from 'bun:test';
+import { expect, test } from 'bun:test';
 import type { ProviderResponse, SyncContext } from '@context-use/open-sync/definition';
 import { checkResponse } from '../src/syncs/github/http';
 import { ExpiredCursor, request as slackRequest, ThreadNotFound } from '../src/syncs/slack/request';
@@ -26,7 +26,7 @@ test('GitHub maps GraphQL and HTTP quota errors without converting permission fa
       checkResponse(response);
       throw new Error('Expected failure');
     } catch (error) {
-      expect(error).toMatchObject({ status: rateLimited, retryAfterMs: 120_000 });
+      expect(error).toMatchObject({ status: rateLimited });
       expect(JSON.stringify(error)).not.toContain('private-secret');
     }
   }
@@ -41,38 +41,18 @@ test('GitHub maps GraphQL and HTTP quota errors without converting permission fa
   ).not.toThrow();
 });
 
-test('GitHub honors primary resets on HTTP-200 errors and supplies its secondary-limit minimum', () => {
-  const now = Date.parse('2026-09-21T12:00:00Z');
-  const cooldown = 180_000;
-  const millisecondsPerSecond = 1000;
-  const clock = spyOn(Date, 'now').mockReturnValue(now);
-  try {
-    const responses: ProviderResponse[] = [
-      {
-        status: ok,
-        headers: {
-          'x-ratelimit-remaining': '0',
-          'x-ratelimit-reset': String((now + cooldown) / millisecondsPerSecond),
-        },
-        body: { errors: [{ message: 'Limit exceeded' }] },
-      },
-      { status: ok, headers: {}, body: { errors: [{ type: 'RATE_LIMITED' }] } },
-      { status: rateLimited, headers: {}, body: {} },
-    ];
-    for (const response of responses) {
-      try {
-        checkResponse(response);
-        throw new Error('Expected rate limit');
-      } catch (error) {
-        const secondaryMinimum = 60_000;
-        expect(error).toMatchObject({
-          status: rateLimited,
-          retryAfterMs: response.headers['x-ratelimit-reset'] ? cooldown : secondaryMinimum,
-        });
-      }
-    }
-  } finally {
-    clock.mockRestore();
+test('GitHub classifies primary and secondary limits without interpreting timing hints', () => {
+  const responses: ProviderResponse[] = [
+    {
+      status: ok,
+      headers: { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': 'provider-specific-time' },
+      body: { errors: [{ message: 'Limit exceeded' }] },
+    },
+    { status: ok, headers: {}, body: { errors: [{ type: 'RATE_LIMITED' }] } },
+    { status: rateLimited, headers: {}, body: {} },
+  ];
+  for (const response of responses) {
+    expect(() => checkResponse(response)).toThrow(expect.objectContaining({ status: rateLimited }));
   }
 });
 
@@ -85,7 +65,7 @@ test.each([
 ])('Slack maps $error into HTTP $status', async ({ error, status }) => {
   await expect(
     slackRequest({ context: slackContext({ ok: false, error }), path: '/auth.test' }),
-  ).rejects.toMatchObject({ status, retryAfterMs: 120_000 });
+  ).rejects.toMatchObject({ status });
 });
 
 test('Slack keeps cursor and missing-thread recovery with the source', async () => {

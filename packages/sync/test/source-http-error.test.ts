@@ -168,29 +168,22 @@ test.each([rateLimited, forbidden])(
   },
 );
 
-test('HTTP Retry-After seconds and dates become safe cooldowns without retaining provider data', () => {
-  const now = Date.parse('2026-09-21T12:00:00Z');
-  const clock = spyOn(Date, 'now').mockReturnValue(now);
-  const cooldown = 120_000;
-  try {
-    for (const header of ['120', new Date(now + cooldown).toUTCString()]) {
-      const error = new SourceHttpError({
-        status: rateLimited,
-        headers: { 'Retry-After': header, 'set-cookie': 'private-secret' },
-      });
-      expect(error.retryAfterMs).toBe(cooldown);
-      expect(JSON.stringify(error)).not.toContain('private-secret');
-    }
-    for (const header of ['NaN', '-1', '0.5', '99999999999999999']) {
-      expect(
-        new SourceHttpError({ status: rateLimited, headers: { 'retry-after': header } })
-          .retryAfterMs,
-      ).toBeUndefined();
-    }
-    expect(new SourceHttpError({ status: forbidden }).status).toBe(forbidden);
-    const ok = 200;
-    expect(() => new SourceHttpError({ status: ok })).toThrow(TypeError);
-  } finally {
-    clock.mockRestore();
+test('source HTTP errors validate their status without retaining provider payloads', () => {
+  const response = {
+    status: forbidden,
+    headers: { 'retry-after': '120', 'set-cookie': 'private-secret' },
+    body: { message: 'private-secret' },
+  };
+  const error = new SourceHttpError(response);
+  expect(error).toMatchObject({ code: 'source_http_403', status: forbidden });
+  expect(JSON.stringify(error)).not.toContain('private-secret');
+  const invalidStatuses = {
+    success: 200,
+    belowErrorRange: 399,
+    aboveErrorRange: 600,
+    fractional: 429.5,
+  };
+  for (const status of Object.values(invalidStatuses)) {
+    expect(() => new SourceHttpError({ status })).toThrow(TypeError);
   }
 });

@@ -7,7 +7,7 @@ const lastErrorStatus = 599;
 export class SourceHttpError extends SyncError {
   declare readonly status: number;
 
-  constructor(input: { status: number; headers?: Headers | Readonly<Record<string, string>> }) {
+  constructor(input: { status: number }) {
     if (!isErrorStatus(input.status)) {
       throw new TypeError('SourceHttpError requires an HTTP error status (400–599).');
     }
@@ -15,7 +15,6 @@ export class SourceHttpError extends SyncError {
       code: `source_http_${input.status}`,
       message: `Source returned HTTP ${input.status}.`,
       status: input.status,
-      retryAfterMs: retryAfter(new Headers(input.headers).get('retry-after')),
     });
   }
 }
@@ -35,20 +34,4 @@ export function retryableStatus(status: number): boolean {
   return (
     status >= serverError || [requestTimeout, conflict, tooEarly, rateLimited].includes(status)
   );
-}
-
-export function retryAfter(value: string | null | undefined): number | undefined {
-  if (!value) {
-    return;
-  }
-  const millisecondsPerSecond = 1000;
-  const seconds = /^\d+$/.test(value);
-  if (!seconds && !/^[A-Za-z]{3}, \d{2} [A-Za-z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(value)) {
-    return;
-  }
-  const delay = seconds ? Number(value) * millisecondsPerSecond : Date.parse(value) - Date.now();
-  const maxTimestamp = 8_640_000_000_000_000;
-  return Number.isSafeInteger(delay) && delay >= 0 && Date.now() + delay <= maxTimestamp
-    ? delay
-    : undefined;
 }

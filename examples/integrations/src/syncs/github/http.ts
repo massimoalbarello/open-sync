@@ -10,7 +10,7 @@ export function checkResponse(response: ProviderResponse): void {
     (response.status === forbidden &&
       (headers.get('x-ratelimit-remaining') === '0' || headers.has('retry-after')))
   ) {
-    throw new SourceHttpError({ status: rateLimited, headers: cooldownHeaders(headers) });
+    throw new SourceHttpError({ status: rateLimited });
   }
   const ok = 200;
   if (response.status !== ok) {
@@ -30,25 +30,9 @@ export function checkResponse(response: ProviderResponse): void {
     types.includes('RATE_LIMITED') ||
     (errors.length && (headers.get('x-ratelimit-remaining') === '0' || headers.has('retry-after')))
   ) {
-    throw new SourceHttpError({ status: rateLimited, headers: cooldownHeaders(headers) });
+    throw new SourceHttpError({ status: rateLimited });
   }
   if (types.includes('FORBIDDEN')) {
     throw new SourceHttpError({ status: forbidden });
   }
-}
-
-function cooldownHeaders(headers: Headers): Headers {
-  const reset = headers.get('x-ratelimit-reset');
-  if (!headers.has('retry-after') && reset && /^\d+$/.test(reset)) {
-    const millisecondsPerSecond = 1000;
-    const date = new Date(Number(reset) * millisecondsPerSecond);
-    if (Number.isFinite(date.getTime())) {
-      headers.set('retry-after', date.toUTCString());
-    }
-  }
-  if (!headers.has('retry-after')) {
-    // GitHub asks clients to wait at least one minute for secondary limits without reset metadata.
-    headers.set('retry-after', '60');
-  }
-  return headers;
 }

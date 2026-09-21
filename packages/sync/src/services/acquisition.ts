@@ -48,11 +48,10 @@ export class AcquisitionService {
         : 'execution_failed';
     const failed = !['paused', 'interrupted', 'waiting_for_capacity'].includes(code);
     const failureCount = failed ? lease.failureCount + 1 : lease.failureCount;
-    const cooldown = error instanceof SyncError ? error.retryAfterMs : undefined;
     const status = error instanceof SyncError ? error.status : undefined;
     const pause = !signal.aborted && status !== undefined && !retryableStatus(status);
     const delay = failed
-      ? Math.max(retryDelay({ attempt: failureCount, retryMs: timing.retryMs }), cooldown ?? 0)
+      ? retryDelay({ attempt: failureCount, retryMs: timing.retryMs })
       : timing.retryMs;
     log({
       code,
@@ -261,7 +260,6 @@ function captureFailure(input: {
       message: 'Asset fetch failed.',
       diagnostics: error instanceof SyncError ? error.diagnostics : undefined,
       status: error instanceof SyncError ? error.status : undefined,
-      retryAfterMs: error instanceof SyncError ? error.retryAfterMs : undefined,
     });
   }
 }

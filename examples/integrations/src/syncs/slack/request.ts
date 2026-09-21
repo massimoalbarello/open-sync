@@ -34,7 +34,6 @@ export async function request(input: { context: SyncContext; path: string; query
     const unavailable = 503;
     throw new SourceHttpError({
       status: statuses[result.error ?? ''] ?? unavailable,
-      headers: response.headers,
     });
   }
   return result;
