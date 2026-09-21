@@ -6,7 +6,7 @@ import { InfiniteScroll } from '../../components/infinite-scroll';
 import { SectionPage } from '../../components/section-page';
 import { assetsOptions } from '../../queries/assets';
 
-export const Route = createFileRoute('/_workspace/assets')({
+export const Route = createFileRoute('/_workspace/assets/')({
   component: Assets,
   validateSearch: (search: Record<string, unknown>): { sourceId?: string } => ({
     sourceId: typeof search.sourceId === 'string' ? search.sourceId : undefined,
@@ -30,7 +30,7 @@ function Assets() {
       }
     >
       <p className="mb-6 text-muted-foreground text-sm">
-        Files received from your syncs. Select a filename to download it.
+        Files received from your syncs. Select a filename to preview it.
       </p>
       {query.isPending && <p>Loading assets…</p>}
       {query.error && (

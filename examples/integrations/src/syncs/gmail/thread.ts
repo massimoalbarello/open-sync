@@ -3,6 +3,7 @@ import type { SyncContext } from '@context-use/open-sync/definition';
 import type { SyncRecord } from '@context-use/open-sync/delivery';
 import type { z } from 'zod';
 import { gmailAttachments } from './attachments';
+import { threadContent } from './content';
 import type { responseSchema } from './models';
 export async function threadRecord(input: {
   context: SyncContext;
@@ -40,6 +41,7 @@ export async function threadRecord(input: {
     operation: 'upsert',
     kind: 'thread',
     id: thread.threadId,
+    content: threadContent(messages),
     data: {
       subject: messages[0]!.subject,
       url: `https://mail.google.com/mail/?authuser=${encodeURIComponent(input.account)}#all/${encodeURIComponent(thread.threadId)}`,

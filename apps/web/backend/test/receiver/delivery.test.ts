@@ -37,7 +37,8 @@ const source: SyncRegistration = {
               operation: 'upsert',
               kind: 'note',
               id: 'record',
-              data: { file: assetPlaceholder('file') },
+              data: { label: 'Attachment' },
+              content: { format: 'markdown', body: `[file](${assetPlaceholder('file')})` },
               assetRefs: { file },
             },
           ],
@@ -92,9 +93,10 @@ test('pausing a destination holds assets and records without consuming asset att
     await runtime.tick();
     const record = (await receiver.records({ ...owner, offset: 0 })).records[0]!;
     expect(record.assets).toHaveLength(1);
-    expect(record.data.file).toBe(record.assets[0]!.id);
+    expect(record.content?.body).toContain(`/api/receiver/assets/${record.assets[0]!.id}`);
+    expect(record.content?.body).not.toContain('open-sync-asset:');
     const asset = await receiver.asset({ ...owner, id: record.assets[0]!.id });
-    expect(await new Response(asset!.body).text()).toBe('attachment');
+    expect(await new Response(asset!.open()).text()).toBe('attachment');
     expect(runtime.api.status(owner).queue.pendingDeliveries).toBe(0);
   } finally {
     await runtime?.close();

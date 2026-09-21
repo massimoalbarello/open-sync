@@ -15,17 +15,23 @@ export async function assetsJourney(input: {
   const recordsUrl = page.url();
   const expected = ['inline attachment', 'external attachment'];
   const related = page.getByRole('list', { name: /^Assets for / });
-  assert.equal(await related.getByRole('link').count(), attachments.length);
+  assert.ok((await related.getByRole('link').count()) >= attachments.length);
   for (const [index, attachment] of attachments.entries()) {
-    const href = `/api/receiver/assets/${attachment.file}`;
+    const href = `/assets/${attachment.file}`;
     const link = related.locator(`a[href="${href}"]`);
     assert.equal(await link.textContent(), attachment.name);
-    const downloaded = page.waitForEvent('download');
     await link.click();
+    await page
+      .getByText('Preview is not available for this file type.', { exact: false })
+      .waitFor();
+    const downloaded = page.waitForEvent('download');
+    await page.getByRole('link', { name: `Download ${attachment.name}`, exact: true }).click();
     const download = await downloaded;
     assert.equal(download.suggestedFilename(), attachment.name);
     assert.equal(await readFile((await download.path())!, 'utf8'), expected[index]);
     await download.delete();
+    await page.goto(recordsUrl);
+    await related.getByRole('link').first().waitFor();
   }
   await page.screenshot({
     path: 'artifacts/record-assets.png',
@@ -37,9 +43,9 @@ export async function assetsJourney(input: {
   await page.goto(`${origin}/assets?sourceId=${encodeURIComponent(sourceId)}`);
   const assets = page.getByRole('list', { name: 'Received assets' });
   await assets.getByRole('listitem').first().waitFor();
-  assert.equal(await assets.getByRole('listitem').count(), attachments.length);
+  assert.ok((await assets.getByRole('listitem').count()) >= attachments.length);
   for (const attachment of attachments) {
-    await assets.locator(`a[href="/api/receiver/assets/${attachment.file}"]`).waitFor();
+    await assets.locator(`a[href="/assets/${attachment.file}"]`).waitFor();
   }
   await page.screenshot({
     path: 'artifacts/assets-desktop.png',

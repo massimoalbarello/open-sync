@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AssetRef } from '@context-use/open-sync/assets';
+import type { RecordContent } from '@context-use/open-sync/delivery';
 import type { JsonObject } from '@context-use/open-sync/json';
 import { SQL } from 'bun';
 import { runMigrations } from '#backend/db/migrate.ts';
@@ -54,6 +55,7 @@ function receiveRecord(input: {
   receiver: SqliteReceiver;
   data: JsonObject;
   revision: number;
+  content?: RecordContent;
   assetRefs?: Record<string, AssetRef>;
   deliveryId?: string;
 }) {
@@ -73,6 +75,7 @@ function receiveRecord(input: {
             kind: 'document',
             id: 'record',
             data: input.data,
+            ...(input.content ? { content: input.content } : {}),
             ...(input.assetRefs ? { assetRefs: input.assetRefs } : {}),
             revision: input.revision,
             contentHash: `hash_${input.revision}`,
@@ -127,9 +130,16 @@ test('records persist declared asset relationships independently of rendered con
     );
     assetRefs.repeated = { id: 'first', version: '1' };
     const data = { body: unlinked, attachment: `[copied link](/api/receiver/assets/${unlinked})` };
-    await receiveRecord({ receiver, data, assetRefs, revision: 1 });
+    await receiveRecord({
+      receiver,
+      data,
+      assetRefs,
+      revision: 1,
+      content: { format: 'markdown', body: '# Original' },
+    });
     const record = (await receiver.records({ ...owner, offset: 0 })).records[0]!;
     expect(record.data).toEqual(data);
+    expect(record.content?.body).toBe('# Original');
     expect(record.assets.map((asset) => asset.id)).toEqual([first, second]);
     expect(record).not.toHaveProperty('assetIds');
     expect((await receiver.records({ ...other, offset: 0 })).records).toEqual([]);
@@ -162,5 +172,8 @@ test('records persist declared asset relationships independently of rendered con
       revision: 3,
     });
     expect((await receiver.records({ ...owner, offset: 0 })).records[0]!.assets).toEqual([]);
+    expect((await receiver.records({ ...owner, offset: 0 })).records[0]!).not.toHaveProperty(
+      'content',
+    );
   });
 });

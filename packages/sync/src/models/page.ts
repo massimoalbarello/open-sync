@@ -56,7 +56,7 @@ function validateRecord(input: { record: SyncRecord; definition: SyncDefinition 
   }
   const fields =
     record.operation === 'upsert'
-      ? ['operation', 'kind', 'id', 'data', 'assetRefs', 'markdownFields']
+      ? ['operation', 'kind', 'id', 'data', 'content', 'assetRefs', 'markdownFields']
       : ['operation', 'kind', 'id'];
   if (Object.keys(record).some((key) => !fields.includes(key))) {
     fail('invalid_record');
@@ -64,6 +64,17 @@ function validateRecord(input: { record: SyncRecord; definition: SyncDefinition 
   if (record.operation === 'upsert') {
     if (!record.data || Array.isArray(record.data) || typeof record.data !== 'object') {
       fail('invalid_record');
+    }
+    if (
+      record.content !== undefined &&
+      (!record.content ||
+        typeof record.content !== 'object' ||
+        Array.isArray(record.content) ||
+        record.content.format !== 'markdown' ||
+        typeof record.content.body !== 'string' ||
+        Object.keys(record.content).some((key) => !['format', 'body'].includes(key)))
+    ) {
+      fail('invalid_record_content');
     }
     validateAssetReferences(record);
     validate({ value: record.data, schema: definition.kinds[record.kind]! });

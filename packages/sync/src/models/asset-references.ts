@@ -1,6 +1,8 @@
 import type { Definition, Nodes } from 'mdast';
 import { fromMarkdown } from 'mdast-util-from-markdown';
+import { gfmFromMarkdown, gfmToMarkdown } from 'mdast-util-gfm';
 import { toMarkdown } from 'mdast-util-to-markdown';
+import { gfm } from 'micromark-extension-gfm';
 import {
   type AssetOutcome,
   type AssetRendering,
@@ -41,7 +43,7 @@ export function validateAssetReferences(record: SyncRecord): void {
     }
   }
   const used = new Set<string>();
-  transformData({
+  transformRecord({
     record,
     resolve: ({ key }) => {
       if (!Object.hasOwn(refs, key)) {
@@ -66,7 +68,7 @@ export function resolveRecordAssets(input: {
     return structuredClone(record);
   }
   const assets = new Map(input.assets.map((asset) => [assetKey(asset), asset]));
-  const data = transformData({
+  const transformed = transformRecord({
     record,
     resolve: ({ key, markdown }) => {
       const ref = record.assetRefs![key];
@@ -84,9 +86,9 @@ export function resolveRecordAssets(input: {
       return { value, failed: outcome.status === 'failed' };
     },
   });
-  return { ...structuredClone(record), data };
+  return { ...structuredClone(record), ...transformed };
 }
-function transformData(input: {
+function transformRecord(input: {
   record: Extract<SyncRecord, { operation: 'upsert' }>;
   resolve(input: { key: string; markdown: boolean }): { value: JsonValue; failed: boolean };
 }) {
@@ -102,7 +104,7 @@ function transformData(input: {
       ? Object.fromEntries(Object.entries(value).map(([key, child]) => [key, walk(child)]))
       : value;
   };
-  return Object.fromEntries(
+  const data = Object.fromEntries(
     Object.entries(input.record.data).map(([field, value]) => [
       field,
       input.record.markdownFields?.includes(field)
@@ -110,12 +112,27 @@ function transformData(input: {
         : walk(value),
     ]),
   );
+  return {
+    data,
+    ...(input.record.content
+      ? {
+          content: {
+            ...input.record.content,
+            body: transformMarkdown({ body: input.record.content.body, resolve: input.resolve }),
+          },
+        }
+      : {}),
+  };
 }
+
 function transformMarkdown(input: {
   body: string;
   resolve(input: { key: string; markdown: boolean }): { value: JsonValue; failed: boolean };
 }): string {
-  const tree = fromMarkdown(input.body);
+  const tree = fromMarkdown(input.body, {
+    extensions: [gfm()],
+    mdastExtensions: [gfmFromMarkdown()],
+  });
   const definitions = markdownDefinitions(tree);
   let changed = false;
   const walk = (node: Nodes): Nodes => {
@@ -147,7 +164,7 @@ function transformMarkdown(input: {
     return node;
   };
   walk(tree);
-  return changed ? toMarkdown(tree) : input.body;
+  return changed ? toMarkdown(tree, { extensions: [gfmToMarkdown()] }) : input.body;
 }
 
 function markdownDefinitions(root: Nodes): Map<string, Definition> {

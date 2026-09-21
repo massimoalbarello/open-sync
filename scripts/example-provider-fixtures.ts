@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 // Provider HTTP boundaries only: authentication, OAuth state, MCP and storage stay real.
 let granolaRegistrationAttempts = 0;
 let slackReplyAttempts = 0;
@@ -95,6 +97,7 @@ function gmailMessage(input: { id: string; date: string; text: string }) {
         { name: 'To', value: 'alice@example.com' },
       ],
       parts: [
+        ...(input.id === 'email-2' ? previewAttachments() : []),
         {
           partId: '0',
           mimeType: 'text/plain',
@@ -321,4 +324,25 @@ async function granolaOAuthResponse(request: Request) {
           scope: 'openid profile email offline_access',
         },
   );
+}
+
+function previewAttachments() {
+  return [
+    ['brief.pdf', 'application/pdf'],
+    ['brief.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+    ['forecast.xls', 'application/vnd.ms-excel'],
+    ['forecast.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+    ['photo.jpg', 'image/jpeg'],
+    ['illustration.svg', 'image/svg+xml'],
+    ['clip.mp4', 'video/mp4'],
+  ].map(([name, mimeType]) => ({
+    partId: name,
+    filename: name,
+    mimeType,
+    body: {
+      data: readFileSync(new URL(`./fixtures/previews/${name}`, import.meta.url)).toString(
+        'base64url',
+      ),
+    },
+  }));
 }

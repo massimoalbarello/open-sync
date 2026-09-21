@@ -369,12 +369,24 @@ try {
     ).status(),
     unauthorized,
   );
+  for (const endpoint of [
+    '/records/detail?sourceId=source&kind=note&id=missing',
+    '/assets/asset_00000000-0000-0000-0000-000000000000/details',
+    '/assets/asset_00000000-0000-0000-0000-000000000000/preview',
+  ]) {
+    assert.equal(
+      (await page.request.get(`${app.origin}/api/receiver${endpoint}`)).status(),
+      unauthorized,
+    );
+  }
   for (const section of [
     '/providers',
     '/syncs',
     '/syncs/new',
     '/records',
     '/assets',
+    '/assets/asset_00000000-0000-0000-0000-000000000000',
+    '/records/source/note/missing',
     '/delivery',
   ]) {
     await page.goto(`${app.origin}${section}`);

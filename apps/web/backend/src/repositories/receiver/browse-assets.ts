@@ -47,3 +47,9 @@ export async function relateAssets(
     }),
   }));
 }
+
+export async function findAsset(input: ReceiverScope & { db: SQL; id: string }) {
+  const [row] = await input.db<AssetRow[]>`SELECT id,source_id,name,media_type,size FROM host_assets
+    WHERE owner_id=${input.ownerId} AND id=${input.id}`;
+  return row ? asset(row) : undefined;
+}

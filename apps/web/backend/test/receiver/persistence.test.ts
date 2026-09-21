@@ -22,6 +22,7 @@ const delivery: Delivery = {
         kind: 'item',
         id: 'a',
         data: { value: 1 },
+        content: { format: 'markdown', body: '# Hello' },
         revision: 1,
         contentHash: 'hash_1',
         eventId: 'event_1',
@@ -59,6 +60,13 @@ test('local receiver atomically deduplicates whole deliveries and keeps owner da
     expect((await receiver.records({ ...scope, sourceId: 'other', offset: 0 })).records).toEqual(
       [],
     );
+    const identity = { ...scope, sourceId: 'source_1', kind: 'item', id: 'a' };
+    expect(await receiver.record(identity)).toMatchObject({
+      content: { format: 'markdown', body: '# Hello' },
+    });
+    expect(await receiver.record({ ...identity, ownerId: 'beta', actorId: 'bob' })).toBeUndefined();
+    expect(await receiver.record({ ...identity, sourceId: 'other' })).toBeUndefined();
+    expect(await receiver.record({ ...identity, kind: 'other' })).toBeUndefined();
     const changed = structuredClone(delivery);
     changed.deliverable.records[0]!.revision++;
     await expect(receiver.accept({ ...scope, delivery: changed })).rejects.toThrow(
@@ -118,6 +126,9 @@ test('record browsing preserves unrelated JSON schemas, pagination and deletions
       },
     });
     expect((await receiver.records({ ...scope, offset: 0 })).records[0]!.id).toBe('01');
+    expect(
+      await receiver.record({ ...scope, sourceId: 'source_1', kind: 'measurement', id: '00' }),
+    ).toBeUndefined();
   } finally {
     await db.close();
     await rm(dir, { recursive: true, force: true });

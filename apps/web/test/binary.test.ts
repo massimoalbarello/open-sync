@@ -29,6 +29,16 @@ test('standalone binary embeds frontend and migrations and preserves state on re
     const javascript = await app.request({ path: asset! });
     expect(javascript.status).toBe(HTTP_OK);
     expect(javascript.headers.get('content-type')).toContain('javascript');
+    for (const path of [
+      '/pdfjs/cmaps/Adobe-Japan1-UCS2.bcmap',
+      '/pdfjs/standard_fonts/LiberationSans-Regular.ttf',
+      '/pdfjs/wasm/openjpeg.wasm',
+    ]) {
+      const resource = await app.request({ path });
+      expect(resource.status).toBe(HTTP_OK);
+      expect(resource.headers.get('content-type')).not.toContain('text/html');
+      expect((await resource.arrayBuffer()).byteLength).toBeGreaterThan(0);
+    }
     expect((await app.request({ path: '/api/missing' })).status).toBe(HTTP_NOT_FOUND);
     expect((await app.request({ path: '/missing.js' })).status).toBe(HTTP_NOT_FOUND);
     expect((await app.request({ path: '/login' })).status).toBe(HTTP_OK);

@@ -1,10 +1,12 @@
+import { createReadStream } from 'node:fs';
 import { join } from 'node:path';
-import type { DeliveredRecord, Delivery } from '@context-use/open-sync/delivery';
+import { Readable } from 'node:stream';
+import type { DeliveredRecord, Delivery, RecordContent } from '@context-use/open-sync/delivery';
 import { canonicalJson } from '@context-use/open-sync/json';
 import type { SQL, TransactionSQL } from 'bun';
 import { acceptAsset, recoverAssetFiles } from './assets';
-import { browseAssets, relateAssets } from './browse-assets';
-import type { ReceiverRepository, ReceiverScope } from './contract';
+import { browseAssets, findAsset, relateAssets } from './browse-assets';
+import type { ReceiverRepository, ReceiverScope, RecordIdentity } from './contract';
 
 export class SqliteReceiver implements ReceiverRepository {
   private readonly db: SQL;
@@ -24,6 +26,20 @@ export class SqliteReceiver implements ReceiverRepository {
   assets(input: Parameters<ReceiverRepository['assets']>[0]) {
     return browseAssets({ ...input, db: this.db });
   }
+  assetInfo(input: ReceiverScope & { id: string }) {
+    return findAsset({ ...input, db: this.db });
+  }
+  async record(input: ReceiverScope & RecordIdentity) {
+    const [row] = await this.db<
+      RecordRow[]
+    >`SELECT source_id,kind,record_id,revision,data,content,asset_ids FROM host_records
+      WHERE owner_id=${input.ownerId} AND source_id=${input.sourceId} AND kind=${input.kind}
+      AND record_id=${input.id} AND deleted=0`;
+    if (!row) {
+      return;
+    }
+    return (await relateAssets({ ...input, db: this.db, records: [recordRow(row)] }))[0];
+  }
   async asset(input: ReceiverScope & { id: string }) {
     const [row] = await this.db<
       { file_id: string; name: string; media_type: string }[]
@@ -31,39 +47,34 @@ export class SqliteReceiver implements ReceiverRepository {
     if (!row) {
       return;
     }
+    const path = join(this.assetDirectory, row.file_id);
+    const file = Bun.file(path);
     return {
       name: row.name,
       mediaType: row.media_type,
-      body: Bun.file(join(this.assetDirectory, row.file_id)).stream(),
+      size: file.size,
+      open: (range?: { start: number; end: number }) =>
+        range
+          ? // Node and DOM types declare incompatible overloads for the same web stream.
+            (Readable.toWeb(
+              createReadStream(path, { start: range.start, end: range.end - 1 }),
+            ) as unknown as ReadableStream<Uint8Array>)
+          : file.stream(),
     };
   }
   async records(input: ReceiverScope & { sourceId?: string; offset: number }) {
     const limit = 50;
     const sourceId = input.sourceId ?? null;
     const rows = await this.db<
-      {
-        source_id: string;
-        kind: string;
-        record_id: string;
-        revision: number;
-        data: string;
-        asset_ids: string;
-      }[]
-    >`SELECT source_id,kind,record_id,revision,data,asset_ids FROM host_records
+      RecordRow[]
+    >`SELECT source_id,kind,record_id,revision,data,content,asset_ids FROM host_records
       WHERE owner_id=${input.ownerId} AND deleted=0 AND (${sourceId} IS NULL OR source_id=${sourceId})
       ORDER BY source_id,kind,record_id LIMIT ${limit + 1} OFFSET ${input.offset}`;
     return {
       records: await relateAssets({
         ...input,
         db: this.db,
-        records: rows.slice(0, limit).map((row) => ({
-          sourceId: String(row.source_id),
-          kind: String(row.kind),
-          id: String(row.record_id),
-          revision: Number(row.revision),
-          assetIds: JSON.parse(row.asset_ids) as string[],
-          data: JSON.parse(String(row.data)) as import('@context-use/open-sync/json').JsonObject,
-        })),
+        records: rows.slice(0, limit).map(recordRow),
       }),
       hasMore: rows.length > limit,
       pageSize: limit,
@@ -126,6 +137,8 @@ async function applyRecord(input: {
 }): Promise<void> {
   const { tx, ownerId, sourceId, record } = input;
   const data = record.operation === 'upsert' ? canonicalJson(record.data).json : null;
+  const content =
+    record.operation === 'upsert' && record.content ? canonicalJson(record.content).json : null;
   const references = record.operation === 'upsert' ? Object.values(record.assetRefs ?? {}) : [];
   const assets = references.length
     ? await tx<
@@ -136,9 +149,9 @@ async function applyRecord(input: {
         ORDER BY cast(ref.key AS INTEGER)`
     : [];
   const assetIds = JSON.stringify(assets.map((asset) => asset.id));
-  await tx`INSERT INTO host_records(owner_id,source_id,kind,record_id,revision,deleted,data,asset_ids)
-    VALUES (${ownerId},${sourceId},${record.kind},${record.id},${record.revision},${Number(record.operation === 'delete')},${data},${assetIds})
-    ON CONFLICT(owner_id,source_id,kind,record_id) DO UPDATE SET revision=excluded.revision,deleted=excluded.deleted,data=excluded.data,asset_ids=excluded.asset_ids
+  await tx`INSERT INTO host_records(owner_id,source_id,kind,record_id,revision,deleted,data,asset_ids,content)
+    VALUES (${ownerId},${sourceId},${record.kind},${record.id},${record.revision},${Number(record.operation === 'delete')},${data},${assetIds},${content})
+    ON CONFLICT(owner_id,source_id,kind,record_id) DO UPDATE SET revision=excluded.revision,deleted=excluded.deleted,data=excluded.data,asset_ids=excluded.asset_ids,content=excluded.content
     WHERE excluded.revision>host_records.revision`;
 }
 
@@ -146,4 +159,25 @@ async function isPaused(input: { db: SQL | TransactionSQL; scope: ReceiverScope 
   const [settings] =
     await input.db`SELECT paused FROM host_settings WHERE owner_id=${input.scope.ownerId}`;
   return Boolean(settings?.paused);
+}
+
+interface RecordRow {
+  source_id: string;
+  kind: string;
+  record_id: string;
+  revision: number;
+  data: string;
+  content: string | null;
+  asset_ids: string;
+}
+function recordRow(row: RecordRow) {
+  return {
+    sourceId: row.source_id,
+    kind: row.kind,
+    id: row.record_id,
+    revision: row.revision,
+    assetIds: JSON.parse(row.asset_ids) as string[],
+    data: JSON.parse(row.data) as import('@context-use/open-sync/json').JsonObject,
+    ...(row.content === null ? {} : { content: JSON.parse(row.content) as RecordContent }),
+  };
 }

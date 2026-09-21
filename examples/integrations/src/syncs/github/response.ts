@@ -43,6 +43,7 @@ export function record(value: JsonValue): SyncRecord {
     operation: 'upsert',
     kind: 'pull-request',
     id: identity(pull.id),
+    content: { format: 'markdown', body: String(data.body ?? '') },
     data: {
       ...data,
       repository: identity(repository.nameWithOwner),

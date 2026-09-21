@@ -4,6 +4,7 @@ import { assetsEmptyJourney, assetsJourney, resumeAssetDelivery } from './assets
 import { copyAuthorizationJourney } from './copy-authorization-journey';
 import { destinationSetupJourney } from './destination-setup-journey';
 import { historySetupJourney } from './history-setup-journey';
+import { previewsJourney } from './previews-journey';
 import { providerSetupJourney } from './provider-setup-journey';
 import { sourceRetryJourney } from './source-retry-journey';
 
@@ -174,10 +175,17 @@ async function verifyRecords(input: {
     assert.equal(attachments.length, 2);
     assert.notEqual(attachments[0]!.file, attachments[1]!.file);
     assert.deepEqual(
-      records.records[0].assets.map((asset: { id: string }) => asset.id),
-      attachments.map((attachment) => attachment.file),
+      records.records[0].assets.map((asset: { id: string }) => asset.id).sort(),
+      records.records[0].data.messages
+        .flatMap(
+          (message: { attachments?: { file: unknown }[] }) =>
+            message.attachments?.map((attachment) => attachment.file) ?? [],
+        )
+        .filter((file: unknown): file is string => typeof file === 'string')
+        .sort(),
     );
     await assetsJourney({ page, origin, sourceId, attachments });
+    await previewsJourney({ page, origin, record: records.records[0] });
     const expected = ['inline attachment', 'external attachment'];
     for (const [index, attachment] of attachments.entries()) {
       const response = await page.request.get(`${origin}/api/receiver/assets/${attachment.file}`);
@@ -206,7 +214,11 @@ async function verifyRecords(input: {
     if (source.service === 'slack') {
       assert.equal(records.records[0].data.messages[0].sentAt, '2020-01-01T12:00:00.000Z');
     }
-    await page.locator('summary').first().click();
+    await page.goto(`${origin}/records?sourceId=${encodeURIComponent(sourceId)}`);
+    await page
+      .getByRole('list', { name: 'Received records' })
+      .getByRole('link', { name: `${source.kind} · ${records.records[0].id}`, exact: true })
+      .click();
     await page.locator('pre').getByText('"messages":', { exact: false }).waitFor();
     await page.screenshot({
       path: `artifacts/${source.service}-thread-record.png`,
