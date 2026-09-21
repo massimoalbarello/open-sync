@@ -32,13 +32,6 @@ export async function exampleSyncsJourney(input: { page: Page; origin: string })
   }
   const { page, origin } = input;
   await destinationSetupJourney(input);
-  await page.goto(`${origin}/sources`);
-  await page.getByRole('heading', { name: 'Granola meetings', exact: true }).waitFor();
-  await page.screenshot({
-    path: 'artifacts/example-sources.png',
-    fullPage: true,
-    animations: 'disabled',
-  });
   await page.goto(`${origin}/syncs/new?source=gmail.threads`);
   await page.getByLabel('Destination', { exact: true }).click();
   await page.getByRole('option', { name: 'External API', exact: true }).click();
@@ -63,13 +56,6 @@ export async function exampleSyncsJourney(input: { page: Page; origin: string })
   await page.waitForURL(/\/syncs\/sync_/);
   await page.goto(`${origin}/delivery`);
   await page.getByText('blocked · http 401', { exact: true }).waitFor();
-  await page.goto(`${origin}/destinations`);
-  await page.getByRole('heading', { name: 'External API', exact: true }).waitFor();
-  await page.screenshot({
-    path: 'artifacts/example-destinations.png',
-    fullPage: true,
-    animations: 'disabled',
-  });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${origin}/syncs/new?source=granola.meetings&destination=http`);
   await page.getByLabel('Endpoint URL').waitFor();

@@ -11,7 +11,6 @@ import { startIsolatedApp } from './isolated-app';
 import { ownerRegistrationJourney } from './owner-registration-journey';
 
 const fixtureRecordCount = 100;
-const sourceCount = 4;
 const drainTimeoutMs = 120_000;
 const interactionTimeoutMs = 30_000;
 const wideViewport = { width: 1920, height: 1080 };
@@ -83,37 +82,38 @@ try {
   await app.restartServer();
   await githubOAuthJourney({ page, origin: app.origin });
 
-  await page.getByRole('link', { name: 'Sources', exact: true }).click();
-  await page.getByRole('heading', { name: 'GitHub pull requests', exact: true }).waitFor();
-  assert.equal(await page.locator('main li').count(), sourceCount);
-  assert.equal(await page.getByText('Configuration schema', { exact: true }).count(), 0);
-  assert.ok(
-    (
-      await page
-        .locator('li')
-        .filter({ has: page.getByRole('heading', { name: 'GitHub pull requests' }) })
-        .getByRole('link', { name: 'Create sync' })
-        .getAttribute('href')
-    )?.startsWith('/syncs/new?source=github.pull-requests'),
+  assert.deepEqual(
+    await page.getByRole('navigation', { name: 'Workspace' }).getByRole('link').allTextContents(),
+    ['Providers', 'Syncs', 'Records', 'Queue'],
   );
-  await page.screenshot({
-    path: 'artifacts/sources-catalog.png',
-    fullPage: true,
-    animations: 'disabled',
-  });
-  await page.getByRole('link', { name: 'Destinations', exact: true }).click();
-  await page.getByRole('heading', { name: 'Local SQLite', exact: true }).waitFor();
-  assert.equal(await page.locator('main li').count(), 2);
-  assert.equal(await page.getByRole('button', { name: 'Add destination' }).count(), 0);
-  await page.screenshot({
-    path: 'artifacts/destinations.png',
-    fullPage: true,
-    animations: 'disabled',
-  });
   await page.getByRole('link', { name: 'Syncs', exact: true }).click();
   await page.getByRole('link', { name: 'Create sync', exact: true }).click();
   await page.getByLabel('Source', { exact: true }).click();
+  await page.getByRole('option', { name: 'Granola meetings', exact: true }).waitFor();
+  assert.deepEqual(await page.getByRole('option').allTextContents(), [
+    'GitHub pull requests',
+    'Gmail threads',
+    'Slack threads',
+    'Granola meetings',
+  ]);
+  await page.screenshot({
+    path: 'artifacts/create-sync-sources.png',
+    fullPage: true,
+    animations: 'disabled',
+  });
   await page.getByRole('option', { name: 'GitHub pull requests', exact: true }).click();
+  await page.getByLabel('Destination', { exact: true }).click();
+  await page.getByRole('option', { name: 'External API', exact: true }).waitFor();
+  assert.deepEqual(await page.getByRole('option').allTextContents(), [
+    'Local SQLite',
+    'External API',
+  ]);
+  await page.screenshot({
+    path: 'artifacts/create-sync-destinations.png',
+    fullPage: true,
+    animations: 'disabled',
+  });
+  await page.getByRole('option', { name: 'Local SQLite', exact: true }).click();
   assert.equal(await page.locator('main textarea').count(), 0);
   assert.equal(await page.getByLabel('Account', { exact: true }).count(), 0);
   await page.screenshot({
@@ -324,8 +324,6 @@ try {
     'Syncs',
     'Records',
     'Queue',
-    'Sources',
-    'Destinations',
   ]);
   await page.getByRole('link', { name: 'Queue', exact: true }).click();
   assert.equal(
@@ -354,19 +352,17 @@ try {
     (await page.request.get(`${app.origin}/api/open-sync/sync/installations/${syncId}`)).status(),
     unauthorized,
   );
-  for (const section of [
-    '/providers',
-    '/sources',
-    '/destinations',
-    '/syncs',
-    '/records',
-    '/delivery',
-  ]) {
+  for (const section of ['/providers', '/syncs', '/syncs/new', '/records', '/delivery']) {
     await page.goto(`${app.origin}${section}`);
     await page.getByRole('button', { name: 'Sign in with a passkey' }).waitFor();
   }
   await page.getByRole('button', { name: 'Sign in with a passkey' }).click();
   await page.getByRole('heading', { name: 'Syncs', exact: true }).waitFor();
+  // Both additional GitHub installations can still be delivering their backfills.
+  await page.getByRole('link', { name: 'Queue', exact: true }).click();
+  await page
+    .getByText('Nothing waiting for delivery', { exact: true })
+    .waitFor({ timeout: 2 * drainTimeoutMs });
   await exampleSyncsJourney({ page, origin: app.origin });
   console.log(
     'Browser journey passed: paginated catalogs, provider setup, deferred authorization, GitHub syncs, infinite records and queue, responsive layout and real passkeys.',

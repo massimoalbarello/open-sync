@@ -27,12 +27,10 @@ export async function providerSetupJourney(input: {
     fullPage: true,
     animations: 'disabled',
   });
-  await page.goto(`${origin}/sources`);
-  const source = page
-    .locator('main li')
-    .filter({ has: page.getByRole('heading', { name: 'Gmail threads', exact: true }) });
-  await source.getByRole('link', { name: 'Create sync', exact: true }).click();
-  assert.equal(new URL(page.url()).searchParams.get('source'), 'gmail.threads');
+  await page.getByRole('link', { name: 'Syncs', exact: true }).click();
+  await page.getByRole('link', { name: 'Create sync', exact: true }).click();
+  await page.getByLabel('Source', { exact: true }).click();
+  await page.getByRole('option', { name: 'Gmail threads', exact: true }).click();
   await page.getByLabel('Account', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Create sync', exact: true }).click();
   await page
@@ -68,13 +66,6 @@ export async function providerSetupJourney(input: {
       .id,
   );
   assert.equal(installation.checkpoint.account, 'work@example.com');
-  await page.goto(`${origin}/sources`);
-  await source.getByRole('link', { name: 'Create sync', exact: true }).waitFor();
-  await page.screenshot({
-    path: 'artifacts/configured-sources.png',
-    fullPage: true,
-    animations: 'disabled',
-  });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${origin}/providers/gmail`);
   await page.getByRole('button', { name: 'Connect another account', exact: true }).waitFor();
@@ -86,6 +77,6 @@ export async function providerSetupJourney(input: {
   });
   await page.setViewportSize({ width: 1280, height: 720 });
   console.log(
-    'Provider setup journey passed: callback visibility, multiple accounts, account selection, and source navigation.',
+    'Provider setup journey passed: callback visibility, multiple accounts, and account selection during sync creation.',
   );
 }
