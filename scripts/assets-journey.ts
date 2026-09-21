@@ -81,3 +81,18 @@ export async function assetsEmptyJourney(input: { page: Page; origin: string }) 
   await page.getByRole('button', { name: 'Try again', exact: true }).click();
   await page.getByText('No assets received yet.', { exact: false }).waitFor();
 }
+
+export async function resumeAssetDelivery(input: { page: Page; origin: string; sourceId: string }) {
+  const { page, origin, sourceId } = input;
+  await page.goto(`${origin}/delivery`);
+  await page.getByText('pending · receiver paused', { exact: true }).first().waitFor();
+  for (const section of ['assets', 'records']) {
+    const response = await page.request.get(
+      `${origin}/api/receiver/${section}?sourceId=${encodeURIComponent(sourceId)}`,
+    );
+    assert.ok(response.ok());
+    assert.deepEqual((await response.json())[section], []);
+  }
+  await page.getByRole('button', { name: 'Resume delivery', exact: true }).click();
+  await page.getByRole('button', { name: 'Pause delivery', exact: true }).waitFor();
+}

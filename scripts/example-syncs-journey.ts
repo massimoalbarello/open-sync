@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import type { virtualPasskeyBrowser } from '@repo/browser-testing/browser';
-import { assetsEmptyJourney, assetsJourney } from './assets-journey';
+import { assetsEmptyJourney, assetsJourney, resumeAssetDelivery } from './assets-journey';
 import { copyAuthorizationJourney } from './copy-authorization-journey';
 import { destinationSetupJourney } from './destination-setup-journey';
 import { historySetupJourney } from './history-setup-journey';
@@ -50,6 +50,11 @@ async function connectSource(input: {
   source: (typeof sources)[number];
 }) {
   const { page, origin, source } = input;
+  if (source.service === 'gmail') {
+    await page.goto(`${origin}/delivery`);
+    await page.getByRole('button', { name: 'Pause delivery', exact: true }).click();
+    await page.getByRole('button', { name: 'Resume delivery', exact: true }).waitFor();
+  }
   await page.route(source.authorization, (route) =>
     route.fulfill({
       status: 200,
@@ -128,6 +133,9 @@ async function connectSource(input: {
   const installation = await (
     await page.request.get(`${origin}/api/open-sync/sync/installations/${syncId}`)
   ).json();
+  if (source.service === 'gmail') {
+    await resumeAssetDelivery({ page, origin, sourceId: installation.sourceId });
+  }
   await verifyRecords({ ...input, sourceId: installation.sourceId });
   console.log(`${source.name}: OAuth and local delivery passed.`);
 }

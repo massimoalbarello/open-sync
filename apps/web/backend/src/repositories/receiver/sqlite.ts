@@ -69,6 +69,9 @@ export class SqliteReceiver implements ReceiverRepository {
       pageSize: limit,
     };
   }
+  isPaused(scope: ReceiverScope) {
+    return isPaused({ db: this.db, scope });
+  }
   async status(scope: ReceiverScope) {
     const [status] = await this.db`SELECT
       coalesce((SELECT paused FROM host_settings WHERE owner_id=${scope.ownerId}),0) AS paused,
@@ -91,8 +94,7 @@ export class SqliteReceiver implements ReceiverRepository {
     }
     const bodyHash = canonicalJson(input.delivery).sha256;
     return await this.db.begin(async (tx) => {
-      const [settings] = await tx`SELECT paused FROM host_settings WHERE owner_id=${input.ownerId}`;
-      if (settings?.paused) {
+      if (await isPaused({ db: tx, scope: input })) {
         return false;
       }
       const [receipt] =
@@ -138,4 +140,10 @@ async function applyRecord(input: {
     VALUES (${ownerId},${sourceId},${record.kind},${record.id},${record.revision},${Number(record.operation === 'delete')},${data},${assetIds})
     ON CONFLICT(owner_id,source_id,kind,record_id) DO UPDATE SET revision=excluded.revision,deleted=excluded.deleted,data=excluded.data,asset_ids=excluded.asset_ids
     WHERE excluded.revision>host_records.revision`;
+}
+
+async function isPaused(input: { db: SQL | TransactionSQL; scope: ReceiverScope }) {
+  const [settings] =
+    await input.db`SELECT paused FROM host_settings WHERE owner_id=${input.scope.ownerId}`;
+  return Boolean(settings?.paused);
 }

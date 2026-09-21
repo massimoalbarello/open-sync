@@ -43,6 +43,7 @@ export async function fixture(config: JsonObject = {}) {
   );
   const delivered: Delivery[] = [];
   const destinationType = localDestination({
+    isPaused: (scope) => receiver.isPaused(scope),
     accept: (input) => receiver.accept(input),
     acceptAsset: (input) => receiver.acceptAsset(input),
   });

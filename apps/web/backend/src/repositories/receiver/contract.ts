@@ -40,6 +40,7 @@ export interface ReceiverRepository {
   records(
     input: ReceiverScope & { sourceId?: string; offset: number },
   ): Promise<{ records: ReceivedRecord[]; hasMore: boolean; pageSize: number }>;
+  isPaused(scope: ReceiverScope): Promise<boolean>;
   status(scope: ReceiverScope): Promise<ReceiverStatus>;
   setPaused(input: ReceiverScope & { paused: boolean }): Promise<void>;
   accept(input: ReceiverScope & { delivery: Delivery }): Promise<boolean>;

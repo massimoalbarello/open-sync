@@ -12,6 +12,9 @@ export class ReceiverService {
   assets(input: ReceiverScope & { sourceId?: string; offset: number }) {
     return this.repository.assets(input);
   }
+  isPaused(scope: ReceiverScope) {
+    return this.repository.isPaused(scope);
+  }
   status(scope: ReceiverScope) {
     return this.repository.status(scope);
   }
