@@ -1,5 +1,6 @@
 import type { SyncApi } from '@context-use/open-sync';
 import { Link } from '@tanstack/react-router';
+import { statusLabel } from './status-label';
 
 export function PollingHistory({
   id,
@@ -8,11 +9,17 @@ export function PollingHistory({
 }: {
   id: string;
   offset: number;
-  history: ReturnType<SyncApi['runs']>;
+  history: ReturnType<SyncApi['polls']>;
 }) {
   return (
     <div className="space-y-4">
-      {!history.runs.length && <p>No runs yet.</p>}
+      {!history.polls.length && <p>No polls yet.</p>}
+      {history.polls.some((poll) => poll.legacy) && (
+        <p className="text-muted-foreground text-sm">
+          Earlier history contains individual attempts. Record counts and cancellation reasons were
+          not recorded.
+        </p>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead>
@@ -20,23 +27,61 @@ export function PollingHistory({
               <th className="py-3 pr-4">Started</th>
               <th className="pr-4">Finished</th>
               <th className="pr-4">Status</th>
-              <th className="pr-4">Pages</th>
+              <th className="pr-4">Records processed</th>
             </tr>
           </thead>
-          <tbody>
-            {history.runs.map((attempt) => (
-              <tr key={attempt.id} className="border-border border-b">
-                <td className="py-4 pr-4">{new Date(attempt.startedAt).toLocaleString()}</td>
-                <td className="pr-4">
-                  {attempt.completedAt ? new Date(attempt.completedAt).toLocaleString() : 'Running'}
+          {history.polls.map((poll) => (
+            <tbody key={poll.id} className="border-border border-b">
+              <tr className="align-top">
+                <td className="py-4 pr-4">{new Date(poll.startedAt).toLocaleString()}</td>
+                <td className="py-4 pr-4">
+                  {poll.completedAt ? new Date(poll.completedAt).toLocaleString() : '—'}
                 </td>
-                <td className="pr-4">{attempt.state.replaceAll('_', ' ')}</td>
-                <td>{attempt.pages}</td>
+                <td className="py-4 pr-4">{statusLabel(poll.state)}</td>
+                <td className="py-4">
+                  {poll.recordsProcessed === null
+                    ? 'Unavailable'
+                    : poll.recordsProcessed.toLocaleString()}
+                  {poll.recordsChanged !== null && (
+                    <p className="text-muted-foreground text-xs">
+                      {poll.recordsChanged.toLocaleString()} changed
+                    </p>
+                  )}
+                </td>
               </tr>
-            ))}
-          </tbody>
+              <tr>
+                <td colSpan={4} className="pb-4">
+                  {poll.legacy ? (
+                    <p className="text-muted-foreground text-xs">Earlier attempt</p>
+                  ) : (
+                    <details>
+                      <summary className="cursor-pointer text-muted-foreground">
+                        {poll.attemptCount} {poll.attemptCount === 1 ? 'attempt' : 'attempts'}
+                      </summary>
+                      {poll.attempts.length < poll.attemptCount && (
+                        <p className="mt-2 text-muted-foreground">Showing recent attempts.</p>
+                      )}
+                      <ol className="mt-2 space-y-2 text-xs">
+                        {poll.attempts.map((attempt) => (
+                          <li key={attempt.id}>
+                            {new Date(attempt.startedAt).toLocaleTimeString()} ·{' '}
+                            {statusLabel(attempt.state)} ·{' '}
+                            {attempt.recordsProcessed?.toLocaleString() ?? '—'} records
+                          </li>
+                        ))}
+                      </ol>
+                    </details>
+                  )}
+                </td>
+              </tr>
+            </tbody>
+          ))}
         </table>
       </div>
+      <p className="text-muted-foreground text-xs">
+        Processed includes unchanged records. Changes are queued for delivery; see Queue for
+        delivery progress.
+      </p>
       <div className="flex gap-4">
         {offset > 0 && (
           <Link

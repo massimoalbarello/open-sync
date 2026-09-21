@@ -8,11 +8,14 @@ export function syncOptions(userId: string) {
     queryKey: syncKeys.owner(userId),
     refetchInterval: refreshMs,
     queryFn: async () => {
-      const result = await syncApi.sync.installations.get();
-      if (result.error) {
+      const [result, connections] = await Promise.all([
+        syncApi.sync.installations.get(),
+        syncApi.providers.connections.get(),
+      ]);
+      if (result.error || connections.error) {
         throw new Error('Could not load sync status.');
       }
-      return result.data;
+      return { ...result.data, connections: connections.data };
     },
   });
 }
@@ -34,18 +37,19 @@ export async function runSync(input: { id: string; backfill: boolean }) {
 }
 export function syncDetailOptions(input: { userId: string; id: string; offset: number }) {
   return queryOptions({
-    queryKey: [...syncKeys.owner(input.userId), input.id, 'runs', input.offset],
+    queryKey: [...syncKeys.owner(input.userId), input.id, 'polls', input.offset],
     refetchInterval: refreshMs,
     queryFn: async () => {
       const resource = syncApi.sync.installations({ id: input.id });
-      const [installation, history] = await Promise.all([
+      const [installation, history, connections] = await Promise.all([
         resource.get(),
-        resource.runs.get({ query: { offset: input.offset } }),
+        resource.polls.get({ query: { offset: input.offset } }),
+        syncApi.providers.connections.get(),
       ]);
-      if (installation.error || history.error) {
+      if (installation.error || history.error || connections.error) {
         throw new Error('Could not load this sync.');
       }
-      return { installation: installation.data, ...history.data };
+      return { installation: installation.data, ...history.data, connections: connections.data };
     },
   });
 }

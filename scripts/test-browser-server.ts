@@ -5,7 +5,7 @@ import { exampleProviderResponse } from './example-provider-fixtures';
 
 const fetchNetwork = globalThis.fetch;
 let oauthToken = 0;
-const recordCount = 65;
+const recordCount = 100;
 const discoveryPageSize = 10;
 const idWidth = 3;
 const records = Array.from(

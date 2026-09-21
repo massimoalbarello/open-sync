@@ -34,4 +34,18 @@ export interface SyncRun {
   completedAt: number | null;
   pages: number;
   checkpointRevision: number;
+  recordsProcessed: number | null;
+  recordsChanged: number | null;
+}
+
+export interface SyncPoll {
+  id: string;
+  state: string;
+  startedAt: number;
+  completedAt: number | null;
+  recordsProcessed: number | null;
+  recordsChanged: number | null;
+  attemptCount: number;
+  attempts: SyncRun[];
+  legacy: boolean;
 }

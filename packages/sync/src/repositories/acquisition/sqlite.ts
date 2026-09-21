@@ -41,8 +41,17 @@ export class SqliteAcquisition implements AcquisitionRepository {
         'UPDATE installations SET checkpoint=?,checkpoint_revision=checkpoint_revision+1 WHERE owner_id=? AND id=?',
       ).run(canonicalJson(page.checkpoint).json, installation.ownerId, installation.id);
       db.query(
-        'UPDATE runs SET checkpoint_revision=checkpoint_revision+1,pages=pages+1 WHERE owner_id=? AND id=?',
-      ).run(input.lease.ownerId, input.lease.id);
+        `UPDATE runs SET checkpoint_revision=checkpoint_revision+1,pages=pages+1,
+        records_processed=records_processed+?,records_changed=records_changed+? WHERE owner_id=? AND id=?`,
+      ).run(page.deliverable.records.length, records.length, input.lease.ownerId, input.lease.id);
+      db.query(`UPDATE polls SET records_processed=records_processed+?,records_changed=records_changed+?
+        WHERE owner_id=? AND id=(SELECT poll_id FROM runs WHERE owner_id=? AND id=?)`).run(
+        page.deliverable.records.length,
+        records.length,
+        input.lease.ownerId,
+        input.lease.ownerId,
+        input.lease.id,
+      );
       if (page.complete) {
         finishRun({ db, lease: input.lease, state: 'succeeded', delay: installation.intervalMs });
       }

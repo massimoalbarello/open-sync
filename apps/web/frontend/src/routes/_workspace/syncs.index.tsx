@@ -3,6 +3,8 @@ import { createFileRoute, Link } from '@tanstack/react-router';
 import { SectionPage } from '../../components/section-page';
 import { catalogOptions } from '../../queries/catalog';
 import { syncOptions } from '../../queries/sync';
+import { statusLabel } from './-syncs/status-label';
+import { SyncAccount } from './-syncs/sync-account';
 
 export const Route = createFileRoute('/_workspace/syncs/')({ component: Syncs });
 function Syncs() {
@@ -48,10 +50,11 @@ function Syncs() {
                   {source?.name ?? sync.definition.id} →{' '}
                   {type?.name ?? destination?.type ?? 'Unavailable destination'}
                 </p>
+                <SyncAccount connection={sync.connection} connections={query.data?.connections} />
                 <p className="text-muted-foreground text-sm">
                   {source?.provider && !sync.connection
                     ? 'Waiting for authorization'
-                    : sync.status.replaceAll('_', ' ')}{' '}
+                    : statusLabel(sync.status)}{' '}
                   ·{' '}
                   {sync.enabled
                     ? `Next poll ${new Date(sync.nextDueAt).toLocaleString()}`

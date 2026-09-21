@@ -10,7 +10,7 @@ import {
 import { startIsolatedApp } from './isolated-app';
 import { ownerRegistrationJourney } from './owner-registration-journey';
 
-const fixtureRecordCount = 65;
+const fixtureRecordCount = 100;
 const sourceCount = 4;
 const drainTimeoutMs = 120_000;
 const interactionTimeoutMs = 30_000;
@@ -186,7 +186,7 @@ try {
   assert.equal(refreshedKeySync.sourceId, originalKeySync.sourceId);
   await githubOAuthSuccessJourney({ page, origin: app.origin });
   await page.goto(`${app.origin}/syncs/${syncId}`);
-  await page.getByText('succeeded → Local SQLite', { exact: true }).waitFor();
+  await page.getByText('Completed → Local SQLite', { exact: true }).waitFor();
   assert.equal(await page.getByText('Record schemas', { exact: true }).count(), 0);
   assert.equal(await page.getByText('Source configuration', { exact: true }).count(), 0);
   await page.screenshot({
@@ -195,10 +195,28 @@ try {
     animations: 'disabled',
   });
   await page.getByRole('link', { name: 'Polling history', exact: true }).click();
-  await page.getByRole('cell', { name: 'succeeded', exact: true }).waitFor();
+  await page.getByRole('cell', { name: 'Completed', exact: true }).waitFor();
+  await page.getByRole('columnheader', { name: 'Records processed', exact: true }).waitFor();
+  assert.equal(await page.getByRole('columnheader', { name: 'Pages', exact: true }).count(), 0);
+  await page.getByText('2 attempts', { exact: true }).click();
+  await page.getByText(/Continuing from checkpoint/).waitFor();
+  const polls = await (
+    await page.request.get(`${app.origin}/api/open-sync/sync/installations/${syncId}/polls`)
+  ).json();
+  assert.equal(polls.polls.length, 1);
+  assert.equal(polls.polls[0].recordsProcessed, fixtureRecordCount);
+  assert.equal(polls.polls[0].recordsChanged, fixtureRecordCount);
+  assert.equal(polls.polls[0].attempts[0].recordsProcessed, 0);
+  await page.screenshot({
+    path: 'artifacts/polling-history.png',
+    fullPage: true,
+    animations: 'disabled',
+  });
   await page.getByRole('link', { name: 'Queue', exact: true }).click();
   await page
-    .getByText('65 records waiting · 0 deliveries blocked · Delivery paused', { exact: true })
+    .getByText(`${fixtureRecordCount} records waiting · 0 deliveries blocked · Delivery paused`, {
+      exact: true,
+    })
     .waitFor();
   const deliveries = page.getByRole('list', { name: 'Pending deliveries' }).getByRole('listitem');
   const dataPageSize = 50;
@@ -209,7 +227,9 @@ try {
   assert.equal(await deliveries.count(), fixtureRecordCount);
   await page.screenshot({ path: 'artifacts/queue.png', animations: 'disabled' });
   await page.getByRole('button', { name: 'Resume delivery', exact: true }).click();
-  await page.getByText('65 records received', { exact: true }).waitFor({ timeout: drainTimeoutMs });
+  await page
+    .getByText(`${fixtureRecordCount} records received`, { exact: true })
+    .waitFor({ timeout: drainTimeoutMs });
   await page.getByText('Nothing waiting for delivery', { exact: true }).waitFor();
   await page.getByRole('link', { name: 'Records', exact: true }).click();
   const records = page.getByRole('list', { name: 'Received records' }).getByRole('listitem');
@@ -273,7 +293,7 @@ try {
   const expectedConnections = 3;
   assert.equal(accounts.connections.length, expectedConnections);
   await page.goto(`${app.origin}/syncs/${oauthSync.id}`);
-  await page.getByText('succeeded → Local SQLite', { exact: true }).waitFor();
+  await page.getByText('Completed → Local SQLite', { exact: true }).waitFor();
   const beforeRun = await (
     await page.request.get(`${app.origin}/api/open-sync/sync/installations/${oauthSync.id}`)
   ).json();

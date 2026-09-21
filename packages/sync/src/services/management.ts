@@ -42,6 +42,12 @@ export class SyncManagement {
     positive(offset + 1);
     return this.input.catalog.runs({ ...input, offset });
   }
+  polls(input: Resource & { offset?: number }) {
+    this.guard(input);
+    const offset = input.offset ?? 0;
+    positive(offset + 1);
+    return this.input.catalog.polls({ ...input, offset });
+  }
   destinations(scope: Scope) {
     this.guard(scope);
     return this.input.catalog

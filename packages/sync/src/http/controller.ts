@@ -78,6 +78,15 @@ export function createSyncController(input: {
         input.api.setEnabled({ ...scope, id: params.id, enabled: body.enabled }),
       { ...resourceParams, body: t.Object({ enabled: t.Boolean() }) },
     )
+    .get(
+      '/installations/:id/polls',
+      ({ scope, params, query }) =>
+        input.api.polls({ ...scope, id: params.id, offset: query.offset }),
+      {
+        ...resourceParams,
+        query: t.Object({ offset: t.Optional(t.Integer({ minimum: 0, maximum: 1000000 })) }),
+      },
+    )
     .post(
       '/installations/:id/run',
       ({ scope, params, body }) => {

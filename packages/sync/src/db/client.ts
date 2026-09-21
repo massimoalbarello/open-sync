@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite';
 import { fail } from '../models/error';
+import polls from './polls.sql' with { type: 'text' };
 import schema from './schema.sql' with { type: 'text' };
 
 export function openDatabase(path: string): Database {
@@ -12,8 +13,11 @@ export function openDatabase(path: string): Database {
         .get()!;
       if (version === 0) {
         db.exec(schema);
-      } else if (version !== 1) {
+      } else if (version !== 1 && version !== 2) {
         fail('schema_version');
+      }
+      if (version < 2) {
+        db.exec(polls);
       }
     }).immediate();
     return db;

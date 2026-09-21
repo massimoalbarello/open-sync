@@ -49,7 +49,15 @@ export async function providerSetupJourney(input: {
   await page.getByRole('button', { name: 'Create sync', exact: true }).click();
   await page.waitForURL(/\/syncs\/sync_/);
   const id = new URL(page.url()).pathname.split('/').at(-1)!;
-  await page.getByText('succeeded → Local SQLite', { exact: true }).waitFor();
+  await page.getByText('Completed → Local SQLite', { exact: true }).waitFor();
+  await page.getByText('Account: work@example.com', { exact: true }).waitFor();
+  await page.goto(`${origin}/syncs`);
+  await page.getByText('Account: work@example.com', { exact: true }).waitFor();
+  await page.screenshot({
+    path: 'artifacts/sync-accounts.png',
+    fullPage: true,
+    animations: 'disabled',
+  });
   const installation = await (
     await page.request.get(`${origin}/api/open-sync/sync/installations/${id}`)
   ).json();

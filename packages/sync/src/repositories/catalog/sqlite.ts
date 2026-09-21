@@ -7,6 +7,7 @@ import { canonicalJson, type JsonObject, type JsonValue } from '../../models/jso
 import { defaultTiming } from '../../models/limits';
 import { readDestination, readInstallation } from '../rows';
 import type { CatalogRepository } from './contract';
+import { readPolls, readRuns } from './history';
 
 export class SqliteCatalog implements CatalogRepository {
   constructor(private readonly db: Database) {}
@@ -84,34 +85,11 @@ export class SqliteCatalog implements CatalogRepository {
   }
   runs(input: Resource & { offset: number }) {
     this.installation(input);
-    const limit = 50;
-    const rows = this.db
-      .query<
-        {
-          id: string;
-          state: string;
-          started_at: number;
-          completed_at: number | null;
-          pages: number;
-          checkpoint_revision: number;
-        },
-        [string, string, number, number]
-      >(
-        'SELECT id,state,started_at,completed_at,pages,checkpoint_revision FROM runs WHERE owner_id=? AND installation_id=? ORDER BY started_at DESC,rowid DESC LIMIT ? OFFSET ?',
-      )
-      .all(input.ownerId, input.id, limit + 1, input.offset);
-    return {
-      runs: rows.slice(0, limit).map((row) => ({
-        id: row.id,
-        state: row.state,
-        startedAt: row.started_at,
-        completedAt: row.completed_at,
-        pages: row.pages,
-        checkpointRevision: row.checkpoint_revision,
-      })),
-      hasMore: rows.length > limit,
-      pageSize: limit,
-    };
+    return readRuns({ db: this.db, scope: input });
+  }
+  polls(input: Resource & { offset: number }) {
+    this.installation(input);
+    return readPolls({ db: this.db, scope: input });
   }
   connectInstallation(input: Resource & { connection: ConnectionRef }) {
     return this.db
@@ -145,9 +123,14 @@ export class SqliteCatalog implements CatalogRepository {
           );
         this.db
           .query(
-            "UPDATE runs SET state='cancelled',completed_at=? WHERE owner_id=? AND installation_id=? AND state='running'",
+            "UPDATE runs SET state='paused',completed_at=? WHERE owner_id=? AND installation_id=? AND state='running'",
           )
           .run(Date.now(), input.ownerId, input.id);
+        this.db
+          .query(
+            'UPDATE polls SET state=? WHERE owner_id=? AND installation_id=? AND completed_at IS NULL',
+          )
+          .run(input.enabled ? 'syncing' : 'paused', input.ownerId, input.id);
         return this.installation(input);
       })
       .immediate();
@@ -166,6 +149,11 @@ export class SqliteCatalog implements CatalogRepository {
           fail('busy');
         }
         if (input.checkpoint !== undefined) {
+          this.db
+            .query(
+              "UPDATE polls SET state='cancelled',completed_at=? WHERE owner_id=? AND installation_id=? AND completed_at IS NULL",
+            )
+            .run(Date.now(), input.ownerId, input.id);
           this.db
             .query(
               'UPDATE installations SET checkpoint=?,checkpoint_revision=checkpoint_revision+1 WHERE owner_id=? AND id=?',

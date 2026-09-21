@@ -43,6 +43,13 @@ test('SIGKILL recovery reclaims expired acquisition and delivery without changin
       expect(delivered[0]).toEqual(JSON.parse(original));
       expect(engine.api.installations(alpha)[0]?.checkpoint).toBe(targetCount);
       expect(engine.api.status(alpha).queue.pendingRecords).toBe(0);
+      const installation = engine.api.installations(alpha)[0]!;
+      expect(engine.api.polls({ ...alpha, id: installation.id }).polls[0]).toMatchObject({
+        state: 'succeeded',
+        recordsProcessed: targetCount,
+        recordsChanged: targetCount,
+        attemptCount: 2,
+      });
     } finally {
       await engine.close();
     }

@@ -4,8 +4,9 @@ import { createFileRoute, Link } from '@tanstack/react-router';
 import { SectionPage } from '../../components/section-page';
 import { catalogOptions } from '../../queries/catalog';
 import { runSync, setEnabled, syncDetailOptions, syncKeys } from '../../queries/sync';
-
 import { PollingHistory } from './-syncs/polling-history';
+import { statusLabel } from './-syncs/status-label';
+import { SyncAccount } from './-syncs/sync-account';
 
 const millisecondsPerMinute = 60_000;
 type Section = 'overview' | 'history';
@@ -55,10 +56,11 @@ function SyncDetail() {
       )}
       {sync && (
         <div className="space-y-7">
+          <SyncAccount connection={sync.connection} connections={query.data?.connections} />
           <div className="flex flex-wrap items-center justify-between gap-4">
             <p className="text-muted-foreground text-sm">
-              {needsAuthorization ? 'Waiting for authorization' : sync.status.replaceAll('_', ' ')}{' '}
-              → {type?.name ?? destination?.type ?? 'Unavailable destination'}
+              {needsAuthorization ? 'Waiting for authorization' : statusLabel(sync.status)} →{' '}
+              {type?.name ?? destination?.type ?? 'Unavailable destination'}
             </p>
             <div className="flex flex-wrap gap-2">
               <Button

@@ -160,7 +160,7 @@ async function connectSource(input: {
   );
   await page.getByText('Connected', { exact: true }).waitFor();
   await page.goto(`${origin}/syncs/${syncId}`);
-  await page.getByText('succeeded → Local SQLite', { exact: true }).waitFor();
+  await page.getByText('Completed → Local SQLite', { exact: true }).waitFor();
   const installation = await (
     await page.request.get(`${origin}/api/open-sync/sync/installations/${syncId}`)
   ).json();

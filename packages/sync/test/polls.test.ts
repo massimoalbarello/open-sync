@@ -1,0 +1,269 @@
+import { Database } from 'bun:sqlite';
+import { expect, test } from 'bun:test';
+import { openDatabase } from '../src/db/client';
+import legacySchema from '../src/db/schema.sql' with { type: 'text' };
+import { createSyncController } from '../src/http/controller';
+import type { SyncRegistration } from '../src/models/definition';
+import { SqliteCatalog } from '../src/repositories/catalog/sqlite';
+import { createSyncRuntime } from '../src/runtime';
+import { accepted, alpha, beta, configure, fixture, page, repositories, storage } from './support';
+
+test('a poll spans fair worker slices and restart, counts records, and retains owner isolation', async () => {
+  const files = storage();
+  const options = {
+    databasePath: files.path,
+    definitions: [fixture],
+    destinationTypes: { local: accepted },
+    timing: { maxPages: 1 },
+  };
+  let engine = createSyncRuntime(options);
+  try {
+    const installation = await configure(engine);
+    const resource = { ...alpha, id: installation.id };
+    const creationGapMs = 2;
+    await Bun.sleep(creationGapMs);
+    const other = await configure(engine);
+    await engine.tick();
+    const first = engine.api.polls(resource).polls[0]!;
+    expect(first).toMatchObject({
+      state: 'syncing',
+      recordsProcessed: 1,
+      recordsChanged: 1,
+      attemptCount: 1,
+      completedAt: null,
+    });
+    expect(first.attempts[0]?.state).toBe('yielded');
+    await engine.close();
+    engine = createSyncRuntime(options);
+    // The already-due second installation gets a turn before the first continues.
+    await engine.tick();
+    expect(engine.api.installation({ ...alpha, id: other.id }).checkpoint).toBe(1);
+    const remainingSlices = 4;
+    for (let i = 0; i < remainingSlices; i++) {
+      await engine.tick();
+    }
+    const completed = engine.api.polls(resource).polls[0]!;
+    expect(completed).toMatchObject({
+      id: first.id,
+      state: 'succeeded',
+      recordsProcessed: 3,
+      recordsChanged: 3,
+      attemptCount: 3,
+    });
+    expect(completed.completedAt).not.toBeNull();
+    expect(completed.attempts.map((attempt) => attempt.state)).toEqual([
+      'succeeded',
+      'yielded',
+      'yielded',
+    ]);
+    expect(() => engine.api.polls({ ...beta, id: installation.id })).toThrow('not found');
+    engine.api.queueRun({ ...resource, backfill: true });
+    const recordCount = 3;
+    for (let i = 0; i < recordCount; i++) {
+      await engine.tick();
+    }
+    expect(engine.api.polls(resource).polls[0]).toMatchObject({
+      recordsProcessed: 3,
+      recordsChanged: 0,
+      state: 'succeeded',
+    });
+    expect(engine.api.polls(resource).polls).toHaveLength(2);
+    expect(engine.api.polls({ ...resource, offset: 1 }).polls).toHaveLength(1);
+    const app = createSyncController({ api: engine.api, authorize: () => alpha });
+    const response = await app.handle(
+      new Request(`http://localhost/sync/installations/${installation.id}/polls`),
+    );
+    const ok = 200;
+    expect(response.status).toBe(ok);
+    expect((await response.json()).polls[0].recordsProcessed).toBe(recordCount);
+  } finally {
+    await engine.close();
+    files.close();
+  }
+});
+
+test('healthy work yields at a committed checkpoint before the hard deadline', async () => {
+  const files = storage();
+  const timeoutMs = 800;
+  let cleaned = false;
+  const registration: SyncRegistration = {
+    ...fixture,
+    load: () => ({
+      async *run() {
+        try {
+          const firstPageDurationMs = 650;
+          await Bun.sleep(firstPageDurationMs);
+          yield page;
+          throw new Error('The next page must run in another attempt.');
+        } finally {
+          cleaned = true;
+        }
+      },
+    }),
+  };
+  const engine = createSyncRuntime({
+    databasePath: files.path,
+    definitions: [registration],
+    destinationTypes: { local: accepted },
+    timing: { timeoutMs, leaseMs: 1600 },
+  });
+  try {
+    const installation = await configure(engine);
+    await engine.tick();
+    expect(cleaned).toBe(true);
+    expect(engine.api.installation({ ...alpha, id: installation.id }).checkpoint).toBe(1);
+    expect(engine.api.runs({ ...alpha, id: installation.id }).runs[0]).toMatchObject({
+      state: 'yielded',
+      recordsProcessed: 1,
+    });
+    expect(
+      engine.api.installation({ ...alpha, id: installation.id }).nextDueAt,
+    ).toBeLessThanOrEqual(Date.now());
+  } finally {
+    await engine.close();
+    files.close();
+  }
+});
+
+test('a stalled attempt times out; pausing preserves its poll and reprocessing closes it', async () => {
+  const files = storage();
+  const registration: SyncRegistration = {
+    ...fixture,
+    load: () => ({
+      async *run({ signal, checkpoint }) {
+        if (checkpoint === 0) {
+          yield page;
+        }
+        await new Promise<void>((resolve) =>
+          signal.addEventListener('abort', () => resolve(), { once: true }),
+        );
+        signal.throwIfAborted();
+      },
+    }),
+  };
+  const engine = createSyncRuntime({
+    databasePath: files.path,
+    definitions: [registration],
+    destinationTypes: { local: accepted },
+    timing: { timeoutMs: 100, leaseMs: 200 },
+  });
+  try {
+    const installation = await configure(engine);
+    const scope = { ...alpha, id: installation.id };
+    await engine.tick();
+    const timedOut = engine.api.polls(scope).polls[0]!;
+    expect(timedOut).toMatchObject({ state: 'retrying', recordsProcessed: 1 });
+    expect(timedOut.attempts[0]?.state).toBe('timed_out');
+    await engine.api.setEnabled({ ...scope, enabled: false });
+    expect(engine.api.polls(scope).polls[0]).toMatchObject({
+      id: timedOut.id,
+      state: 'paused',
+      completedAt: null,
+    });
+    await engine.api.setEnabled({ ...scope, enabled: true });
+    engine.api.queueRun({ ...scope, backfill: true });
+    expect(engine.api.polls(scope).polls[0]).toMatchObject({ state: 'cancelled' });
+    expect(engine.api.polls(scope).polls[0]?.completedAt).not.toBeNull();
+  } finally {
+    await engine.close();
+    files.close();
+  }
+});
+
+test('record totals roll back with the checkpoint when finishing the poll fails', () => {
+  const f = repositories();
+  try {
+    const leaseMs = 60_000;
+    const lease = f.acquisition.claim(leaseMs)!;
+    f.db.exec(
+      "CREATE TRIGGER fail_finish BEFORE UPDATE OF state ON runs BEGIN SELECT RAISE(ABORT,'injected'); END",
+    );
+    expect(() =>
+      f.acquisition.commit({
+        lease,
+        page: { ...page, complete: true },
+        definition: fixture.definition,
+      }),
+    ).toThrow('injected');
+    expect(f.catalog.polls({ ...alpha, id: f.installation.id, offset: 0 }).polls[0]).toMatchObject({
+      recordsProcessed: 0,
+      recordsChanged: 0,
+      completedAt: null,
+    });
+    expect(f.catalog.installation({ ...alpha, id: f.installation.id }).checkpoint).toBe(0);
+    expect(f.deliveries.status(alpha).pendingRecords).toBe(0);
+  } finally {
+    f.close();
+  }
+});
+
+test('empty completion batches do not inflate record totals', () => {
+  const f = repositories();
+  try {
+    const leaseMs = 60_000;
+    const lease = f.acquisition.claim(leaseMs)!;
+    f.acquisition.commit({ lease, page, definition: fixture.definition });
+    f.acquisition.commit({
+      lease,
+      page: { ...page, deliverable: { records: [] }, complete: true },
+      definition: fixture.definition,
+    });
+    const history = f.catalog.polls({ ...alpha, id: f.installation.id, offset: 0 });
+    expect(history.polls[0]).toMatchObject({
+      state: 'succeeded',
+      recordsProcessed: 1,
+      recordsChanged: 1,
+    });
+    expect(history.polls[0]?.attempts[0]).toMatchObject({ pages: 2, recordsProcessed: 1 });
+  } finally {
+    f.close();
+  }
+});
+
+test('the additive upgrade retains old history without inventing record counts or cancellation reasons', () => {
+  const files = storage();
+  const old = new Database(files.path);
+  let upgraded: Database | undefined;
+  try {
+    old.exec(legacySchema);
+    const catalog = new SqliteCatalog(old);
+    catalog.register(fixture.definition);
+    const destination = catalog.createDestination({
+      ...alpha,
+      type: 'local',
+      version: '1',
+      config: {},
+    });
+    const installation = catalog.createInstallation({
+      ...alpha,
+      definition: fixture.definition,
+      destinationId: destination.id,
+      config: { count: 1 },
+      initialCheckpoint: 0,
+    });
+    old
+      .query(`INSERT INTO runs VALUES (?,?,?,'test',1,'worker',1,100,67,'cancelled',1,100,67)`)
+      .run(alpha.ownerId, 'old-run', installation.id);
+    old.close();
+    upgraded = openDatabase(files.path);
+    const history = new SqliteCatalog(upgraded).polls({ ...alpha, id: installation.id, offset: 0 });
+    expect(history.polls[0]).toMatchObject({
+      id: 'old-run',
+      legacy: true,
+      state: 'cancelled',
+      recordsProcessed: null,
+      recordsChanged: null,
+    });
+    const legacyPages = 67;
+    expect(history.polls[0]?.attempts[0]?.pages).toBe(legacyPages);
+    upgraded.close();
+    upgraded = openDatabase(files.path);
+    expect(new SqliteCatalog(upgraded).polls({ ...alpha, id: installation.id, offset: 0 })).toEqual(
+      history,
+    );
+  } finally {
+    old.close();
+    upgraded?.close();
+    files.close();
+  }
+});

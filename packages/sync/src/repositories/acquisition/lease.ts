@@ -5,6 +5,7 @@ import { workerScope } from '../../models/identity';
 import type { Installation } from '../../models/installation';
 import { readInstallation } from '../rows';
 import type { RunLease } from './contract';
+import { claimPoll, updatePoll } from './polls';
 
 export function assertRun(input: { db: Database; lease: RunLease }): Installation {
   const { db, lease } = input;
@@ -58,6 +59,7 @@ export function claimRun(input: {
       }
       const scope = workerScope(row.owner_id);
       const installation = readInstallation({ db, scope: { ...scope, id: row.id } });
+      const pollId = claimPoll({ db, scope: { ...scope, id: row.id } });
       const lease: RunLease = {
         ...scope,
         id: `run_${crypto.randomUUID()}`,
@@ -66,8 +68,8 @@ export function claimRun(input: {
         generation: 1,
         checkpointRevision: installation.checkpointRevision,
       };
-      db.query(`INSERT INTO runs(owner_id,id,installation_id,definition_ref,binding_epoch,worker_id,generation,expires_at,checkpoint_revision,state,started_at)
-      VALUES (?,?,?,?,?,?,?,?,?,'running',?)`).run(
+      db.query(`INSERT INTO runs(owner_id,id,installation_id,definition_ref,binding_epoch,worker_id,generation,expires_at,checkpoint_revision,state,started_at,poll_id,records_processed,records_changed)
+      VALUES (?,?,?,?,?,?,?,?,?,'running',?,?,0,0)`).run(
         scope.ownerId,
         lease.id,
         installation.id,
@@ -78,6 +80,7 @@ export function claimRun(input: {
         Date.now() + input.leaseMs,
         lease.checkpointRevision,
         Date.now(),
+        pollId,
       );
       db.query("UPDATE installations SET status='running' WHERE owner_id=? AND id=?").run(
         scope.ownerId,
@@ -88,6 +91,10 @@ export function claimRun(input: {
     .immediate();
 }
 function recoverRuns(input: { db: Database; historyLimit: number }): void {
+  input.db
+    .query(`UPDATE polls SET state='interrupted' WHERE completed_at IS NULL AND EXISTS (
+    SELECT 1 FROM runs WHERE owner_id=polls.owner_id AND poll_id=polls.id AND state='running' AND expires_at<=?)`)
+    .run(Date.now());
   input.db
     .query(`UPDATE installations SET next_due_at=?,status='lease_expired' WHERE enabled=1 AND EXISTS (
     SELECT 1 FROM runs WHERE owner_id=installations.owner_id AND installation_id=installations.id AND state='running' AND expires_at<=?)`)
@@ -102,6 +109,11 @@ function recoverRuns(input: { db: Database; historyLimit: number }): void {
       "DELETE FROM runs WHERE state!='running' AND rowid NOT IN (SELECT rowid FROM runs ORDER BY started_at DESC,rowid DESC LIMIT ?)",
     )
     .run(input.historyLimit);
+  input.db
+    .query(`DELETE FROM polls WHERE completed_at IS NOT NULL
+    AND rowid NOT IN (SELECT rowid FROM polls ORDER BY started_at DESC,rowid DESC LIMIT ?)
+    AND NOT EXISTS (SELECT 1 FROM runs WHERE owner_id=polls.owner_id AND poll_id=polls.id)`)
+    .run(input.historyLimit);
 }
 export function finishRun(input: {
   db: Database;
@@ -109,6 +121,12 @@ export function finishRun(input: {
   state: string;
   delay: number;
 }): void {
+  updatePoll({
+    db: input.db,
+    ownerId: input.lease.ownerId,
+    runId: input.lease.id,
+    state: input.state,
+  });
   input.db
     .query('UPDATE runs SET state=?,completed_at=? WHERE owner_id=? AND id=?')
     .run(input.state, Date.now(), input.lease.ownerId, input.lease.id);
