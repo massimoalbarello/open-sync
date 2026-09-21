@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { ProviderOperations, SyncRegistration } from '@context-use/open-sync/definition';
 import type { Delivery } from '@context-use/open-sync/delivery';
 import { createSyncRuntime } from '@context-use/open-sync/engine';
+import type { JsonObject } from '@context-use/open-sync/json';
 
 export const owner = { actorId: 'alice', ownerId: 'alice' };
 export const unused = () => Promise.reject(new Error('Unexpected provider operation'));
@@ -11,6 +12,7 @@ export const unused = () => Promise.reject(new Error('Unexpected provider operat
 export async function fixture(input: {
   registration: SyncRegistration;
   provider: ProviderOperations;
+  config?: JsonObject;
 }) {
   const directory = await mkdtemp(join(tmpdir(), 'example-sync-'));
   const deliveries: Delivery[] = [];
@@ -36,7 +38,7 @@ export async function fixture(input: {
     ...owner,
     definition: input.registration.definition,
     connection: { id: 'connection', service: input.registration.definition.provider!.service },
-    config: {},
+    config: input.config ?? {},
     destinationId: destination.id,
   });
   const resource = { ...owner, id: installation.id };

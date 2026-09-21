@@ -1,9 +1,9 @@
 import type { SyncContext, SyncPage } from '@context-use/open-sync/definition';
 import type { SyncRecord } from '@context-use/open-sync/delivery';
 import { z } from 'zod';
+import { historyStart } from '../history';
 import { checkpointSchema, initialCheckpoint, responseSchema } from './models';
 
-const windowMs = 2_592_000_000;
 const millisecondsPerSecond = 1000;
 // Commit each complete thread separately, without batching several large conversations.
 const pageSize = 1;
@@ -17,13 +17,14 @@ export async function* run(context: SyncContext): AsyncGenerator<SyncPage> {
     throw new Error('Gmail account changed. Create a new sync.');
   }
   const now = Date.now();
+  const oldest = historyStart({ config: context.config, now: new Date(now) });
   checkpoint = {
     ...checkpoint,
     account: profile.emailAddress,
     // Freeze the search while paging, including when the process restarts.
     query:
       checkpoint.query ??
-      `after:${Math.floor((now - windowMs) / millisecondsPerSecond)} before:${Math.ceil(now / millisecondsPerSecond)}`,
+      `${oldest ? `after:${Math.floor(oldest.getTime() / millisecondsPerSecond)} ` : ''}before:${Math.ceil(now / millisecondsPerSecond)}`,
   };
   const seen = new Set<string>();
   while (true) {

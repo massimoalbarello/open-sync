@@ -38,6 +38,7 @@ export async function exampleProviderResponse(request: Request): Promise<Respons
 
 function gmailResponse(request: Request) {
   const url = new URL(request.url);
+  const millisecondsPerSecond = 1000;
   if (url.pathname.endsWith('/profile')) {
     return Response.json({
       emailAddress: request.headers.get('authorization')?.includes('gmail-work-fixture-token')
@@ -49,7 +50,13 @@ function gmailResponse(request: Request) {
     });
   }
   if (url.pathname.endsWith('/threads')) {
-    return Response.json({ threads: [{ id: 'thread-1' }] });
+    const query = url.searchParams.get('q') ?? '';
+    const oldest = Number(query.match(/after:(\d+)/)?.[1] ?? 0);
+    const latest = Number(query.match(/before:(\d+)/)?.[1] ?? Infinity);
+    const lastActivity = Date.parse('2020-01-02T12:00:00.000Z') / millisecondsPerSecond;
+    return Response.json({
+      threads: lastActivity > oldest && lastActivity < latest ? [{ id: 'thread-1' }] : [],
+    });
   }
   if (url.pathname.endsWith('/threads/thread-1')) {
     return Response.json({
@@ -58,7 +65,7 @@ function gmailResponse(request: Request) {
         gmailMessage({ id: 'email-1', date: '2020-01-01T12:00:00.000Z', text: 'Meet at noon?' }),
         gmailMessage({
           id: 'email-2',
-          date: '2026-09-20T12:00:00.000Z',
+          date: '2020-01-02T12:00:00.000Z',
           text: 'Yes, see you there!',
         }),
       ],
@@ -120,7 +127,13 @@ function slackResponse(url: URL) {
         };
       case '/api/conversations.history':
         return {
-          messages: [{ ts: '1789819200.000001', text: 'Lunch?', user: 'U1', reply_count: 2 }],
+          messages: [
+            { ts: '1577880000.000001', text: 'Lunch?', user: 'U1', reply_count: 2 },
+          ].filter(
+            (message) =>
+              Number(message.ts) >= Number(url.searchParams.get('oldest') ?? 0) &&
+              Number(message.ts) <= Number(url.searchParams.get('latest') ?? Infinity),
+          ),
           has_more: false,
           response_metadata: { next_cursor: '' },
         };
@@ -134,7 +147,7 @@ function slackResponse(url: URL) {
 }
 
 function slackReplies(url: URL) {
-  const root = '1789819200.000001';
+  const root = '1577880000.000001';
   if (url.searchParams.get('oldest') || url.searchParams.get('latest')) {
     throw new Error('Thread messages must not be clipped to the discovery window');
   }
@@ -148,7 +161,7 @@ function slackReplies(url: URL) {
     : {
         messages: [
           { ts: root, thread_ts: root, text: 'Lunch?', user: 'U1', reply_count: 2 },
-          { ts: '1789819201.000001', thread_ts: root, text: 'At noon?', user: 'U2' },
+          { ts: '1577880001.000001', thread_ts: root, text: 'At noon?', user: 'U2' },
         ],
         has_more: true,
         response_metadata: { next_cursor: 'replies-2' },

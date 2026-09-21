@@ -34,7 +34,7 @@ export function pull(id: string) {
     author: { login: 'alice' },
   };
 }
-export async function fixture() {
+export async function fixture(config: JsonObject = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'github-sync-test-'));
   const db = new SQL({ adapter: 'sqlite', filename: join(dir, 'host.db') });
   await runMigrations({ db });
@@ -123,7 +123,7 @@ export async function fixture() {
     destinationId: destination.id,
     definition: githubPullRequests.definition,
     connection: { id: 'github-connection', service: 'github' },
-    config: {},
+    config,
   });
   return {
     get engine() {

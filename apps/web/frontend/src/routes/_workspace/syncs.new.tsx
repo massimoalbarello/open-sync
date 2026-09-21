@@ -6,11 +6,11 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useId } from 'react';
 import { SectionPage } from '../../components/section-page';
 import { catalogOptions, createSync, type loadCatalog } from '../../queries/catalog';
-import { providerSetupOptions } from '../../queries/providers';
+import { type loadProvider, providerSetupOptions } from '../../queries/providers';
 import { syncKeys } from '../../queries/sync';
 import { accountLabel } from './-syncs/account-label';
-import { SetupInput } from './-syncs/setup-input';
-import { fieldError, setupError, setupFields, setupInput } from './-syncs/setup-schema';
+import { SetupControl } from './-syncs/setup-control';
+import { fieldError, setupError, setupFields, setupInput, setupValue } from './-syncs/setup-schema';
 
 export const Route = createFileRoute('/_workspace/syncs/new')({
   component: NewSync,
@@ -66,17 +66,23 @@ function SyncForm(input: {
   const form = useForm({
     defaultValues: {
       source: search.source ?? '',
+      sourceValues: [] as string[],
       connectionId: '',
       destination: search.destination ?? catalog.types[0]?.type ?? '',
       values: [] as string[],
     },
     onSubmit: async ({ value }) => {
       const type = catalog.types.find((entry) => entry.type === value.destination);
-      if (!type) {
+      const source = catalog.sources.find((entry) => entry.id === value.source);
+      if (!type || !source) {
         return;
       }
       await create.mutateAsync({
         source: value.source,
+        config: setupInput({
+          fields: setupFields(source.configSchema),
+          values: value.sourceValues,
+        }),
         connectionId: value.connectionId || undefined,
         destination: {
           type: type.type,
@@ -88,21 +94,16 @@ function SyncForm(input: {
     validators: {
       onSubmit: ({ value }) => {
         const source = catalog.sources.find((entry) => entry.id === value.source);
-        if (source?.provider) {
+        if (!source) {
+          return 'Select a source.';
+        }
+        if (source.provider) {
           const status = client.getQueryData(
             providerSetupOptions({ userId, service: source.provider.service }).queryKey,
           );
-          if (!status) {
-            return 'Wait for accounts to load, then try again.';
-          }
-          const accounts = status.connections.filter(
-            (entry) => entry.status === 'active' && entry.authType === 'oauth2',
-          );
-          if (
-            (accounts.length > 1 || value.connectionId) &&
-            !accounts.some((entry) => entry.id === value.connectionId)
-          ) {
-            return 'Select a connected account for this source.';
+          const error = accountSelectionError({ status, connectionId: value.connectionId });
+          if (error) {
+            return error;
           }
         }
         const type = catalog.types.find((entry) => entry.type === value.destination);
@@ -110,12 +111,21 @@ function SyncForm(input: {
           return 'Select a destination.';
         }
         try {
-          return setupError({
-            schema: type.setupSchema,
-            values: setupInput({ fields: setupFields(type.setupSchema), values: value.values }),
-          });
+          return (
+            setupError({
+              schema: source.configSchema,
+              values: setupInput({
+                fields: setupFields(source.configSchema),
+                values: value.sourceValues,
+              }),
+            }) ??
+            setupError({
+              schema: type.setupSchema,
+              values: setupInput({ fields: setupFields(type.setupSchema), values: value.values }),
+            })
+          );
         } catch {
-          return 'Check the destination settings.';
+          return 'Check the settings.';
         }
       },
     },
@@ -154,6 +164,7 @@ function SyncForm(input: {
                 onValueChange={(value) => {
                   field.handleChange(value);
                   form.resetField('connectionId');
+                  form.resetField('sourceValues');
                 }}
                 options={catalog.sources.map((source) => ({
                   value: source.id,
@@ -184,6 +195,38 @@ function SyncForm(input: {
                   )}
                 </form.Field>
               )
+            );
+          }}
+        </form.Subscribe>
+        <form.Subscribe selector={(state) => state.values.source}>
+          {(sourceId) => {
+            const source = catalog.sources.find((entry) => entry.id === sourceId);
+            return (
+              source &&
+              [...setupFields(source.configSchema).entries()].map(([index, definition]) => (
+                <form.Field
+                  key={`${sourceId}:${definition.name}`}
+                  name={`sourceValues[${index}]`}
+                  validators={{
+                    onSubmit: ({ value }) =>
+                      fieldError({
+                        field: definition,
+                        value: setupValue({ field: definition, value }),
+                      }),
+                  }}
+                >
+                  {(field) => (
+                    <SetupControl
+                      definition={definition}
+                      id={`${fieldId}-source-${index}`}
+                      value={field.state.value}
+                      onChange={field.handleChange}
+                      onBlur={field.handleBlur}
+                      errors={field.state.meta.errors}
+                    />
+                  )}
+                </form.Field>
+              ))
             );
           }}
         </form.Subscribe>
@@ -231,35 +274,22 @@ function SyncForm(input: {
                   key={`${destination}:${definition.name}`}
                   name={`values[${index}]`}
                   validators={{
-                    onSubmit: ({ value }) => fieldError({ field: definition, value: value ?? '' }),
+                    onSubmit: ({ value }) =>
+                      fieldError({
+                        field: definition,
+                        value: setupValue({ field: definition, value }),
+                      }),
                   }}
                 >
                   {(field) => (
-                    <div className="space-y-2">
-                      <label htmlFor={`${fieldId}-${index}`} className="font-medium text-sm">
-                        {String(definition.schema.title ?? definition.name)}
-                      </label>
-                      <SetupInput
-                        field={definition}
-                        id={`${fieldId}-${index}`}
-                        value={field.state.value ?? ''}
-                        onChange={field.handleChange}
-                        onBlur={field.handleBlur}
-                      />
-                      {definition.schema.description && (
-                        <p
-                          id={`${fieldId}-${index}-help`}
-                          className="text-muted-foreground text-sm"
-                        >
-                          {String(definition.schema.description)}
-                        </p>
-                      )}
-                      {field.state.meta.errors.map((error) => (
-                        <p key={String(error)} role="alert" className="text-destructive text-sm">
-                          {error}
-                        </p>
-                      ))}
-                    </div>
+                    <SetupControl
+                      definition={definition}
+                      id={`${fieldId}-destination-${index}`}
+                      value={field.state.value}
+                      onChange={field.handleChange}
+                      onBlur={field.handleBlur}
+                      errors={field.state.meta.errors}
+                    />
                   )}
                 </form.Field>
               ))
@@ -330,4 +360,22 @@ function AccountSelection(input: {
       />
     </div>
   );
+}
+
+function accountSelectionError(input: {
+  status: Awaited<ReturnType<typeof loadProvider>> | undefined;
+  connectionId: string;
+}) {
+  if (!input.status) {
+    return 'Wait for accounts to load, then try again.';
+  }
+  const accounts = input.status.connections.filter(
+    (entry) => entry.status === 'active' && entry.authType === 'oauth2',
+  );
+  if (
+    (accounts.length > 1 || input.connectionId) &&
+    !accounts.some((entry) => entry.id === input.connectionId)
+  ) {
+    return 'Select a connected account for this source.';
+  }
 }

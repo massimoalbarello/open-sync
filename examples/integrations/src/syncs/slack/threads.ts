@@ -1,5 +1,6 @@
 import type { SyncContext, SyncPage } from '@context-use/open-sync/definition';
 import { z } from 'zod';
+import { historyStart } from '../history';
 import {
   channelSchema,
   checkpointSchema,
@@ -13,7 +14,6 @@ import {
 import { readThread } from './replies';
 import { ExpiredCursor, request, ThreadNotFound } from './request';
 
-const windowSeconds = 2_592_000;
 const millisecondsPerSecond = 1000;
 const directoryPageSize = 100;
 const historyPageSize = 15;
@@ -139,12 +139,13 @@ function beginCycle(input: { context: SyncContext; account: string }) {
   if (checkpoint.account && checkpoint.account !== input.account) {
     throw new Error('Slack account changed. Create a new sync.');
   }
-  const now = Date.now() / millisecondsPerSecond;
+  const now = new Date();
+  const oldest = historyStart({ config: input.context.config, now });
   return {
     ...checkpoint,
     account: input.account,
-    oldest: checkpoint.oldest ?? String(now - windowSeconds),
-    latest: checkpoint.latest ?? String(now),
+    oldest: checkpoint.oldest ?? String(oldest ? oldest.getTime() / millisecondsPerSecond : 0),
+    latest: checkpoint.latest ?? String(now.getTime() / millisecondsPerSecond),
   };
 }
 

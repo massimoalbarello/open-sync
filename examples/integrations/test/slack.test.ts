@@ -14,7 +14,7 @@ const reply = (input: { ts: string; text: string }) => ({
 const response = (body: JsonObject): Promise<ProviderResponse> =>
   Promise.resolve({ status: 200, headers: {}, body: { ok: true, ...body } });
 
-test('Slack emits complete threads across reply pages and restarts, preserves progress on errors, and upserts new replies', async () => {
+test('Slack backfills historical threads across pages and restarts, preserves progress on errors, and upserts new replies on old threads', async () => {
   const history: JsonObject[] = [];
   const replies: JsonObject[] = [];
   let expire = true;
@@ -23,10 +23,12 @@ test('Slack emits complete threads across reply pages and restarts, preserves pr
   let removed = false;
   function historyResponse(query: JsonObject) {
     history.push(query);
+    const inWindow = (message: { ts: string }) =>
+      Number(message.ts) >= Number(query.oldest ?? 0) && Number(message.ts) <= Number(query.latest);
     return response(
       query.channel === 'a' && !query.cursor
         ? {
-            messages: [root, reply({ ts: '1750000001.000001', text: 'Sure!' })],
+            messages: [root, reply({ ts: '1750000001.000001', text: 'Sure!' })].filter(inWindow),
             has_more: true,
             response_metadata: { next_cursor: 'history-2' },
           }
@@ -37,7 +39,7 @@ test('Slack emits complete threads across reply pages and restarts, preserves pr
                 text: 'Standalone',
                 bot_id: 'bot',
               },
-            ],
+            ].filter(inWindow),
           },
     );
   }
@@ -129,7 +131,7 @@ test('Slack emits complete threads across reply pages and restarts, preserves pr
       'a:1750000009.000001',
       `b:${rootTs}`,
     ]);
-    expect(history[0]?.oldest).toBe(history.at(-1)?.oldest);
+    expect(history[0]?.latest).toBe(history.at(-1)?.latest);
     expect(replies.every((query) => query.oldest === undefined && query.latest === undefined)).toBe(
       true,
     );

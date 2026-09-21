@@ -32,10 +32,22 @@ function fieldPresentation(input: {
 }
 export type SetupField = ReturnType<typeof setupFields>[number];
 
+export function setupValue(input: { field: SetupField; value?: string }): string {
+  const fallback = input.field.schema.default;
+  return (
+    input.value ??
+    (fallback === undefined
+      ? ''
+      : input.field.schema.type === 'string'
+        ? String(fallback)
+        : JSON.stringify(fallback))
+  );
+}
+
 export function setupInput(input: { fields: SetupField[]; values: string[] }): JsonObject {
   return Object.fromEntries(
     [...input.fields.entries()].flatMap(([index, field]) => {
-      const value = input.values[index] ?? '';
+      const value = setupValue({ field, value: input.values[index] });
       if (!value && !field.required) {
         return [];
       }
@@ -70,5 +82,5 @@ export function fieldError(input: { field: SetupField; value: string }) {
 export function setupError(input: { schema: Schema; values: JsonObject }) {
   return new Validator(structuredClone(input.schema), '2020-12', false).validate(input.values).valid
     ? undefined
-    : 'Check the destination settings.';
+    : 'Check the settings.';
 }

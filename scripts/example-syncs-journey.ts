@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import type { virtualPasskeyBrowser } from '@repo/browser-testing/browser';
 import { copyAuthorizationJourney } from './copy-authorization-journey';
 import { destinationSetupJourney } from './destination-setup-journey';
+import { historySetupJourney } from './history-setup-journey';
 import { providerSetupJourney } from './provider-setup-journey';
 
 type Page = Awaited<ReturnType<typeof virtualPasskeyBrowser>>['page'];
@@ -31,6 +32,7 @@ export async function exampleSyncsJourney(input: { page: Page; origin: string })
     await connectSource({ ...input, source });
   }
   const { page, origin } = input;
+  await historySetupJourney(input);
   await destinationSetupJourney(input);
   await page.goto(`${origin}/syncs/new?source=gmail.threads`);
   await page.getByLabel('Destination', { exact: true }).click();
@@ -174,6 +176,9 @@ async function connectSource(input: {
         ? ['Meet at noon?', 'Yes, see you there!']
         : ['Lunch?', 'At noon?', 'See you there!'],
     );
+    if (source.service === 'slack') {
+      assert.equal(records.records[0].data.messages[0].sentAt, '2020-01-01T12:00:00.000Z');
+    }
     await page.locator('summary').first().click();
     await page.locator('pre').getByText('"messages":', { exact: false }).waitFor();
     await page.screenshot({

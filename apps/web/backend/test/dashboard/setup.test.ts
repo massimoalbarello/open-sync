@@ -130,13 +130,22 @@ test('dashboard creates syncs with an unrelated destination using its own setup 
       ...owner,
       source: 'github.pull-requests',
       destination: { type: 'archive', input: { project: 'research' }, ownerId: 'injected-owner' },
+      config: { history: '1 year' },
     };
     const sync = await dashboard.create(input);
+    expect(engine.api.installation({ ...owner, id: sync.id }).config).toEqual(input.config);
     expect(engine.api.installation({ ...owner, id: sync.id }).destinationId).toBe(
       engine.api.destinations(owner)[0]!.id,
     );
     expect(engine.api.destinations(owner)[0]?.type).toBe('archive');
     expect(engine.api.destinations({ ...owner, ownerId: 'injected-owner' })).toHaveLength(0);
+    await expect(
+      dashboard.create({
+        ...input,
+        config: { history: 'invalid' },
+        destination: { type: 'archive', input: { project: 'should-not-exist' } },
+      }),
+    ).rejects.toThrow('Check the source settings.');
     await expect(
       dashboard.create({
         ...input,

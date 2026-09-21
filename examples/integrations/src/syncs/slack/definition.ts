@@ -1,6 +1,6 @@
 import type { SyncRegistration } from '@context-use/open-sync/definition';
-import { z } from 'zod';
 import { jsonSchema } from '../../schema';
+import { historyConfigSchema } from '../history';
 import { checkpointSchema, initialCheckpoint, threadSchema } from './models';
 import { run } from './threads';
 
@@ -9,7 +9,7 @@ export const slackThreads = {
     id: 'slack.threads',
     name: 'Slack threads',
     description:
-      'Complete threads discovered in the last 30 days of joined-channel history, including all replies. Rechecks for edits; excludes DMs and deletion detection.',
+      'Complete threads from joined channels within the selected history range, including all replies in chronological order. Rechecks for edits and new replies; excludes DMs and deletion detection.',
     version: '1',
     artifactId: 'open-sync/slack-threads/1',
     provider: {
@@ -22,7 +22,7 @@ export const slackThreads = {
         '/conversations.replies',
       ],
     },
-    configSchema: jsonSchema(z.strictObject({})),
+    configSchema: jsonSchema(historyConfigSchema),
     checkpointSchema: jsonSchema(checkpointSchema),
     initialCheckpoint,
     kinds: { thread: jsonSchema(threadSchema) },

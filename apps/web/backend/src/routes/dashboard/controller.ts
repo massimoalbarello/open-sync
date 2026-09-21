@@ -26,12 +26,14 @@ export function dashboardController(input: {
         input.dashboard.create({
           ...scope,
           source: body.source,
+          config: body.config as JsonObject | undefined,
           connectionId: body.connectionId,
           destination: { ...body.destination, input: body.destination.input as JsonObject },
         }),
       {
         body: t.Object({
           source: t.String({ minLength: 1, maxLength: 1024 }),
+          config: t.Optional(t.Record(t.String(), t.Unknown())),
           connectionId: t.Optional(t.String({ minLength: 1, maxLength: 1024 })),
           destination: t.Object({
             type: t.String({ minLength: 1, maxLength: 1024 }),

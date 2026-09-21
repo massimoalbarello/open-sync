@@ -1,3 +1,4 @@
+import { Validator } from '@cfworker/json-schema';
 import type { OpenSyncRuntime, Scope } from '@context-use/open-sync';
 import type { JsonObject } from '@context-use/open-sync/json';
 
@@ -6,6 +7,7 @@ import { BadRequestError } from '#backend/lib/errors.ts';
 const pollIntervalMs = 900_000;
 export type CreateSync = {
   source: string;
+  config?: JsonObject;
   connectionId?: string;
   destination: { type: string; input: JsonObject };
 };
@@ -27,6 +29,13 @@ export class DashboardService {
     if (!definition || !type) {
       throw new BadRequestError('Select an available source and destination.');
     }
+    const config = input.config ?? {};
+    if (
+      !new Validator(structuredClone(definition.configSchema), '2020-12', false).validate(config)
+        .valid
+    ) {
+      throw new BadRequestError('Check the source settings.');
+    }
     const selection = definition.provider
       ? await this.selectAccount({
           ...scope,
@@ -47,7 +56,7 @@ export class DashboardService {
       ...scope,
       definition,
       destinationId: destination.id,
-      config: {},
+      config,
       connection,
       intervalMs: pollIntervalMs,
       enabled: !definition.provider || !!connection,
