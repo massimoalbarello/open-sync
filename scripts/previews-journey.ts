@@ -1,19 +1,12 @@
 import assert from 'node:assert/strict';
 import type { virtualPasskeyBrowser } from '@repo/browser-testing/browser';
+import type { ReceivedRecord } from '../apps/web/backend/src/repositories/receiver/contract';
 
 type Page = Awaited<ReturnType<typeof virtualPasskeyBrowser>>['page'];
-type RecordPreview = {
-  sourceId: string;
-  kind: string;
-  id: string;
-  data: { subject: string };
-  content: { format: string; body: string };
-  assets: { id: string; name: string }[];
-};
 export async function previewsJourney(input: {
   page: Page;
   origin: string;
-  record: RecordPreview;
+  record: ReceivedRecord;
 }) {
   const { page, origin, record } = input;
   const recordUrl = `${origin}/records/${encodeURIComponent(record.sourceId)}/${encodeURIComponent(record.kind)}/${encodeURIComponent(record.id)}`;
@@ -42,8 +35,13 @@ export async function previewsJourney(input: {
   await page.setViewportSize({ width: 1280, height: 900 });
 
   for (const asset of record.assets.filter((item) => item.name !== 'attachment.bin')) {
-    await page.goto(`${origin}/assets/${asset.id}`);
+    await page.goto(recordUrl);
+    await page
+      .getByRole('list', { name: `Assets for ${record.kind} ${record.id}` })
+      .getByRole('link', { name: asset.name, exact: true })
+      .click();
     await page.getByRole('heading', { name: asset.name, exact: true }).waitFor();
+    assert.equal(new URL(page.url()).pathname, `/assets/${asset.id}`);
     await page.getByRole('link', { name: `Download ${asset.name}`, exact: true }).waitFor();
     if (asset.name === 'brief.pdf') {
       await page
@@ -114,7 +112,7 @@ export async function previewsJourney(input: {
       animations: 'disabled',
     });
   }
-  await markdownSafety({ page, origin, record, recordUrl });
+  await markdownSafety({ page, record, recordUrl });
   await documentFailure({
     page,
     origin,
@@ -127,8 +125,7 @@ export async function previewsJourney(input: {
 }
 async function markdownSafety(input: {
   page: Page;
-  origin: string;
-  record: RecordPreview;
+  record: ReceivedRecord;
   recordUrl: string;
 }) {
   const { page, record, recordUrl } = input;

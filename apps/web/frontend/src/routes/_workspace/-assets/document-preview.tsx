@@ -4,10 +4,13 @@ import { useQuery } from '@tanstack/react-query';
 import DOMPurify from 'dompurify';
 import { useState } from 'react';
 import { assetPreviewOptions } from '../../../queries/asset-preview';
-import type { DocumentPreview as Preview } from './document-worker';
-import type { PreviewFormat } from './format';
+import {
+  type DocumentFormat,
+  documentPreviewLimits as limits,
+  type DocumentPreview as Preview,
+} from '../../../queries/asset-preview/contract';
 
-export function DocumentPreview(input: { userId: string; id: string; format: PreviewFormat }) {
+export function DocumentPreview(input: { userId: string; id: string; format: DocumentFormat }) {
   const query = useQuery(assetPreviewOptions(input));
   if (query.isPending) {
     return <p role="status">Preparing preview…</p>;
@@ -103,8 +106,8 @@ function Spreadsheet({ preview }: { preview: Extract<Preview, { type: 'spreadshe
       )}
       {(sheet?.truncated || preview.truncated) && (
         <p className="text-muted-foreground text-sm">
-          Preview limited to 200 rows, 50 columns, and 20 sheets. Download the workbook to view
-          everything.
+          Preview limited to {limits.rows} rows, {limits.columns} columns, and {limits.sheets}{' '}
+          sheets. Download the workbook to view everything.
         </p>
       )}
     </div>

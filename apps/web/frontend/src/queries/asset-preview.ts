@@ -1,12 +1,14 @@
 import { queryOptions } from '@tanstack/react-query';
-import type { DocumentPreview } from '../routes/_workspace/-assets/document-worker';
-import type { PreviewFormat } from '../routes/_workspace/-assets/format';
+import {
+  type DocumentFormat,
+  type DocumentPreview,
+  documentPreviewLimits,
+} from './asset-preview/contract';
 import { assetKeys } from './assets';
 
-export const documentByteLimit = 20_971_520;
 const previewTimeout = 20_000;
 
-export function assetPreviewOptions(input: { userId: string; id: string; format: PreviewFormat }) {
+export function assetPreviewOptions(input: { userId: string; id: string; format: DocumentFormat }) {
   return queryOptions({
     queryKey: [...assetKeys.owner(input.userId), 'preview', input.id, input.format],
     staleTime: Infinity,
@@ -20,7 +22,7 @@ export function assetPreviewOptions(input: { userId: string; id: string; format:
         throw new Error('Could not load this file.');
       }
       const blob = await response.blob();
-      if (blob.size > documentByteLimit) {
+      if (blob.size > documentPreviewLimits.bytes) {
         throw new Error(
           'This file is too large for an in-browser document preview. Download it to view the full file.',
         );
@@ -29,14 +31,17 @@ export function assetPreviewOptions(input: { userId: string; id: string; format:
     },
   });
 }
-function parseDocument(input: { buffer: ArrayBuffer; format: PreviewFormat; signal: AbortSignal }) {
+function parseDocument(input: {
+  buffer: ArrayBuffer;
+  format: DocumentFormat;
+  signal: AbortSignal;
+}) {
   // biome-ignore lint/complexity/useMaxParams: Promise supplies resolve and reject.
   return new Promise<DocumentPreview>((resolve, reject) => {
     input.signal.throwIfAborted();
-    const worker = new Worker(
-      new URL('../routes/_workspace/-assets/document-worker.ts', import.meta.url),
-      { type: 'module' },
-    );
+    const worker = new Worker(new URL('./asset-preview/worker.ts', import.meta.url), {
+      type: 'module',
+    });
     const cleanup = () => {
       worker.terminate();
       clearTimeout(timeout);

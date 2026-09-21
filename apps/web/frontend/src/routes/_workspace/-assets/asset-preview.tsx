@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState } from 'react';
-import { documentByteLimit } from '../../../queries/asset-preview';
+import { documentPreviewLimits } from '../../../queries/asset-preview/contract';
 import { DocumentPreview } from './document-preview';
 import { previewFormat } from './format';
 
@@ -33,6 +33,7 @@ export function AssetPreview({
   }
   if (format === 'video') {
     return (
+      // biome-ignore lint/a11y/useMediaCaption: Synced assets do not supply caption tracks.
       <video
         src={url}
         controls
@@ -40,13 +41,12 @@ export function AssetPreview({
         aria-label={asset.name}
         onError={() => setFailed(true)}
         className="max-h-[75vh] w-full rounded-lg bg-black"
-      >
-        <track kind="captions" />
-      </video>
+      />
     );
   }
   if (format === 'audio') {
     return (
+      // biome-ignore lint/a11y/useMediaCaption: Synced assets do not supply caption tracks.
       <audio
         src={url}
         controls
@@ -54,9 +54,7 @@ export function AssetPreview({
         aria-label={asset.name}
         onError={() => setFailed(true)}
         className="w-full"
-      >
-        <track kind="captions" />
-      </audio>
+      />
     );
   }
   if (format === 'pdf') {
@@ -67,7 +65,7 @@ export function AssetPreview({
     );
   }
   if (format) {
-    return asset.size > documentByteLimit ? (
+    return asset.size > documentPreviewLimits.bytes ? (
       <p>
         This file is too large for an in-browser document preview. Download it to view the full
         file.

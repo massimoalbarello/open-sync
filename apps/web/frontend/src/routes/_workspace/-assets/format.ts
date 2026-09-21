@@ -1,4 +1,6 @@
-export type PreviewFormat = 'image' | 'video' | 'audio' | 'pdf' | 'docx' | 'spreadsheet' | 'text';
+import type { DocumentFormat } from '../../../queries/asset-preview/contract';
+
+type PreviewFormat = 'image' | 'video' | 'audio' | 'pdf' | DocumentFormat;
 
 const extensions: Record<string, PreviewFormat> = {
   jpg: 'image',

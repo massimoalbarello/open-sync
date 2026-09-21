@@ -1,18 +1,10 @@
-import type { PreviewFormat } from './format';
+import {
+  type DocumentFormat,
+  type DocumentPreview,
+  documentPreviewLimits as limits,
+} from './contract';
 
-export type DocumentPreview =
-  | { type: 'html'; body: string }
-  | { type: 'text'; body: string }
-  | {
-      type: 'spreadsheet';
-      sheets: { name: string; rows: string[][]; columns: string[]; truncated: boolean }[];
-      truncated: boolean;
-    };
-const rowLimit = 200;
-const columnLimit = 50;
-const sheetLimit = 20;
-
-self.onmessage = async (event: MessageEvent<{ format: PreviewFormat; buffer: ArrayBuffer }>) => {
+self.onmessage = async (event: MessageEvent<{ format: DocumentFormat; buffer: ArrayBuffer }>) => {
   try {
     self.postMessage({ preview: await parse(event.data) });
   } catch {
@@ -24,7 +16,7 @@ self.onmessage = async (event: MessageEvent<{ format: PreviewFormat; buffer: Arr
 };
 
 async function parse(input: {
-  format: PreviewFormat;
+  format: DocumentFormat;
   buffer: ArrayBuffer;
 }): Promise<DocumentPreview> {
   if (input.format === 'docx') {
@@ -39,22 +31,22 @@ async function parse(input: {
     const { read, utils } = await import('xlsx');
     const workbook = read(input.buffer, {
       type: 'array',
-      sheetRows: rowLimit + 1,
+      sheetRows: limits.rows + 1,
       cellHTML: false,
       cellFormula: false,
     });
     return {
       type: 'spreadsheet',
-      truncated: workbook.SheetNames.length > sheetLimit,
-      sheets: workbook.SheetNames.slice(0, sheetLimit).map((name) => {
+      truncated: workbook.SheetNames.length > limits.sheets,
+      sheets: workbook.SheetNames.slice(0, limits.sheets).map((name) => {
         const sheet = workbook.Sheets[name]!;
         if (!sheet['!ref']) {
           return { name, rows: [], columns: [], truncated: false };
         }
         const fullRange = utils.decode_range(sheet['!fullref'] ?? sheet['!ref']);
         const range = utils.decode_range(sheet['!ref']);
-        range.e.r = Math.min(range.e.r, range.s.r + rowLimit - 1);
-        range.e.c = Math.min(range.e.c, range.s.c + columnLimit - 1);
+        range.e.r = Math.min(range.e.r, range.s.r + limits.rows - 1);
+        range.e.c = Math.min(range.e.c, range.s.c + limits.columns - 1);
         return {
           name,
           rows: utils.sheet_to_json<string[]>(sheet, { header: 1, raw: false, defval: '', range }),
