@@ -19,10 +19,16 @@ export async function destinationSetupJourney(input: { page: Page; origin: strin
             configSchema: {},
             setupSchema: {
               type: 'object',
-              properties: {
+              $id: 'https://example.com/archive-setup',
+              $defs: {
                 project: { type: 'string', title: 'Project', minLength: 1 },
                 token: { type: 'string', title: 'Archive token', minLength: 1, writeOnly: true },
                 retention: { type: 'integer', title: 'Retention days', minimum: 1 },
+              },
+              properties: {
+                project: { $ref: '#/$defs/project' },
+                token: { $ref: '#/$defs/token' },
+                retention: { $ref: '#/$defs/retention' },
               },
               required: ['project', 'token', 'retention'],
               additionalProperties: false,
@@ -40,7 +46,15 @@ export async function destinationSetupJourney(input: { page: Page; origin: strin
       await page.getByLabel('Archive token', { exact: true }).getAttribute('type'),
       'password',
     );
+    await page.getByLabel('Retention days', { exact: true }).fill('0');
+    await page.getByRole('button', { name: 'Create sync', exact: true }).click();
+    await page.getByText('Enter a valid retention days.', { exact: true }).waitFor();
     await page.getByLabel('Retention days', { exact: true }).fill('7');
+    await page.screenshot({
+      path: 'artifacts/destination-schema-references.png',
+      fullPage: true,
+      animations: 'disabled',
+    });
     const submitted = page.waitForRequest(
       (request) => request.url().endsWith('/api/dashboard/syncs') && request.method() === 'POST',
     );

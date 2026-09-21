@@ -173,7 +173,10 @@ test('sync creation binds the selected owned OAuth account and refuses ambiguous
         }),
     },
   });
+  let firstStatusEmpty = false;
   const status: OpenSyncRuntime['providers']['status'] = (scope) => {
+    const empty = firstStatusEmpty;
+    firstStatusEmpty = false;
     expect(scope).toMatchObject({ ...owner, service: 'github' });
     return Promise.resolve({
       provider: {
@@ -185,12 +188,14 @@ test('sync creation binds the selected owned OAuth account and refuses ambiguous
         authTypes: ['oauth2'],
       },
       setup: { service: 'github', auth: [] },
-      connections: [
-        { id: 'personal', account: 'Personal', status: 'active', authType: 'oauth2' },
-        { id: 'work', account: 'Work', status: 'active', authType: 'oauth2' },
-        { id: 'expired', account: 'Expired', status: 'reauth_required', authType: 'oauth2' },
-        { id: 'key', account: 'API key', status: 'active', authType: 'api_key' },
-      ],
+      connections: empty
+        ? []
+        : [
+            { id: 'personal', account: 'Personal', status: 'active', authType: 'oauth2' },
+            { id: 'work', account: 'Work', status: 'active', authType: 'oauth2' },
+            { id: 'expired', account: 'Expired', status: 'reauth_required', authType: 'oauth2' },
+            { id: 'key', account: 'API key', status: 'active', authType: 'api_key' },
+          ],
     });
   };
   const dashboard = new DashboardService({ api: engine.api, providers: { status } });
@@ -215,6 +220,18 @@ test('sync creation binds the selected owned OAuth account and refuses ambiguous
       expect(saved.enabled).toBe(true);
     }
     expect(new Set(engine.api.installations(owner).map((entry) => entry.sourceId)).size).toBe(2);
+    // Two accounts finish authorization during creation. The saved sync must not guess which to use.
+    firstStatusEmpty = true;
+    const waiting = await dashboard.create(input);
+    expect(waiting.authorizeService).toBe('github');
+    const resource = { ...owner, id: waiting.id };
+    expect(engine.api.installation(resource)).toMatchObject({ enabled: false });
+    expect(engine.api.installation(resource).connection).toBeUndefined();
+    await dashboard.connectWaiting({ ...owner, connection: { id: 'work', service: 'github' } });
+    expect(engine.api.installation(resource)).toMatchObject({
+      enabled: true,
+      connection: { id: 'work', service: 'github' },
+    });
   } finally {
     await engine.close();
     await rm(directory, { recursive: true, force: true });

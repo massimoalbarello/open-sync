@@ -1,4 +1,4 @@
-import type { DestinationType } from '@context-use/open-sync/delivery';
+import type { Delivery } from '@context-use/open-sync/delivery';
 import type { ReceiverRepository, ReceiverScope } from '#backend/repositories/receiver/contract.ts';
 
 export class ReceiverService {
@@ -12,7 +12,7 @@ export class ReceiverService {
   records(input: ReceiverScope & { sourceId?: string; offset: number }) {
     return this.repository.records(input);
   }
-  accept(input: Parameters<DestinationType['deliver']>[0]) {
-    return this.repository.accept({ ...input.scope, delivery: input.delivery });
+  accept(input: ReceiverScope & { delivery: Delivery }) {
+    return this.repository.accept(input);
   }
 }

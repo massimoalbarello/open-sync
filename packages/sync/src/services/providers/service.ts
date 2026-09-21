@@ -12,7 +12,7 @@ import type { ProviderRepository } from '../../repositories/providers/contract';
 
 export class ProviderService {
   private providerCatalog?: Promise<ProviderCatalog>;
-  private readonly clientRegistrations = new Map<string, Promise<void>>();
+  private readonly clientConfigurations = new Map<string, Promise<void>>();
   constructor(
     private readonly input: {
       repository: ProviderRepository;
@@ -129,46 +129,66 @@ export class ProviderService {
     if (!(await this.input.canConfigure(input))) {
       fail('forbidden');
     }
-    // An explicit manual configuration wins over an automatic registration already in progress.
-    await this.clientRegistrations.get(input.service)?.catch(() => undefined);
-    const setup = await this.setup(input.service);
-    const auth = setup.auth.find((method) => method.type === 'oauth2');
-    if (!auth) {
-      throw new SyncError({
-        code: 'provider_request_failed',
-        message: 'This provider does not support OAuth.',
-      });
-    }
-    await this.input.connector.call({
-      path: `/api/oauth/configs/${encodeURIComponent(input.service)}`,
-      method: 'PUT',
-      body: oauthClientValues({ auth, values: input.values }),
+    await this.configureClient({
+      service: input.service,
+      configure: async () => {
+        const setup = await this.setup(input.service);
+        const auth = setup.auth.find((method) => method.type === 'oauth2');
+        if (!auth) {
+          throw new SyncError({
+            code: 'provider_request_failed',
+            message: 'This provider does not support OAuth.',
+          });
+        }
+        await this.input.connector.call({
+          path: `/api/oauth/configs/${encodeURIComponent(input.service)}`,
+          method: 'PUT',
+          body: oauthClientValues({ auth, values: input.values }),
+        });
+      },
     });
     return { configured: true };
   }
+  private async configureClient(input: { service: string; configure: () => Promise<void> }) {
+    const { service, configure } = input;
+    const pending = (this.clientConfigurations.get(service) ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(configure);
+    this.clientConfigurations.set(service, pending);
+    try {
+      await pending;
+    } finally {
+      if (this.clientConfigurations.get(service) === pending) {
+        this.clientConfigurations.delete(service);
+      }
+    }
+  }
   private async ensureClient(input: ProviderScope & { service: string }) {
     const register = this.registration(input.service);
-    if (!register || (await this.setup(input.service)).oauthClient?.configured) {
+    if (!register) {
       return;
     }
-    if (!(await this.input.canConfigure(input))) {
-      fail('forbidden');
-    }
-    let pending = this.clientRegistrations.get(input.service);
-    if (!pending) {
-      pending = this.registerClient({ service: input.service, register }).finally(() => {
-        this.clientRegistrations.delete(input.service);
-      });
-      this.clientRegistrations.set(input.service, pending);
-    }
-    await pending;
+    await this.configureClient({
+      service: input.service,
+      configure: async () => {
+        const setup = await this.setup(input.service);
+        if (setup.oauthClient?.configured) {
+          return;
+        }
+        if (!(await this.input.canConfigure(input))) {
+          fail('forbidden');
+        }
+        await this.registerClient({ service: input.service, register, setup });
+      },
+    });
   }
 
-  private async registerClient(input: { service: string; register: OAuthClientRegistration }) {
-    const setup = await this.setup(input.service);
-    if (setup.oauthClient?.configured) {
-      return;
-    }
+  private async registerClient(input: {
+    service: string;
+    register: OAuthClientRegistration;
+    setup: RuntimeProviderSetup;
+  }) {
+    const { setup } = input;
     const auth = setup.auth.find((method) => method.type === 'oauth2');
     if (!auth || !setup.oauthClient) {
       fail('provider_request_failed');

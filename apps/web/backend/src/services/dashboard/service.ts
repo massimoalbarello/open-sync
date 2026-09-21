@@ -27,14 +27,15 @@ export class DashboardService {
     if (!definition || !type) {
       throw new BadRequestError('Select an available source and destination.');
     }
-    const connection = definition.provider
+    const selection = definition.provider
       ? await this.selectAccount({
           ...scope,
           service: definition.provider.service,
           connectionId: input.connectionId,
         })
-      : undefined;
-    if (input.connectionId && !connection) {
+      : { connection: undefined, ambiguous: false };
+    const { connection } = selection;
+    if (selection.ambiguous || (input.connectionId && !connection)) {
       throw new BadRequestError('Select a connected account for this source.');
     }
     const destination = await this.sync.api.setupDestination({
@@ -53,18 +54,16 @@ export class DashboardService {
     });
     // Authorization may finish in another tab between the status check and persistence.
     if (definition.provider && !installation.connection) {
-      const latest = await this.sync.providers.status({
+      const latest = await this.selectAccount({
         ...scope,
         service: definition.provider.service,
       });
-      const active = latest.connections.find(
-        (entry) => entry.status === 'active' && entry.authType === 'oauth2',
-      );
-      if (active) {
+      // Multiple newly connected accounts require an explicit authorization choice.
+      if (latest.connection) {
         installation = await this.connect({
           ...scope,
           id: installation.id,
-          connection: { id: active.id, service: definition.provider.service },
+          connection: latest.connection,
         });
       }
     }
@@ -77,19 +76,16 @@ export class DashboardService {
   private async selectAccount(input: Scope & { service: string; connectionId?: string }) {
     const status = await this.sync.providers.status(input);
     const accounts = status.connections.filter(
-      (entry) => entry.status === 'active' && entry.authType === 'oauth2',
+      (entry) =>
+        entry.status === 'active' &&
+        entry.authType === 'oauth2' &&
+        (!input.connectionId || entry.id === input.connectionId),
     );
-    if (input.connectionId) {
-      const account = accounts.find((entry) => entry.id === input.connectionId);
-      if (!account) {
-        throw new BadRequestError('Select a connected account for this source.');
-      }
-      return { id: account.id, service: input.service };
-    }
-    if (accounts.length > 1) {
-      throw new BadRequestError('Select a connected account for this source.');
-    }
-    return accounts[0] ? { id: accounts[0].id, service: input.service } : undefined;
+    const account = accounts.length === 1 ? accounts[0] : undefined;
+    return {
+      connection: account ? { id: account.id, service: input.service } : undefined,
+      ambiguous: accounts.length > 1,
+    };
   }
 
   async connectWaiting(input: Scope & { connection: { id: string; service: string } }) {

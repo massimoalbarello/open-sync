@@ -1,12 +1,34 @@
-import { type Schema, Validator } from '@cfworker/json-schema';
+import { dereference, type Schema, Validator, validate } from '@cfworker/json-schema';
 import type { JsonObject, JsonValue } from '@context-use/open-sync/json';
 
 export function setupFields(schema: Schema) {
-  return Object.entries(schema.properties ?? {}).map(([name, property]) => ({
+  const root = structuredClone(schema);
+  const lookup = dereference(root);
+  return Object.entries(root.properties ?? {}).map(([name, property]) => ({
     name,
-    schema: typeof property === 'boolean' ? {} : property,
-    required: schema.required?.includes(name) ?? false,
+    schema: fieldPresentation({ schema: property, lookup }),
+    required: root.required?.includes(name) ?? false,
+    validate: (value: JsonValue) => validate(value, property, '2020-12', lookup, false).valid,
   }));
+}
+
+function fieldPresentation(input: {
+  schema: Schema | boolean;
+  lookup: ReturnType<typeof dereference>;
+}): Schema {
+  let current = input.schema;
+  const visited = new Set<Schema>();
+  let result: Schema = {};
+  while (typeof current !== 'boolean' && !visited.has(current)) {
+    visited.add(current);
+    result = { ...current, ...result };
+    const reference = current.__absolute_ref__;
+    if (!reference || input.lookup[reference] === undefined) {
+      break;
+    }
+    current = input.lookup[reference]!;
+  }
+  return result;
 }
 export type SetupField = ReturnType<typeof setupFields>[number];
 
@@ -36,9 +58,7 @@ export function fieldError(input: { field: SetupField; value: string }) {
   }
   try {
     const value = parseValue({ schema: input.field.schema, value: input.value });
-    if (
-      new Validator(structuredClone(input.field.schema), '2020-12', false).validate(value).valid
-    ) {
+    if (input.field.validate(value)) {
       return undefined;
     }
   } catch {

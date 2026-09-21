@@ -13,7 +13,10 @@ import { ProviderService } from '../src/services/providers/service';
 const alice = { actorId: 'alice', ownerId: 'alice', service: 'granola' };
 const bob = { actorId: 'bob', ownerId: 'bob', service: 'granola' };
 
-async function fixture(register: OAuthClientRegistration) {
+async function fixture(input: {
+  register: OAuthClientRegistration;
+  beforeRequest?: (request: Request) => Promise<void>;
+}) {
   const dir = await mkdtemp(join(tmpdir(), 'provider-registration-'));
   const key = await loadProviderKey(dir);
   const db = openProviderDatabase(join(dir, 'providers.db'));
@@ -34,11 +37,14 @@ async function fixture(register: OAuthClientRegistration) {
         ...options,
         baseUrl: options.publicOrigin,
         signal: controller.signal,
-        fetch: (request) => connector.fetch(request),
+        fetch: async (request) => {
+          await input.beforeRequest?.(request);
+          return connector.fetch(request);
+        },
       }),
       returnUrl: ({ service, id }) => `http://host/api/providers/${service}/return/${id}`,
       canConfigure: (scope) => Promise.resolve(scope.actorId === 'alice'),
-      registrations: { granola: register },
+      registrations: { granola: input.register },
       signal: controller.signal,
     });
   let service = createService();
@@ -64,12 +70,14 @@ test('registration requires configuration permission, coalesces starts, and reus
   const entered = Promise.withResolvers<void>();
   const registered = Promise.withResolvers<{ clientId: string }>();
   let registrations = 0;
-  const f = await fixture(async (input) => {
-    registrations++;
-    expect(input.redirectUri).toBe('http://host/connector/oauth/callback');
-    expect(input.scopes).toContain('offline_access');
-    entered.resolve();
-    return await registered.promise;
+  const f = await fixture({
+    register: async (input) => {
+      registrations++;
+      expect(input.redirectUri).toBe('http://host/connector/oauth/callback');
+      expect(input.scopes).toContain('offline_access');
+      entered.resolve();
+      return await registered.promise;
+    },
   });
   try {
     expect((await f.service.status(alice)).setup.oauthClient).toMatchObject({
@@ -106,11 +114,13 @@ test('registration requires configuration permission, coalesces starts, and reus
 
 test('failed registrations expose no upstream details and can retry without replacing an explicit client configuration', async () => {
   let registrations = 0;
-  const f = await fixture(() => {
-    registrations++;
-    return registrations === 1
-      ? Promise.reject(new Error('upstream-secret'))
-      : Promise.resolve({ clientId: 'registered-client' });
+  const f = await fixture({
+    register: () => {
+      registrations++;
+      return registrations === 1
+        ? Promise.reject(new Error('upstream-secret'))
+        : Promise.resolve({ clientId: 'registered-client' });
+    },
   });
   try {
     await expect(f.service.start(alice)).rejects.toMatchObject({
@@ -134,9 +144,11 @@ test('failed registrations expose no upstream details and can retry without repl
 test('explicit configuration waits for an in-flight registration and takes precedence', async () => {
   const entered = Promise.withResolvers<void>();
   const registered = Promise.withResolvers<{ clientId: string }>();
-  const f = await fixture(() => {
-    entered.resolve();
-    return registered.promise;
+  const f = await fixture({
+    register: () => {
+      entered.resolve();
+      return registered.promise;
+    },
   });
   try {
     const start = f.service.start(alice);
@@ -148,6 +160,50 @@ test('explicit configuration waits for an in-flight registration and takes prece
       new URL((await f.service.start(alice)).authorizationUrl).searchParams.get('client_id'),
     ).toBe('manual-client');
   } finally {
+    await f.close();
+  }
+});
+
+test('registration queued during manual setup reuses the manually configured client', async () => {
+  const entered = Promise.withResolvers<void>();
+  const proceed = Promise.withResolvers<void>();
+  const registered = Promise.withResolvers<{ clientId: string }>();
+  let registrations = 0;
+  let firstSetup = true;
+  const f = await fixture({
+    register: () => {
+      registrations++;
+      return registered.promise;
+    },
+    beforeRequest: async (request) => {
+      if (firstSetup && new URL(request.url).pathname.endsWith('/providers/granola/setup')) {
+        firstSetup = false;
+        entered.resolve();
+        await proceed.promise;
+      }
+    },
+  });
+  try {
+    const configured = f.service.configure({ ...alice, values: { clientId: 'manual-client' } });
+    await entered.promise;
+    const start = f.service.start(alice);
+    // Let another Connector request complete while manual configuration is still suspended.
+    await f.service.status(alice);
+    proceed.resolve();
+    await configured;
+    registered.resolve({ clientId: 'registered-client' });
+    const authorization = await start;
+    expect(new URL(authorization.authorizationUrl).searchParams.get('client_id')).toBe(
+      'manual-client',
+    );
+    expect(registrations).toBe(0);
+    await f.restart();
+    expect(
+      new URL((await f.service.start(bob)).authorizationUrl).searchParams.get('client_id'),
+    ).toBe('manual-client');
+  } finally {
+    proceed.resolve();
+    registered.resolve({ clientId: 'registered-client' });
     await f.close();
   }
 });

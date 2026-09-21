@@ -1,8 +1,9 @@
-import type { DestinationType } from '@context-use/open-sync/delivery';
+import type { Scope } from '@context-use/open-sync';
+import type { Delivery, DestinationType } from '@context-use/open-sync/delivery';
 
 /** The host owns its database and persists the entire delivery atomically before accepting it. */
 export function localDestination(input: {
-  accept(delivery: Parameters<DestinationType['deliver']>[0]): Promise<boolean>;
+  accept(input: Scope & { delivery: Delivery }): Promise<boolean>;
 }): DestinationType {
   return {
     name: 'Local SQLite',
@@ -11,7 +12,7 @@ export function localDestination(input: {
     configSchema: { type: 'object', additionalProperties: false },
     async deliver(delivery) {
       delivery.signal.throwIfAborted();
-      return (await input.accept(delivery))
+      return (await input.accept({ ...delivery.scope, delivery: delivery.delivery }))
         ? { status: 'accepted' }
         : { status: 'retry', retryAfterMs: 1000, code: 'receiver_paused' };
     },

@@ -8,6 +8,7 @@ import { SectionPage } from '../../components/section-page';
 import { catalogOptions, createSync, type loadCatalog } from '../../queries/catalog';
 import { providerSetupOptions } from '../../queries/providers';
 import { syncKeys } from '../../queries/sync';
+import { accountLabel } from './-syncs/account-label';
 import { SetupInput } from './-syncs/setup-input';
 import { fieldError, setupError, setupFields, setupInput } from './-syncs/setup-schema';
 
@@ -302,9 +303,9 @@ function AccountSelection(input: {
       </div>
     );
   }
-  const accounts = query.data.connections.filter(
-    (entry) => entry.status === 'active' && entry.authType === 'oauth2',
-  );
+  const accounts = query.data.connections
+    .filter((entry) => entry.status === 'active' && entry.authType === 'oauth2')
+    .map((entry) => ({ ...entry, service: input.service }));
   if (accounts.length < 2) {
     return accounts[0] ? (
       <p className="text-muted-foreground text-sm">Account: {accounts[0].account}</p>
@@ -319,7 +320,13 @@ function AccountSelection(input: {
         id="sync-account"
         value={input.value}
         onValueChange={input.onChange}
-        options={accounts.map((entry) => ({ value: entry.id, label: entry.account }))}
+        options={accounts.map((entry) => ({
+          value: entry.id,
+          label: accountLabel({
+            id: entry.id,
+            connections: accounts,
+          }),
+        }))}
       />
     </div>
   );

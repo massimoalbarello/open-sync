@@ -27,23 +27,74 @@ export async function providerSetupJourney(input: {
     fullPage: true,
     animations: 'disabled',
   });
-  await page.getByRole('link', { name: 'Syncs', exact: true }).click();
-  await page.getByRole('link', { name: 'Create sync', exact: true }).click();
-  await page.getByLabel('Source', { exact: true }).click();
-  await page.getByRole('option', { name: 'Gmail threads', exact: true }).click();
-  await page.getByLabel('Account', { exact: true }).waitFor();
-  await page.getByRole('button', { name: 'Create sync', exact: true }).click();
-  await page
-    .getByRole('alert')
-    .filter({ hasText: 'Select a connected account for this source.' })
-    .waitFor();
-  await page.getByLabel('Account', { exact: true }).click();
-  await page.getByRole('option', { name: 'work@example.com', exact: true }).click();
-  await page.screenshot({
-    path: 'artifacts/sync-account-selection.png',
-    fullPage: true,
-    animations: 'disabled',
+  const accountStatus = await (
+    await page.request.get(`${origin}/api/open-sync/providers/gmail`)
+  ).json();
+  const work = accountStatus.connections.find(
+    (entry: { account: string }) => entry.account === 'work@example.com',
+  );
+  const disambiguatorLength = 8;
+  const providerPattern = '**/api/open-sync/providers/gmail';
+  await page.route(providerPattern, async (route) => {
+    const response = await route.fetch();
+    const status = await response.json();
+    await route.fulfill({
+      response,
+      json: {
+        ...status,
+        connections: status.connections.map((entry: { account: string }) => ({
+          ...entry,
+          account: 'Shared display name',
+        })),
+      },
+    });
   });
+  try {
+    await page.goto(`${origin}/syncs/new?source=gmail.threads`);
+    await page.getByLabel('Account', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Create sync', exact: true }).click();
+    await page
+      .getByRole('alert')
+      .filter({ hasText: 'Select a connected account for this source.' })
+      .waitFor();
+    await page.getByLabel('Account', { exact: true }).click();
+    await page.getByRole('option').first().waitFor();
+    const labels = await page.getByRole('option').allTextContents();
+    assert.equal(labels.length, 2);
+    assert.equal(new Set(labels).size, 2);
+    await page
+      .getByRole('option', {
+        name: `Shared display name · ${work.id.slice(-disambiguatorLength)}`,
+        exact: true,
+      })
+      .click();
+    await page.getByLabel('Account', { exact: true }).click();
+    await page.getByRole('option').first().waitFor();
+    await page.screenshot({
+      path: 'artifacts/sync-account-collisions.png',
+      fullPage: true,
+      animations: 'disabled',
+    });
+    await page.keyboard.press('Escape');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByLabel('Account', { exact: true }).click();
+    await page.getByRole('option').first().waitFor();
+    assert.ok(await page.evaluate('document.documentElement.scrollWidth <= window.innerWidth'));
+    await page.screenshot({
+      path: 'artifacts/sync-account-collisions-mobile.png',
+      fullPage: true,
+      animations: 'disabled',
+    });
+    await page
+      .getByRole('option', {
+        name: `Shared display name · ${work.id.slice(-disambiguatorLength)}`,
+        exact: true,
+      })
+      .click();
+    await page.setViewportSize({ width: 1280, height: 720 });
+  } finally {
+    await page.unroute(providerPattern);
+  }
   await page.getByRole('button', { name: 'Create sync', exact: true }).click();
   await page.waitForURL(/\/syncs\/sync_/);
   const id = new URL(page.url()).pathname.split('/').at(-1)!;
