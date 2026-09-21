@@ -1,5 +1,6 @@
 // Provider HTTP boundaries only: authentication, OAuth state, MCP and storage stay real.
 let granolaRegistrationAttempts = 0;
+let slackReplyAttempts = 0;
 export async function exampleProviderResponse(request: Request): Promise<Response | undefined> {
   const url = new URL(request.url);
   if (url.hostname === 'oauth2.googleapis.com') {
@@ -106,6 +107,20 @@ function slackResponse(url: URL) {
       },
       team: { id: 'T1', name: 'Example' },
     });
+  }
+  if (url.pathname === '/api/conversations.replies' && url.searchParams.has('cursor')) {
+    const injectedFailures = 2;
+    const rateLimited = 429;
+    const unavailable = 503;
+    if (++slackReplyAttempts <= injectedFailures) {
+      return Response.json(
+        { ok: false, error: 'private-upstream-detail' },
+        {
+          status: slackReplyAttempts === 1 ? rateLimited : unavailable,
+          headers: { 'retry-after': '60' },
+        },
+      );
+    }
   }
   const body = (() => {
     switch (url.pathname) {

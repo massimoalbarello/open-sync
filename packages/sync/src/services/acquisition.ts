@@ -1,7 +1,7 @@
 import type { Logger } from '../execution/diagnostics';
 import { bindProvider, type ProviderGateway } from '../execution/provider';
 import { SyncError } from '../models/error';
-import type { Timing } from '../models/limits';
+import { retryDelay, type Timing } from '../models/limits';
 import type { Registry } from '../models/registry';
 import type { AcquisitionRepository, RunLease } from '../repositories/acquisition/contract';
 
@@ -19,8 +19,8 @@ export class AcquisitionService {
     return this.input.repository.claim(this.input.timing.leaseMs);
   }
   async execute(input: { lease: RunLease; signal: AbortSignal }): Promise<void> {
-    const { repository, timing, log } = this.input;
-    const { lease, signal } = input;
+    const { repository, timing } = this.input;
+    const { lease } = input;
     try {
       if (!repository.hasCapacity()) {
         this.finish({ lease, state: 'waiting_for_capacity', delay: timing.retryMs });
@@ -28,14 +28,34 @@ export class AcquisitionService {
       }
       await this.consume(input);
     } catch (error) {
-      const code = signal.aborted
-        ? abortCode(signal)
-        : error instanceof SyncError
-          ? error.code
-          : 'execution_failed';
-      log({ code, ownerId: lease.ownerId, installationId: lease.installation.id });
-      this.finish({ lease, state: code, delay: timing.retryMs });
+      this.failed({ ...input, error });
     }
+  }
+  private failed(input: { lease: RunLease; signal: AbortSignal; error: unknown }): void {
+    const { timing, log } = this.input;
+    const { lease, signal, error } = input;
+    const code = signal.aborted
+      ? abortCode(signal)
+      : error instanceof SyncError
+        ? error.code
+        : 'execution_failed';
+    const failed = !['paused', 'interrupted', 'waiting_for_capacity'].includes(code);
+    const failureCount = failed ? lease.failureCount + 1 : lease.failureCount;
+    const cooldown = error instanceof SyncError ? error.retryAfterMs : undefined;
+    const delay = failed
+      ? Math.max(retryDelay({ attempt: failureCount, retryMs: timing.retryMs }), cooldown ?? 0)
+      : timing.retryMs;
+    log({
+      code,
+      ownerId: lease.ownerId,
+      installationId: lease.installation.id,
+      fields: {
+        ...(error instanceof SyncError ? error.diagnostics : {}),
+        failureCount,
+        retryAfterMs: delay,
+      },
+    });
+    this.finish({ lease, state: code, delay, failureCount });
   }
   private async consume(input: { lease: RunLease; signal: AbortSignal }): Promise<void> {
     const { repository, registry, timing } = this.input;
@@ -80,7 +100,7 @@ export class AcquisitionService {
         return;
       }
       if (pages >= timing.maxPages || performance.now() >= yieldAt) {
-        this.finish({ lease, state: 'yielded', delay: 0 });
+        this.finish({ lease, state: 'yielded', delay: 0, failureCount: 0 });
         return;
       }
     }
@@ -89,7 +109,12 @@ export class AcquisitionService {
       message: 'Definition ended without a complete page.',
     });
   }
-  private finish(input: { lease: RunLease; state: string; delay: number }): void {
+  private finish(input: {
+    lease: RunLease;
+    state: string;
+    delay: number;
+    failureCount?: number;
+  }): void {
     try {
       this.input.repository.finish(input);
     } catch (error) {

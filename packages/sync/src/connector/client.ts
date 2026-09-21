@@ -2,10 +2,13 @@ import type { ProviderGateway } from '../execution/provider';
 import type { ConnectionRef, ProviderOperations, ProviderRequirements } from '../models/definition';
 import { fail } from '../models/error';
 import type { Scope } from '../models/identity';
-import { canonicalJson, type JsonObject, type JsonValue } from '../models/json';
-import { providerResponse } from './response';
+import type { JsonObject, JsonValue } from '../models/json';
+import { connectorFailure } from './failure';
+import { connectorData, providerResponse } from './response';
 
 interface RequestInput {
+  service: string;
+  operation: string;
   path: string;
   admin?: boolean;
   body?: JsonObject;
@@ -39,20 +42,20 @@ export function createConnectorClient(options: ConnectorClientOptions): Provider
     if (input.body) {
       headers.set('content-type', 'application/json');
     }
-    const response = await options.fetch(
-      new Request(`${base}${input.path}`, {
-        method: input.body ? 'POST' : 'GET',
-        headers,
-        signal: input.signal,
-        body: input.body ? JSON.stringify(input.body) : undefined,
-      }),
-    );
-    const result = (await response.json()) as { success?: boolean; data?: JsonValue };
-    if (!response.ok || result.success !== true || result.data === undefined) {
-      fail('connector_request_failed');
-    }
-    input.signal.throwIfAborted();
-    return canonicalJson(result.data).value;
+    const response = await options
+      .fetch(
+        new Request(`${base}${input.path}`, {
+          method: input.body ? 'POST' : 'GET',
+          headers,
+          signal: input.signal,
+          body: input.body ? JSON.stringify(input.body) : undefined,
+        }),
+      )
+      .catch(() => {
+        input.signal.throwIfAborted();
+        throw connectorFailure({ ...input, kind: 'transport' });
+      });
+    return connectorData({ ...input, response });
   }
   return {
     async bind(input) {
@@ -69,6 +72,8 @@ export function createConnectorClient(options: ConnectorClientOptions): Provider
         fail('connection_mismatch');
       }
       const metadata = (await request({
+        service: input.connection.service,
+        operation: 'connection.read',
         path: `/v1/connections/by-id/${encodeURIComponent(input.connection.id)}`,
         admin: true,
         signal: input.signal,
@@ -112,11 +117,18 @@ function operations(input: {
         fail('operation_denied');
       }
       const path = `/v1/actions/${encodeURIComponent(operation.id)}`;
-      const metadata = (await request({ path, signal })) as JsonObject;
+      const diagnostics = { service: requirements.service, operation: operation.id };
+      const metadata = (await request({ ...diagnostics, path, signal })) as JsonObject;
       if (metadata.service !== requirements.service) {
         fail('operation_denied');
       }
-      return await request({ path, body: { input: operation.input }, alias, signal });
+      return await request({
+        ...diagnostics,
+        path,
+        body: { input: operation.input },
+        alias,
+        signal,
+      });
     },
     get(operation) {
       const { path } = operation;
@@ -129,6 +141,8 @@ function operations(input: {
         fail('operation_denied');
       }
       return request({
+        service: requirements.service,
+        operation: path,
         path: `/v1/proxy/${encodeURIComponent(requirements.service)}`,
         body: { endpoint: path, method: 'GET', query: operation.query ?? {} },
         alias,
@@ -146,6 +160,8 @@ function operations(input: {
         fail('operation_denied');
       }
       return request({
+        service: requirements.service,
+        operation: path,
         path: `/v1/proxy/${encodeURIComponent(requirements.service)}`,
         body: { endpoint: path, method: 'POST', body: operation.body },
         alias,

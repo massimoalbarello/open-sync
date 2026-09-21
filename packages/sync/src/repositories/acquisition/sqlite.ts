@@ -52,12 +52,18 @@ export class SqliteAcquisition implements AcquisitionRepository {
         input.lease.id,
       );
       if (page.complete) {
-        finishRun({ db, lease: input.lease, state: 'succeeded', delay: installation.intervalMs });
+        finishRun({
+          db,
+          lease: input.lease,
+          state: 'succeeded',
+          delay: installation.intervalMs,
+          failureCount: 0,
+        });
       }
     }).immediate();
     input.lease.checkpointRevision++;
   }
-  finish(input: { lease: RunLease; state: string; delay: number }): void {
+  finish(input: { lease: RunLease; state: string; delay: number; failureCount?: number }): void {
     this.input.db
       .transaction(() => {
         assertRun({ db: this.input.db, lease: input.lease });

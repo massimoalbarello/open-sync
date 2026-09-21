@@ -2,7 +2,7 @@ import { Database } from 'bun:sqlite';
 import { SyncError } from '../models/error';
 import schema from './schema.sql' with { type: 'text' };
 
-const schemaVersion = 3;
+const schemaVersion = 4;
 
 export function openDatabase(path: string): Database {
   const db = new Database(path, { create: true, strict: true });
