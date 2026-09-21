@@ -1,52 +1,12 @@
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 import { openDatabase } from '../src/db/client';
-import { alpha, fixture, page, repositories, storage } from './support';
+import { repositories, storage } from './support';
 
+const previousSchemaVersion = 3;
 const futureSchemaVersion = 5;
 
-test('version 3 upgrades atomically without changing checkpoints, history or queued deliveries', () => {
-  const f = repositories();
-  try {
-    const leaseMs = 60_000;
-    const lease = f.acquisition.claim(leaseMs)!;
-    f.acquisition.commit({ lease, page, definition: fixture.definition });
-    f.acquisition.finish({ lease, state: 'connector_request_failed', delay: leaseMs });
-    // Recreate the exact previous installation shape with populated related tables.
-    f.db.exec('ALTER TABLE installations DROP COLUMN failure_count; PRAGMA user_version=3');
-    const saved = f.catalog.installation({ ...alpha, id: f.installation.id });
-    const tables = ['definitions', 'destinations', 'polls', 'runs', 'records', 'deliveries'];
-    const rows = tables.map((table) => f.db.query(`SELECT * FROM ${table}`).all());
-    const upgraded = openDatabase(f.files.path);
-    upgraded.close();
-    expect(f.catalog.installation({ ...alpha, id: f.installation.id })).toEqual(saved);
-    expect(tables.map((table) => f.db.query(`SELECT * FROM ${table}`).all())).toEqual(rows);
-    expect(f.db.query('SELECT failure_count FROM installations').get()).toEqual({
-      failure_count: 0,
-    });
-    expect(f.db.query('PRAGMA user_version').get()).toEqual({ user_version: 4 });
-    openDatabase(f.files.path).close();
-  } finally {
-    f.close();
-  }
-});
-
-test('a failed version 3 upgrade rolls back its schema version and preserves data', () => {
-  const files = storage();
-  const db = new Database(files.path);
-  try {
-    db.exec('PRAGMA user_version=3; CREATE TABLE preserved (value TEXT)');
-    db.query('INSERT INTO preserved VALUES (?)').run('keep');
-    expect(() => openDatabase(files.path)).toThrow();
-    expect(db.query('PRAGMA user_version').get()).toEqual({ user_version: 3 });
-    expect(db.query('SELECT * FROM preserved').all()).toEqual([{ value: 'keep' }]);
-  } finally {
-    db.close();
-    files.close();
-  }
-});
-
-test.each([1, 2, futureSchemaVersion])(
+test.each([1, 2, previousSchemaVersion, futureSchemaVersion])(
   'schema version %i is rejected without upgrading or deleting data',
   (version) => {
     const files = storage();

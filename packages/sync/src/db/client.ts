@@ -2,7 +2,6 @@ import { Database } from 'bun:sqlite';
 import { SyncError } from '../models/error';
 import schema from './schema.sql' with { type: 'text' };
 
-const previousSchemaVersion = 3;
 const schemaVersion = 4;
 
 export function openDatabase(path: string): Database {
@@ -15,9 +14,6 @@ export function openDatabase(path: string): Database {
         .get()!;
       if (version === 0) {
         db.exec(schema);
-        db.exec(`PRAGMA user_version=${schemaVersion}`);
-      } else if (version === previousSchemaVersion) {
-        db.exec('ALTER TABLE installations ADD COLUMN failure_count INTEGER NOT NULL DEFAULT 0');
         db.exec(`PRAGMA user_version=${schemaVersion}`);
       } else if (version !== schemaVersion) {
         throw new SyncError({
