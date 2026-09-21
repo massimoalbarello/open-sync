@@ -14,5 +14,11 @@ export interface AcquisitionRepository {
   claim(leaseMs: number): RunLease | undefined;
   hasCapacity(): boolean;
   commit(input: { lease: RunLease; page: SyncPage; definition: SyncDefinition }): void;
-  finish(input: { lease: RunLease; state: string; delay: number; failureCount?: number }): void;
+  finish(input: {
+    lease: RunLease;
+    state: string;
+    delay: number;
+    failureCount?: number;
+    pause?: boolean;
+  }): void;
 }

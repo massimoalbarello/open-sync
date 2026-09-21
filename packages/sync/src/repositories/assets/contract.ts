@@ -22,6 +22,8 @@ export interface AssetRepository {
     code: string;
     terminal: boolean;
   }): void;
+  /** Keep the asset pending without counting the latest capture against its retry limit. */
+  captureDeferred(input: { lease: RunLease; asset: AssetMetadata; code: string }): void;
   availableBytes(): number;
   garbage(): { remove: string[]; retain: string[] } | undefined;
   read(input: { lease: DeliveryLease; asset: AssetRef }): CapturedAsset;

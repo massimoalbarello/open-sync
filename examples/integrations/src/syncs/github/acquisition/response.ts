@@ -1,6 +1,7 @@
 import type { SyncContext } from '@context-use/open-sync/definition';
 import type { JsonObject } from '@context-use/open-sync/json';
 import { z } from 'zod';
+import { checkResponse } from '../http';
 
 export class ExpiredCursor extends Error {}
 const objectSchema = z.record(z.string(), z.unknown());
@@ -16,10 +17,7 @@ export async function request(input: {
     path: '/graphql',
     body: { query: input.query, variables: input.variables ?? {} },
   });
-  const ok = 200;
-  if (response.status !== ok) {
-    throw new Error('GitHub request failed.');
-  }
+  checkResponse(response);
   const body = object(response.body);
   if (
     Array.isArray(body.errors) &&

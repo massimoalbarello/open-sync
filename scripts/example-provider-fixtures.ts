@@ -50,6 +50,11 @@ function gmailResponse(request: Request) {
   if (url.pathname.endsWith('/messages/email-1/attachments/fixture-attachment')) {
     return Response.json({ data: Buffer.from('external attachment').toString('base64url') });
   }
+  if (url.pathname.endsWith('/messages/email-1/attachments/oversized-attachment')) {
+    // Exercise the published Connector proxy's 20 MiB response guard without allocating the payload.
+    const responseBytes = 22_020_096;
+    return Response.json({ data: '' }, { headers: { 'content-length': String(responseBytes) } });
+  }
   if (url.pathname.endsWith('/threads')) {
     const query = url.searchParams.get('q') ?? '';
     const oldest = Number(query.match(/after:(\d+)/)?.[1] ?? 0);
@@ -109,6 +114,12 @@ function gmailMessage(input: { id: string; date: string; text: string }) {
                 mimeType: 'application/octet-stream',
                 body: { attachmentId: 'fixture-attachment' },
               },
+              {
+                partId: '3',
+                filename: 'oversized.bin',
+                mimeType: 'application/octet-stream',
+                body: { attachmentId: 'oversized-attachment' },
+              },
             ]
           : []),
       ],
@@ -135,16 +146,28 @@ function slackResponse(url: URL) {
   }
   if (url.pathname === '/api/conversations.replies' && url.searchParams.has('cursor')) {
     const injectedFailures = 2;
-    const rateLimited = 429;
+    const ok = 200;
     const unavailable = 503;
     if (++slackReplyAttempts <= injectedFailures) {
       return Response.json(
-        { ok: false, error: 'private-upstream-detail' },
         {
-          status: slackReplyAttempts === 1 ? rateLimited : unavailable,
+          ok: false,
+          error: slackReplyAttempts === 1 ? 'ratelimited' : 'private-upstream-detail',
+          detail: 'private-upstream-detail',
+        },
+        {
+          status: slackReplyAttempts === 1 ? ok : unavailable,
           headers: { 'retry-after': '60' },
         },
       );
+    }
+    const permissionFailure = 4;
+    if (slackReplyAttempts === permissionFailure) {
+      return Response.json({
+        ok: false,
+        error: 'missing_scope',
+        detail: 'private-upstream-detail',
+      });
     }
   }
   const body = (() => {

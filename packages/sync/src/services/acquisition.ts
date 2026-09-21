@@ -4,6 +4,7 @@ import type { SourceAssets } from '../models/asset';
 import { SyncError } from '../models/error';
 import { retryDelay, type Timing } from '../models/limits';
 import type { Registry } from '../models/registry';
+import { retryableStatus } from '../models/source-http-error';
 import { identifier } from '../models/validation';
 import type { AcquisitionRepository, RunLease } from '../repositories/acquisition/contract';
 import type { AssetFiles, AssetRepository } from '../repositories/assets/contract';
@@ -47,9 +48,10 @@ export class AcquisitionService {
         : 'execution_failed';
     const failed = !['paused', 'interrupted', 'waiting_for_capacity'].includes(code);
     const failureCount = failed ? lease.failureCount + 1 : lease.failureCount;
-    const cooldown = error instanceof SyncError ? error.retryAfterMs : undefined;
+    const status = error instanceof SyncError ? error.status : undefined;
+    const pause = !signal.aborted && status !== undefined && !retryableStatus(status);
     const delay = failed
-      ? Math.max(retryDelay({ attempt: failureCount, retryMs: timing.retryMs }), cooldown ?? 0)
+      ? retryDelay({ attempt: failureCount, retryMs: timing.retryMs })
       : timing.retryMs;
     log({
       code,
@@ -57,11 +59,12 @@ export class AcquisitionService {
       installationId: lease.installation.id,
       fields: {
         ...(error instanceof SyncError ? error.diagnostics : {}),
+        ...(status === undefined ? {} : { httpStatus: status }),
         failureCount,
-        retryAfterMs: delay,
+        ...(pause ? { paused: true } : { retryAfterMs: delay }),
       },
     });
-    this.finish({ lease, state: code, delay, failureCount });
+    this.finish({ lease, state: code, delay, failureCount, pause });
   }
   private async consume(input: { lease: RunLease; signal: AbortSignal }): Promise<void> {
     const { repository, registry, timing } = this.input;
@@ -114,7 +117,7 @@ export class AcquisitionService {
         return;
       }
       if (pages >= timing.maxPages || performance.now() >= yieldAt) {
-        this.finish({ lease, state: 'yielded', delay: 0, failureCount: 0 });
+        this.finish({ lease, state: 'yielded', delay: 0 });
         return;
       }
     }
@@ -128,6 +131,7 @@ export class AcquisitionService {
     state: string;
     delay: number;
     failureCount?: number;
+    pause?: boolean;
   }): void {
     try {
       this.input.repository.finish(input);
@@ -241,6 +245,20 @@ function captureFailure(input: {
   ) {
     throw error;
   }
+  if (error instanceof SyncError && error.status !== undefined) {
+    const tooLarge = 413;
+    if (error.status === tooLarge) {
+      input.repository.captureFailed({
+        lease: input.lease,
+        asset: input.asset,
+        code: 'asset_too_large',
+        terminal: true,
+      });
+      return;
+    }
+    input.repository.captureDeferred({ lease: input.lease, asset: input.asset, code: error.code });
+    throw error;
+  }
   const code =
     error instanceof SyncError &&
     ['asset_too_large', 'asset_storage_full', 'waiting_for_asset_capacity'].includes(error.code)
@@ -255,7 +273,6 @@ function captureFailure(input: {
       code: 'asset_fetch_failed',
       message: 'Asset fetch failed.',
       diagnostics: error instanceof SyncError ? error.diagnostics : undefined,
-      retryAfterMs: error instanceof SyncError ? error.retryAfterMs : undefined,
     });
   }
 }

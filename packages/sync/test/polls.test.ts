@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test';
+import { expect, spyOn, test } from 'bun:test';
 import { createSyncController } from '../src/http/controller';
 import type { SyncRegistration } from '../src/models/definition';
 import { createSyncRuntime } from '../src/runtime';
@@ -6,6 +6,8 @@ import { accepted, alpha, beta, configure, fixture, page, repositories, storage 
 
 test('a poll spans fair worker slices and restart, counts records, and retains owner isolation', async () => {
   const files = storage();
+  let now = Date.now();
+  const clock = spyOn(Date, 'now').mockImplementation(() => now);
   const options = {
     databasePath: files.path,
     definitions: [fixture],
@@ -16,9 +18,9 @@ test('a poll spans fair worker slices and restart, counts records, and retains o
   try {
     const installation = await configure(engine);
     const resource = { ...alpha, id: installation.id };
-    const creationGapMs = 2;
-    await Bun.sleep(creationGapMs);
+    now++;
     const other = await configure(engine);
+    now++;
     await engine.tick();
     const first = engine.api.polls(resource).polls[0]!;
     expect(first).toMatchObject({
@@ -36,6 +38,7 @@ test('a poll spans fair worker slices and restart, counts records, and retains o
     expect(engine.api.installation({ ...alpha, id: other.id }).checkpoint).toBe(1);
     const remainingSlices = 4;
     for (let i = 0; i < remainingSlices; i++) {
+      now++;
       await engine.tick();
     }
     const completed = engine.api.polls(resource).polls[0]!;
@@ -56,6 +59,7 @@ test('a poll spans fair worker slices and restart, counts records, and retains o
     engine.api.queueRun({ ...resource, backfill: true });
     const recordCount = 3;
     for (let i = 0; i < recordCount; i++) {
+      now++;
       await engine.tick();
     }
     expect(engine.api.polls(resource).polls[0]).toMatchObject({
@@ -74,6 +78,7 @@ test('a poll spans fair worker slices and restart, counts records, and retains o
     expect((await response.json()).polls[0].recordsProcessed).toBe(recordCount);
   } finally {
     await engine.close();
+    clock.mockRestore();
     files.close();
   }
 });

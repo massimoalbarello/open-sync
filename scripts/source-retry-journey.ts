@@ -15,7 +15,7 @@ export async function sourceRetryJourney(input: { page: Page; origin: string; sy
   assert.equal(before.checkpoint.messages.length, 2);
   const first = await (await page.request.get(`${origin}${installationPath}/polls`)).json();
   const firstAttempt = first.polls[0].attempts[0];
-  assert.equal(firstAttempt.state, 'connector_request_failed');
+  assert.equal(firstAttempt.state, 'source_http_429');
   assert.ok(Math.abs(before.nextDueAt - firstAttempt.completedAt - retryMs) < clockToleranceMs);
 
   const secondResponse = await page.waitForResponse(
@@ -25,8 +25,8 @@ export async function sourceRetryJourney(input: { page: Page; origin: string; sy
       }
       const history = await response.json();
       return (
-        history.polls[0]?.attempts.filter(
-          (attempt: { state: string }) => attempt.state === 'connector_request_failed',
+        history.polls[0]?.attempts.filter((attempt: { state: string }) =>
+          ['source_http_429', 'connector_request_failed'].includes(attempt.state),
         ).length === 2
       );
     },
@@ -42,7 +42,24 @@ export async function sourceRetryJourney(input: { page: Page; origin: string; sy
     .getByRole('cell', { name: 'Completed', exact: true })
     .first()
     .waitFor({ timeout: retryTimeoutMs });
+  await page.getByRole('button', { name: 'Run now', exact: true }).click();
+  await page.getByRole('button', { name: 'Resume', exact: true }).waitFor();
+  await page.getByRole('cell', { name: 'Paused', exact: true }).waitFor();
+  const paused = await (await page.request.get(`${origin}${installationPath}`)).json();
+  assert.equal(paused.status, 'source_http_403');
+  assert.equal(paused.enabled, false);
+  assert.equal(paused.checkpoint.replyCursor, 'replies-2');
+  assert.equal(paused.checkpoint.messages.length, 2);
+  assert.equal(await page.getByText('private-upstream-detail', { exact: false }).count(), 0);
+  await page.getByRole('button', { name: 'Resume', exact: true }).click();
+  await page.waitForResponse(async (response) => {
+    if (new URL(response.url()).pathname !== installationPath || !response.ok()) {
+      return false;
+    }
+    return (await response.json()).status === 'succeeded';
+  });
+  await page.getByRole('button', { name: 'Pause', exact: true }).waitFor();
   console.log(
-    'Source retry journey passed: persisted checkpoint, 30s/60s backoff, and recovery after HTTP 429/503.',
+    'Source retry journey passed: engine-owned 30s/60s backoff, HTTP 503 recovery, permission pause and checkpoint-preserving resume.',
   );
 }

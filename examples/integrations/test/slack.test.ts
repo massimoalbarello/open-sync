@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import type { ProviderResponse } from '@context-use/open-sync/definition';
 import type { JsonObject } from '@context-use/open-sync/json';
 import { slackThreads } from '../src/syncs/slack/definition';
-import { fixture, unused } from './fixture';
+import { fixture, owner, unused } from './fixture';
 
 const rootTs = '1750000000.000001';
 const root = { ts: rootTs, text: 'Lunch?', user: 'alice', reply_count: 2 };
@@ -178,10 +178,11 @@ test('Slack backfills historical threads across pages and restarts, preserves pr
     denied = true;
     const saved = f.saved.checkpoint;
     await f.engine.tick();
-    expect(f.saved.status).toBe('execution_failed');
+    expect(f.saved.status).toBe('source_http_403');
+    expect(f.saved.enabled).toBe(false);
     expect(f.saved.checkpoint).toEqual(saved);
     denied = false;
-    f.queue();
+    await f.engine.api.setEnabled({ ...owner, id: f.saved.id, enabled: true });
     await f.engine.tick(); // Expired reply cursor restarts only this thread.
     expect(f.saved.checkpoint).toMatchObject({ replyCursor: null, messages: [] });
     await f.finish();
