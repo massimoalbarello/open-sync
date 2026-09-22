@@ -32,6 +32,8 @@ function receiveAsset(input: {
   id: string;
   scope?: typeof owner;
   sourceId?: string;
+  updatedAt?: string;
+  createdAt?: string;
 }) {
   const bytes = new TextEncoder().encode(input.id);
   return input.receiver.acceptAsset({
@@ -45,6 +47,8 @@ function receiveAsset(input: {
       name: 'same-name.txt',
       mediaType: 'text/plain',
       size: bytes.length,
+      ...(input.updatedAt ? { updatedAt: input.updatedAt } : {}),
+      ...(input.createdAt ? { createdAt: input.createdAt } : {}),
       sha256: new Bun.CryptoHasher('sha256').update(bytes).digest('hex'),
     },
     open: () => Promise.resolve(new Blob([bytes]).stream()),
@@ -90,8 +94,15 @@ function receiveRecord(input: {
 test('assets browse in bounded pages with owner and source isolation and public metadata only', async () => {
   await withReceiver(async ({ receiver }) => {
     const count = 51;
+    const ids: string[] = [];
     for (let index = 0; index < count; index++) {
-      await receiveAsset({ receiver, id: String(index) });
+      const id = await receiveAsset({
+        receiver,
+        id: String(index),
+        updatedAt: index < 2 ? undefined : new Date(index).toISOString(),
+        createdAt: index < 2 ? '2026-01-01T00:00:00.000Z' : undefined,
+      });
+      ids.push(id);
     }
     const foreign = await receiveAsset({ receiver, id: 'foreign', scope: other });
     const anotherSource = await receiveAsset({ receiver, id: 'another', sourceId: 'other-source' });
@@ -102,10 +113,19 @@ test('assets browse in bounded pages with owner and source isolation and public 
     expect(last.assets).toHaveLength(1);
     expect(last.hasMore).toBe(false);
     const all = [...first.assets, ...last.assets];
+    const unknown = ids.slice(0, 2).sort();
+    expect(all.map((asset) => asset.id)).toEqual([...ids.slice(2).reverse(), ...unknown]);
     expect(new Set(all.map((asset) => asset.id)).size).toBe(count);
     expect(all.map((asset) => asset.id)).not.toContain(foreign);
     expect(all.map((asset) => asset.id)).not.toContain(anotherSource);
-    expect(Object.keys(all[0]!).sort()).toEqual(['id', 'mediaType', 'name', 'size', 'sourceId']);
+    expect(Object.keys(all[0]!).sort()).toEqual([
+      'id',
+      'mediaType',
+      'name',
+      'size',
+      'sourceId',
+      'updatedAt',
+    ]);
     expect(
       (await receiver.assets({ ...owner, sourceId: 'other-source', offset: 0 })).assets.map(
         (asset) => asset.id,

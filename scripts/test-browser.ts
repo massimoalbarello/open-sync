@@ -9,6 +9,7 @@ import {
 } from './github-oauth-journey';
 import { startIsolatedApp } from './isolated-app';
 import { ownerRegistrationJourney } from './owner-registration-journey';
+import { receiverTimelineJourney } from './receiver-timeline-journey';
 import { sourceMetadataJourney } from './source-metadata-journey';
 
 const fixtureRecordCount = 100;
@@ -408,6 +409,7 @@ try {
     .waitFor({ timeout: 2 * drainTimeoutMs });
   await exampleSyncsJourney({ page, origin: app.origin });
   await sourceMetadataJourney({ page, origin: app.origin });
+  await receiverTimelineJourney({ page, origin: app.origin });
   console.log(
     'Browser journey passed: paginated catalogs, provider setup, deferred authorization, GitHub syncs, infinite records and queue, responsive layout and real passkeys.',
   );

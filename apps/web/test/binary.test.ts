@@ -46,12 +46,14 @@ test('standalone binary embeds frontend and migrations and preserves state on re
     const secret = await Bun.file(join(dataFolder, '.better-auth-secret')).text();
     const db = new SQL({ adapter: 'sqlite', filename: join(dataFolder, 'app.db') });
     try {
-      const migrations = await db<{ name: string }[]>`select name from __migrations`;
-      expect(migrations.map((migration) => migration.name)).toEqual([
-        '0000_better_auth_schema.sql',
-        '0001_host_schema.sql',
-        '0002_receiver_assets.sql',
-      ]);
+      const expectedMigrations = [
+        ...new Bun.Glob('**/*.sql').scanSync({
+          cwd: join(import.meta.dir, '../backend/src/db/migrations'),
+          onlyFiles: true,
+        }),
+      ].sort();
+      const migrations = await db<{ name: string }[]>`select name from __migrations order by name`;
+      expect(migrations.map((migration) => migration.name)).toEqual(expectedMigrations);
     } finally {
       await db.close();
     }

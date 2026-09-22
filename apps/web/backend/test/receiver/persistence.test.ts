@@ -95,17 +95,45 @@ test('record browsing preserves unrelated JSON schemas, pagination and deletions
       kind: 'measurement',
       id: String(index).padStart(2, '0'),
       data: { temperature: index, coordinates: [1, 2], enabled: true },
+      ...(index === 1
+        ? { createdAt: '2026-09-01T00:00:00.000Z' }
+        : { updatedAt: '2026-01-01T00:00:00.000Z' }),
       revision: 1,
       contentHash: `hash_${index}`,
       eventId: `event_${index}`,
     }));
     await receiver.accept({ ...scope, delivery: { ...delivery, deliverable: { records } } });
+    const updatedAt = '2026-01-02T00:00:00.000Z';
+    const updated = {
+      ...delivery,
+      id: 'updated',
+      deliverable: { records: [{ ...records.at(-1)!, revision: 2, updatedAt }] },
+    };
+    await receiver.accept({ ...scope, delivery: updated });
     const first = await receiver.records({ ...scope, offset: 0 });
     expect(first.hasMore).toBe(true);
-    expect(first.records[0]!.data).toEqual({ temperature: 0, coordinates: [1, 2], enabled: true });
+    expect(first.records[0]!.data).toEqual({ temperature: 50, coordinates: [1, 2], enabled: true });
+    expect(first.records[0]!.updatedAt).toBe(updatedAt);
     const last = await receiver.records({ ...scope, offset: first.pageSize });
     expect(last.records).toHaveLength(1);
     expect(last.hasMore).toBe(false);
+    expect(last.records[0]!.id).toBe('01');
+    expect(last.records[0]).not.toHaveProperty('updatedAt');
+    expect([...first.records, ...last.records].map((record) => record.id)).toEqual([
+      '50',
+      '00',
+      ...records.slice(2, -1).map((record) => record.id),
+      '01',
+    ]);
+    await receiver.accept({ ...scope, delivery: updated });
+    await receiver.accept({
+      ...scope,
+      delivery: { ...delivery, id: 'stale', deliverable: { records: [records.at(-1)!] } },
+    });
+    expect(
+      (await receiver.record({ ...scope, sourceId: 'source_1', kind: 'measurement', id: '50' }))!
+        .updatedAt,
+    ).toBe(updatedAt);
     await receiver.accept({
       ...scope,
       delivery: {
@@ -125,7 +153,7 @@ test('record browsing preserves unrelated JSON schemas, pagination and deletions
         },
       },
     });
-    expect((await receiver.records({ ...scope, offset: 0 })).records[0]!.id).toBe('01');
+    expect((await receiver.records({ ...scope, offset: 0 })).records[0]!.id).toBe('50');
     expect(
       await receiver.record({ ...scope, sourceId: 'source_1', kind: 'measurement', id: '00' }),
     ).toBeUndefined();

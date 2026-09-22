@@ -5,6 +5,7 @@ import { AssetLink } from '../../components/asset-link';
 import { InfiniteScroll } from '../../components/infinite-scroll';
 import { SectionPage } from '../../components/section-page';
 import { SourceTimestamps } from '../../components/source-timestamps';
+import { UpdatedDayList } from '../../components/updated-day-list';
 import { assetsOptions } from '../../queries/assets';
 
 export const Route = createFileRoute('/_workspace/assets/')({
@@ -31,7 +32,8 @@ function Assets() {
       }
     >
       <p className="mb-6 text-muted-foreground text-sm">
-        Files received from your syncs. Select a filename to preview it.
+        Files received from your syncs. Most recently updated first, grouped by your local day.
+        Select a filename to preview it.
       </p>
       {query.isPending && <p>Loading assets…</p>}
       {query.error && (
@@ -54,17 +56,17 @@ function Assets() {
           </Link>
         </p>
       )}
-      <ul aria-label="Received assets" className="divide-y divide-border">
-        {assets.map((asset) => (
-          <li key={asset.id} className="space-y-2 py-4">
+      <UpdatedDayList items={assets} label="Received assets" itemKey={(asset) => asset.id}>
+        {(asset) => (
+          <div className="space-y-2">
             <AssetLink asset={asset} />
             <p className="break-words text-muted-foreground text-sm">
               {asset.mediaType} · {formatSize(asset.size)}
             </p>
-            <SourceTimestamps createdAt={asset.createdAt} updatedAt={asset.updatedAt} />
-          </li>
-        ))}
-      </ul>
+            <SourceTimestamps createdAt={asset.createdAt} />
+          </div>
+        )}
+      </UpdatedDayList>
       <InfiniteScroll
         hasMore={query.hasNextPage}
         fetching={query.isFetching}
