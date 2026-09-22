@@ -218,3 +218,68 @@ test('a step larger than its budget preserves pending assets and resumes after c
     files.close();
   }
 });
+
+test('one destination cannot materialize a body larger than its sync budget', async () => {
+  const files = storage();
+  const syncBytes = 1024;
+  const globalBytes = 4096;
+  let oversizedSource = '';
+  const delivered: string[] = [];
+  const engine = createSyncRuntime({
+    databasePath: files.path,
+    definitions: [fixture],
+    limits: { maxSyncPendingBytes: syncBytes, maxPendingBytes: globalBytes },
+    destinationTypes: {
+      local: {
+        ...accepted,
+        deliver({ delivery, assets }) {
+          assets!.materialize(() => ({
+            ...delivery,
+            deliverable: {
+              records: delivery.deliverable.records.map((record) => ({
+                ...record,
+                content: {
+                  format: 'markdown',
+                  body: delivery.sourceId === oversizedSource ? 'x'.repeat(syncBytes) : 'small',
+                },
+              })),
+            },
+          }));
+          delivered.push(delivery.sourceId);
+          return Promise.resolve({ status: 'accepted' });
+        },
+      },
+    },
+  });
+  try {
+    const destination = engine.api.createDestination({ ...alpha, type: 'local', config: {} });
+    const oversized = await engine.api.createInstallation({
+      ...alpha,
+      definition: fixture.definition,
+      config: { count: 1 },
+      destinationId: destination.id,
+    });
+    oversizedSource = oversized.sourceId;
+    const healthy = await engine.api.createInstallation({
+      ...alpha,
+      definition: fixture.definition,
+      config: { count: 1 },
+      destinationId: destination.id,
+    });
+    await engine.tick();
+    await engine.tick();
+    expect(delivered).toEqual([healthy.sourceId]);
+    expect(engine.api.status(alpha).queue.pendingRecords).toBe(1);
+    const db = new Database(files.path);
+    try {
+      expect(db.query('SELECT materialized FROM deliveries').get()).toEqual({
+        materialized: null,
+      });
+    } finally {
+      db.close();
+    }
+  } finally {
+    await engine.close();
+    files.close();
+  }
+});
