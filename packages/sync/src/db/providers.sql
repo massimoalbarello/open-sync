@@ -1,10 +1,10 @@
-CREATE TABLE provider_authorizations (
+CREATE TABLE IF NOT EXISTS provider_authorizations (
   owner_id TEXT NOT NULL PRIMARY KEY,
   id TEXT NOT NULL UNIQUE,
   request_id TEXT NOT NULL UNIQUE,
   service TEXT NOT NULL
 );
-CREATE TABLE provider_connections (
+CREATE TABLE IF NOT EXISTS provider_connections (
   owner_id TEXT NOT NULL,
   id TEXT NOT NULL,
   connector_id TEXT NOT NULL UNIQUE,
@@ -12,4 +12,3 @@ CREATE TABLE provider_connections (
   service TEXT NOT NULL,
   PRIMARY KEY (owner_id, id)
 );
-PRAGMA user_version=1;
