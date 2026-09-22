@@ -59,9 +59,10 @@ CREATE INDEX IF NOT EXISTS deliveries_due ON deliveries(state, due_at);
 CREATE TABLE IF NOT EXISTS assets (
   owner_id TEXT NOT NULL, source_id TEXT NOT NULL, id TEXT NOT NULL, version TEXT NOT NULL,
   metadata TEXT NOT NULL, file_id TEXT, size INTEGER NOT NULL DEFAULT 0, sha256 TEXT,
-  attempt INTEGER NOT NULL DEFAULT 0, committed INTEGER NOT NULL DEFAULT 0, stored_at INTEGER NOT NULL DEFAULT 0, error_code TEXT, state TEXT NOT NULL DEFAULT 'pending',
+  attempt INTEGER NOT NULL DEFAULT 0, error_code TEXT, state TEXT NOT NULL DEFAULT 'pending',
   PRIMARY KEY(owner_id, source_id, id, version)
 );
+CREATE INDEX IF NOT EXISTS assets_with_files ON assets(file_id) WHERE file_id IS NOT NULL;
 CREATE TABLE IF NOT EXISTS delivery_assets (
   owner_id TEXT NOT NULL, delivery_id TEXT NOT NULL, source_id TEXT NOT NULL,
   asset_id TEXT NOT NULL, asset_version TEXT NOT NULL,
@@ -69,6 +70,7 @@ CREATE TABLE IF NOT EXISTS delivery_assets (
   FOREIGN KEY(owner_id, delivery_id) REFERENCES deliveries(owner_id, id) ON DELETE CASCADE,
   FOREIGN KEY(owner_id, source_id, asset_id, asset_version) REFERENCES assets(owner_id, source_id, id, version)
 );
+CREATE INDEX IF NOT EXISTS delivery_asset_references ON delivery_assets(owner_id,source_id,asset_id,asset_version);
 CREATE TABLE IF NOT EXISTS asset_receipts (
   owner_id TEXT NOT NULL, destination_id TEXT NOT NULL, source_id TEXT NOT NULL,
   asset_id TEXT NOT NULL, asset_version TEXT NOT NULL, idempotency_key TEXT NOT NULL,

@@ -23,6 +23,9 @@ export class AcquisitionService {
       log: Logger;
     },
   ) {}
+  capacityReleased() {
+    this.input.repository.capacityReleased();
+  }
   nextDue() {
     return this.input.repository.nextDue();
   }
@@ -198,8 +201,8 @@ function sourceAssets(input: {
         input.repository.captured({ lease: input.lease, asset, file });
         return ref;
       } catch (error) {
-        if (file) {
-          await input.files.remove(file.id);
+        if (reservedId) {
+          await input.files.remove(reservedId);
         }
         input.signal.throwIfAborted();
         if (reservedId) {

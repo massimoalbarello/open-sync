@@ -11,6 +11,7 @@ export interface RunLease extends Scope {
   failureCount: number;
 }
 export interface AcquisitionRepository {
+  capacityReleased(): void;
   nextDue(): number | undefined;
   claim(leaseMs: number): RunLease | undefined;
   hasCapacity(lease?: RunLease): boolean;

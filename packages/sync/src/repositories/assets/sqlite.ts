@@ -1,5 +1,3 @@
-const stagedRetentionMs = 86_400_000;
-
 import type { Database } from 'bun:sqlite';
 import { type AssetMetadata, type AssetOutcome, assetKey } from '../../models/asset';
 import type { Delivery } from '../../models/delivery';
@@ -86,9 +84,6 @@ export class SqliteAssets implements AssetRepository {
         }
         if (row.file_id) {
           db.query('UPDATE asset_files SET run_id=? WHERE id=?').run(input.lease.id, row.file_id);
-          db.query(
-            'UPDATE assets SET committed=0 WHERE owner_id=? AND source_id=? AND id=? AND version=?',
-          ).run(...key);
         }
         return captured(row);
       })
@@ -127,12 +122,11 @@ export class SqliteAssets implements AssetRepository {
         fail('asset_reservation_missing');
       }
       db.query(
-        "UPDATE assets SET file_id=?,size=?,sha256=?,stored_at=?,committed=0,state='ready',error_code=NULL WHERE owner_id=? AND source_id=? AND id=? AND version=?",
+        "UPDATE assets SET file_id=?,size=?,sha256=?,state='ready',error_code=NULL WHERE owner_id=? AND source_id=? AND id=? AND version=?",
       ).run(
         input.file.id,
         input.file.size,
         input.file.sha256,
-        Date.now(),
         input.lease.ownerId,
         input.lease.installation.sourceId,
         input.asset.id,
@@ -220,58 +214,46 @@ export class SqliteAssets implements AssetRepository {
   }
   discarded(id: string): void {
     const deleted = this.input.db
-      .query(
-        'DELETE FROM asset_files WHERE id=? AND NOT EXISTS (SELECT 1 FROM assets WHERE file_id=?)',
+      .query<{ owner_id: string; source_id: string }, string[]>(
+        'DELETE FROM asset_files WHERE id=? AND NOT EXISTS (SELECT 1 FROM assets WHERE file_id=?) RETURNING owner_id,source_id',
       )
-      .run(id, id);
-    if (deleted.changes) {
+      .get(id, id);
+    if (deleted) {
+      // Dropping a failed step's staging must not immediately repeat that same capacity failure.
+      // Delivery acceptance wakes its source after cleanup has actually freed the bytes.
       this.input.db
         .query(
-          "UPDATE installations SET next_due_at=? WHERE enabled=1 AND status='waiting_for_capacity'",
+          "UPDATE installations SET next_due_at=? WHERE enabled=1 AND status='waiting_for_capacity' AND NOT (owner_id=? AND source_id=?)",
         )
-        .run(Date.now());
+        .run(Date.now(), deleted.owner_id, deleted.source_id);
     }
   }
 
-  garbage() {
+  garbage(): string[] {
     const { db } = this.input;
     return db
       .transaction(() => {
-        if (
-          db.query("SELECT 1 FROM runs WHERE state='running' AND expires_at>?").get(Date.now()) ||
-          db.query("SELECT 1 FROM deliveries WHERE state='leased' AND expires_at>?").get(Date.now())
-        ) {
-          return;
-        }
-        const unused = db
-          .query<
-            { file_id: string },
-            [number]
-          >(`SELECT file_id FROM assets a WHERE file_id IS NOT NULL AND (a.committed=1 OR a.stored_at<? OR EXISTS (SELECT 1 FROM installations i WHERE i.owner_id=a.owner_id AND i.source_id=a.source_id AND i.status='succeeded')) AND NOT EXISTS (
-        SELECT 1 FROM delivery_assets d WHERE d.owner_id=a.owner_id AND d.source_id=a.source_id AND d.asset_id=a.id AND d.asset_version=a.version)`)
-          .all(Date.now() - stagedRetentionMs);
-        for (const row of unused) {
-          db.query('UPDATE assets SET file_id=NULL WHERE file_id=?').run(row.file_id);
-        }
-        const orphaned = db
-          .query<
-            { id: string },
-            [number]
-          >(`SELECT f.id FROM asset_files f WHERE NOT EXISTS (SELECT 1 FROM assets a WHERE a.file_id=f.id)
-          AND NOT EXISTS (SELECT 1 FROM runs r WHERE r.owner_id=f.owner_id AND r.id=f.run_id AND r.state='running' AND r.expires_at>?)`)
-          .all(Date.now());
-        const retain = db
-          .query<{ file_id: string }, []>('SELECT file_id FROM assets WHERE file_id IS NOT NULL')
-          .all()
-          .map((row) => row.file_id);
-        return {
-          remove: [
-            ...new Set([...unused.map((row) => row.file_id), ...orphaned.map((row) => row.id)]),
-          ],
-          retain,
-        };
+        // Only a live capture or a queued delivery can still need the local bytes.
+        db.query(`UPDATE assets AS a SET file_id=NULL WHERE file_id IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM delivery_assets d WHERE d.owner_id=a.owner_id AND d.source_id=a.source_id AND d.asset_id=a.id AND d.asset_version=a.version)
+        AND NOT EXISTS (SELECT 1 FROM asset_files f JOIN runs r ON r.owner_id=f.owner_id AND r.id=f.run_id
+          WHERE f.id=a.file_id AND r.state='running' AND r.expires_at>?)`).run(Date.now());
+        // Keep the ledger entry until unlink succeeds; a crash or filesystem failure is retryable.
+        return db
+          .query<{ id: string }, [number]>(`SELECT f.id FROM asset_files f
+        WHERE NOT EXISTS (SELECT 1 FROM assets a WHERE a.file_id=f.id)
+        AND NOT EXISTS (SELECT 1 FROM runs r WHERE r.owner_id=f.owner_id AND r.id=f.run_id AND r.state='running' AND r.expires_at>?)`)
+          .all(Date.now())
+          .map(({ id }) => id);
       })
       .immediate();
+  }
+  retained(id: string): boolean {
+    return !!this.input.db
+      .query(`SELECT 1 FROM assets WHERE file_id=?
+      UNION ALL SELECT 1 FROM asset_files f JOIN runs r ON r.owner_id=f.owner_id AND r.id=f.run_id
+      WHERE f.id=? AND r.state='running' AND r.expires_at>? LIMIT 1`)
+      .get(id, id, Date.now());
   }
   read(input: Parameters<AssetRepository['read']>[0]): CapturedAsset {
     assertDelivery({ db: this.input.db, lease: input.lease });

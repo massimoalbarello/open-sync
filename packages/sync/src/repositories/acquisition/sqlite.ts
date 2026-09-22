@@ -15,6 +15,13 @@ export class SqliteAcquisition implements AcquisitionRepository {
   constructor(
     private readonly input: { db: Database; limits: QueueLimits; historyLimit: number },
   ) {}
+  capacityReleased(): void {
+    this.input.db
+      .query(
+        "UPDATE installations SET next_due_at=? WHERE enabled=1 AND status='waiting_for_capacity'",
+      )
+      .run(Date.now());
+  }
   nextDue(): number | undefined {
     return (
       this.input.db

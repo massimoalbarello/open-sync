@@ -1,7 +1,7 @@
 const privateFileMode = 0o600;
 
 import { createHash } from 'node:crypto';
-import { mkdir, open, readdir, stat, unlink } from 'node:fs/promises';
+import { mkdir, open, readdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fail } from '../../models/error';
 import type { AssetFiles } from './contract';
@@ -10,11 +10,9 @@ import type { AssetFiles } from './contract';
 export class DirectoryAssets implements AssetFiles {
   constructor(private readonly directory: string) {}
   async write(input: Parameters<AssetFiles['write']>[0]) {
-    const id = crypto.randomUUID();
-    input.reserve({ id, bytes: 0 });
-    await mkdir(this.directory, { recursive: true, mode: 0o700 });
-    const file = await open(this.path(id), 'wx', privateFileMode);
     const reader = input.body.getReader();
+    const id = crypto.randomUUID();
+    let file: Awaited<ReturnType<typeof open>> | undefined;
     const hash = createHash('sha256');
     let size = 0;
     const abort = () => {
@@ -22,6 +20,10 @@ export class DirectoryAssets implements AssetFiles {
     };
     input.signal.addEventListener('abort', abort, { once: true });
     try {
+      input.signal.throwIfAborted();
+      input.reserve({ id, bytes: 0 });
+      await mkdir(this.directory, { recursive: true, mode: 0o700 });
+      file = await open(this.path(id), 'wx', privateFileMode);
       while (true) {
         input.signal.throwIfAborted();
         const chunk = await reader.read();
@@ -43,6 +45,7 @@ export class DirectoryAssets implements AssetFiles {
       }
       await file.sync();
       await file.close();
+      file = undefined;
       const directory = await open(this.directory, 'r');
       try {
         await directory.sync();
@@ -51,8 +54,11 @@ export class DirectoryAssets implements AssetFiles {
       }
       return { id, size, sha256: hash.digest('hex') };
     } catch (error) {
-      await file.close();
-      await this.remove(id);
+      try {
+        await file?.close();
+      } finally {
+        await this.remove(id);
+      }
       throw error;
     } finally {
       input.signal.removeEventListener('abort', abort);
@@ -74,8 +80,7 @@ export class DirectoryAssets implements AssetFiles {
       }
     });
   }
-  async sweep(input: { retain: string[]; before: number }) {
-    const retain = new Set(input.retain);
+  async sweep(input: Parameters<AssetFiles['sweep']>[0]) {
     const names = await readdir(this.directory).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== 'ENOENT') {
         throw error;
@@ -83,13 +88,10 @@ export class DirectoryAssets implements AssetFiles {
       return [] as string[];
     });
     for (const name of names) {
-      if (retain.has(name) || !/^[0-9a-f-]{36}$/.test(name)) {
+      if (!/^[0-9a-f-]{36}$/.test(name) || input.retain(name)) {
         continue;
       }
-      const info = await stat(this.path(name)).catch(() => undefined);
-      if (info && info.mtimeMs < input.before) {
-        await this.remove(name);
-      }
+      await this.remove(name);
     }
   }
   private path(id: string) {

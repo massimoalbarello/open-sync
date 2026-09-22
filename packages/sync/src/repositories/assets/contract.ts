@@ -26,7 +26,8 @@ export interface AssetRepository {
   captureDeferred(input: { lease: RunLease; asset: AssetMetadata; code: string }): void;
   reserve(input: { lease: RunLease; id: string; bytes: number }): void;
   discarded(id: string): void;
-  garbage(): { remove: string[]; retain: string[] } | undefined;
+  garbage(): string[];
+  retained(id: string): boolean;
   read(input: { lease: DeliveryLease; asset: AssetRef }): CapturedAsset;
   receipt(input: { lease: DeliveryLease; asset: AssetRef }): {
     key: string;
@@ -45,5 +46,5 @@ export interface AssetFiles {
   }): Promise<{ id: string; size: number; sha256: string }>;
   open(id: string): Promise<ReadableStream<Uint8Array>>;
   remove(id: string): Promise<void>;
-  sweep(input: { retain: string[]; before: number }): Promise<void>;
+  sweep(input: { retain(id: string): boolean }): Promise<void>;
 }
