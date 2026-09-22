@@ -1,3 +1,4 @@
+import { abortable } from '../execution/abortable';
 import type { Logger } from '../execution/diagnostics';
 import { bindProvider, type ProviderGateway } from '../execution/provider';
 import type { SourceAssets } from '../models/asset';
@@ -22,6 +23,9 @@ export class AcquisitionService {
       log: Logger;
     },
   ) {}
+  nextDue() {
+    return this.input.repository.nextDue();
+  }
   claim() {
     return this.input.repository.claim(this.input.timing.leaseMs);
   }
@@ -33,7 +37,7 @@ export class AcquisitionService {
         this.finish({ lease, state: 'waiting_for_capacity', delay: timing.retryMs });
         return;
       }
-      await this.consume(input);
+      await abortable({ signal: input.signal, run: () => this.consume(input) });
     } catch (error) {
       this.failed({ ...input, error });
     }

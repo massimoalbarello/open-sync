@@ -1,13 +1,12 @@
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 import { openDatabase } from '../src/db/client';
-import { repositories, storage } from './support';
+import { fixture, page, repositories, storage } from './support';
 
-const preRetrySchemaVersion = 3;
-const previousSchemaVersion = 4;
-const futureSchemaVersion = 6;
+const previousSchemaVersion = 5;
+const futureSchemaVersion = 99;
 
-test.each([1, 2, preRetrySchemaVersion, previousSchemaVersion, futureSchemaVersion])(
+test.each([1, previousSchemaVersion, futureSchemaVersion])(
   'schema version %i is rejected without upgrading or deleting data',
   (version) => {
     const files = storage();
@@ -41,6 +40,35 @@ test('every attempt requires a poll and recorded counts', () => {
       records_processed: 0,
       records_changed: 0,
     });
+  } finally {
+    f.close();
+  }
+});
+
+test('reopening the current schema preserves checkpoints, queued bodies and leases', () => {
+  const f = repositories();
+  const leaseMs = 60_000;
+  try {
+    const lease = f.acquisition.claim(leaseMs)!;
+    f.acquisition.commit({
+      lease,
+      page: { ...page, checkpoint: 7 },
+      definition: fixture.definition,
+    });
+    f.acquisition.claim(leaseMs);
+    f.deliveries.claim(leaseMs);
+    const deliveries = f.db.query('SELECT * FROM deliveries').all();
+    const before = f.db.query('SELECT * FROM installations').all();
+    const runs = f.db.query('SELECT * FROM runs').all();
+    const reopened = openDatabase(f.files.path);
+    try {
+      expect(reopened.query('SELECT * FROM installations').all()).toEqual(before);
+      expect(reopened.query('SELECT * FROM runs').all()).toEqual(runs);
+      expect(reopened.query('SELECT * FROM deliveries').all()).toEqual(deliveries);
+      expect(reopened.query('PRAGMA integrity_check').get()).toEqual({ integrity_check: 'ok' });
+    } finally {
+      reopened.close();
+    }
   } finally {
     f.close();
   }

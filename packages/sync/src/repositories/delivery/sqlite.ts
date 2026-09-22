@@ -7,19 +7,31 @@ import { type Row, readDestination } from '../rows';
 import type { DeliveryLease, DeliveryRepository } from './contract';
 import { assertDelivery } from './lease';
 
+const headOfQueue = `NOT EXISTS (SELECT 1 FROM deliveries prior
+  WHERE prior.owner_id=d.owner_id AND prior.installation_id=d.installation_id
+  AND prior.destination_id=d.destination_id AND prior.sequence<d.sequence)`;
+
 export class SqliteDeliveries implements DeliveryRepository {
   constructor(private readonly db: Database) {}
+  nextDue(): number | undefined {
+    return (
+      this.db
+        .query<{ due: number | null }, []>(`SELECT MIN(
+      CASE WHEN d.state='leased' THEN MAX(d.due_at,d.expires_at) ELSE d.due_at END) AS due
+      FROM deliveries d WHERE d.state!='blocked' AND ${headOfQueue}`)
+        .get()?.due ?? undefined
+    );
+  }
   claim(leaseMs: number): DeliveryLease | undefined {
     return this.db
       .transaction(() => {
-        // A blocked delivery stops only its destination; ordering survives retries and restarts.
+        // A blocked delivery stops only its sync–destination pair; ordering survives retries and restarts.
         const row = this.db
           .query<
             Row,
             [number, number]
           >(`SELECT d.* FROM deliveries d WHERE d.state!='blocked' AND d.due_at<=?
-        AND (d.state='pending' OR d.expires_at<=?) AND NOT EXISTS (
-          SELECT 1 FROM deliveries prior WHERE prior.owner_id=d.owner_id AND prior.destination_id=d.destination_id AND prior.sequence<d.sequence)
+        AND (d.state='pending' OR d.expires_at<=?) AND ${headOfQueue}
         ORDER BY d.sequence LIMIT 1`)
           .get(Date.now(), Date.now());
         if (!row) {
@@ -94,11 +106,14 @@ export class SqliteDeliveries implements DeliveryRepository {
   retry(input: Resource): void {
     const updated = this.db
       .query(
-        "UPDATE deliveries SET state='pending',due_at=?,generation=generation+1,worker_id=NULL,expires_at=NULL,error_code=NULL WHERE owner_id=? AND id=?",
+        "UPDATE deliveries SET state='pending',due_at=?,generation=generation+1,worker_id=NULL,expires_at=NULL,error_code=NULL WHERE owner_id=? AND id=? AND (state!='leased' OR expires_at<=?)",
       )
-      .run(Date.now(), input.ownerId, input.id);
+      .run(Date.now(), input.ownerId, input.id, Date.now());
     if (!updated.changes) {
-      fail('not_found');
+      const exists = this.db
+        .query('SELECT 1 FROM deliveries WHERE owner_id=? AND id=?')
+        .get(input.ownerId, input.id);
+      fail(exists ? 'busy' : 'not_found');
     }
   }
 }

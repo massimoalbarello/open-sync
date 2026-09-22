@@ -15,6 +15,7 @@ export interface DeliveryLease extends Scope {
   attempt: number;
 }
 export interface DeliveryRepository {
+  nextDue(): number | undefined;
   claim(leaseMs: number): DeliveryLease | undefined;
   complete(input: { lease: DeliveryLease; result: DeliveryResult; delay: number }): void;
   status(scope: Scope): QueueStatus;

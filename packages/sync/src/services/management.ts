@@ -116,11 +116,13 @@ export class SyncManagement {
       fail('unexpected_connection');
     }
     this.guard(input);
-    return this.input.catalog.createInstallation({
+    const installation = this.input.catalog.createInstallation({
       ...input,
       config,
       initialCheckpoint: definition.initialCheckpoint,
     });
+    this.input.worker.wake();
+    return installation;
   }
   installations(scope: Scope) {
     this.guard(scope);
@@ -147,7 +149,9 @@ export class SyncManagement {
       signal: AbortSignal.timeout(this.input.timeoutMs),
     });
     this.guard(input);
-    return this.input.catalog.connectInstallation(input);
+    const connected = this.input.catalog.connectInstallation(input);
+    this.input.worker.wake();
+    return connected;
   }
   async setEnabled(input: Resource & { enabled: boolean }) {
     this.guard(input);
@@ -170,6 +174,7 @@ export class SyncManagement {
       ...input,
       checkpoint: input.backfill ? definition.initialCheckpoint : undefined,
     });
+    this.input.worker.wake();
   }
   status(scope: Scope) {
     this.guard(scope);
@@ -184,5 +189,6 @@ export class SyncManagement {
   retryDelivery(input: Resource): void {
     this.guard(input);
     this.input.deliveries.retry(input);
+    this.input.worker.wake();
   }
 }

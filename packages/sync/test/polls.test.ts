@@ -11,6 +11,7 @@ test('a poll spans source steps and restart, counts records, and retains owner i
   const options = {
     databasePath: files.path,
     definitions: [fixture],
+    timing: { sourceConcurrency: 1 },
     destinationTypes: { local: accepted },
   };
   let engine = createSyncRuntime(options);

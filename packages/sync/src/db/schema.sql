@@ -36,7 +36,7 @@ CREATE TABLE runs (
   FOREIGN KEY(owner_id, installation_id) REFERENCES installations(owner_id, id),
   FOREIGN KEY(owner_id, poll_id) REFERENCES polls(owner_id, id)
 );
-CREATE UNIQUE INDEX one_acquisition ON runs((1)) WHERE state='running';
+CREATE UNIQUE INDEX one_acquisition ON runs(owner_id,installation_id) WHERE state='running';
 CREATE INDEX poll_attempts ON runs(owner_id, poll_id, started_at);
 CREATE TABLE records (
   owner_id TEXT NOT NULL, installation_id TEXT NOT NULL, kind TEXT NOT NULL, id TEXT NOT NULL,
@@ -54,6 +54,7 @@ CREATE TABLE deliveries (
   FOREIGN KEY(owner_id, installation_id) REFERENCES installations(owner_id, id),
   FOREIGN KEY(owner_id, destination_id) REFERENCES destinations(owner_id, id)
 );
+CREATE INDEX delivery_order ON deliveries(owner_id,installation_id,destination_id,sequence);
 CREATE INDEX deliveries_due ON deliveries(state, due_at);
 CREATE TABLE assets (
   owner_id TEXT NOT NULL, source_id TEXT NOT NULL, id TEXT NOT NULL, version TEXT NOT NULL,
