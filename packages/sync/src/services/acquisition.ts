@@ -33,7 +33,7 @@ export class AcquisitionService {
     const { repository, timing } = this.input;
     const { lease } = input;
     try {
-      if (!repository.hasCapacity()) {
+      if (!repository.hasCapacity(lease)) {
         this.finish({ lease, state: 'waiting_for_capacity', delay: timing.retryMs });
         return;
       }
@@ -180,13 +180,18 @@ function sourceAssets(input: {
         return ref;
       }
       let file: Awaited<ReturnType<AssetFiles['write']>> | undefined;
-      const availableBytes = input.repository.availableBytes();
+      let reservedId: string | undefined;
       try {
         const body = await read();
         input.signal.throwIfAborted();
         file = await input.files.write({
           body,
-          maxBytes: Math.min(input.maxBytes, availableBytes),
+          maxBytes: input.maxBytes,
+          reserve(reservation) {
+            input.signal.throwIfAborted();
+            input.repository.reserve({ lease: input.lease, ...reservation });
+            reservedId = reservation.id;
+          },
           signal: input.signal,
         });
         input.signal.throwIfAborted();
@@ -197,15 +202,13 @@ function sourceAssets(input: {
           await input.files.remove(file.id);
         }
         input.signal.throwIfAborted();
+        if (reservedId) {
+          input.repository.discarded(reservedId);
+        }
         captureFailure({
           ...input,
           asset,
-          error:
-            error instanceof SyncError &&
-            error.code === 'asset_too_large' &&
-            availableBytes < input.maxBytes
-              ? new SyncError({ code: 'asset_storage_full', message: 'Asset storage is full.' })
-              : error,
+          error,
           attempt: previous.attempt,
         });
         return ref;
@@ -240,6 +243,13 @@ function captureFailure(input: {
   ) {
     throw error;
   }
+  if (
+    error instanceof SyncError &&
+    ['waiting_for_capacity', 'step_exceeds_asset_capacity'].includes(error.code)
+  ) {
+    input.repository.captureDeferred({ lease: input.lease, asset: input.asset, code: error.code });
+    throw error;
+  }
   if (error instanceof SyncError && error.status !== undefined) {
     const tooLarge = 413;
     if (error.status === tooLarge) {
@@ -255,11 +265,8 @@ function captureFailure(input: {
     throw error;
   }
   const code =
-    error instanceof SyncError &&
-    ['asset_too_large', 'asset_storage_full', 'waiting_for_asset_capacity'].includes(error.code)
-      ? error.code === 'waiting_for_asset_capacity'
-        ? 'asset_storage_full'
-        : error.code
+    error instanceof SyncError && error.code === 'asset_too_large'
+      ? error.code
       : 'asset_fetch_failed';
   const terminal = code === 'asset_too_large' || input.attempt >= input.attempts;
   input.repository.captureFailed({ lease: input.lease, asset: input.asset, code, terminal });

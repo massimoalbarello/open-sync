@@ -13,7 +13,7 @@ export interface RunLease extends Scope {
 export interface AcquisitionRepository {
   nextDue(): number | undefined;
   claim(leaseMs: number): RunLease | undefined;
-  hasCapacity(): boolean;
+  hasCapacity(lease?: RunLease): boolean;
   commit(input: { lease: RunLease; page: SyncStep; definition: SyncDefinition }): void;
   finish(input: {
     lease: RunLease;

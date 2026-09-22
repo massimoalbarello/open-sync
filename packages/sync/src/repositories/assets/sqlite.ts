@@ -9,6 +9,7 @@ import { normalizeSourceTimestamps } from '../../models/metadata';
 import { identifier } from '../../models/validation';
 import { assertRun } from '../acquisition/lease';
 import { assertDelivery } from '../delivery/lease';
+import { assetBytes } from './capacity';
 import type { AssetRepository, CapturedAsset } from './contract';
 
 interface AssetRow {
@@ -25,6 +26,7 @@ export class SqliteAssets implements AssetRepository {
     private readonly input: {
       db: Database;
       maxBytes: number;
+      maxSyncBytes: number;
       maxDeliveryBytes: number;
       maxMaterializedBytes: number;
     },
@@ -83,6 +85,7 @@ export class SqliteAssets implements AssetRepository {
           row.attempt++;
         }
         if (row.file_id) {
+          db.query('UPDATE asset_files SET run_id=? WHERE id=?').run(input.lease.id, row.file_id);
           db.query(
             'UPDATE assets SET committed=0 WHERE owner_id=? AND source_id=? AND id=? AND version=?',
           ).run(...key);
@@ -108,8 +111,20 @@ export class SqliteAssets implements AssetRepository {
       if (previous?.sha256 && previous.sha256 !== input.file.sha256) {
         fail('asset_version_conflict');
       }
-      if (input.file.size > this.availableBytes()) {
-        fail('waiting_for_asset_capacity');
+      if (
+        !db
+          .query(
+            'SELECT 1 FROM asset_files WHERE id=? AND owner_id=? AND source_id=? AND run_id=? AND bytes=?',
+          )
+          .get(
+            input.file.id,
+            input.lease.ownerId,
+            input.lease.installation.sourceId,
+            input.lease.id,
+            input.file.size,
+          )
+      ) {
+        fail('asset_reservation_missing');
       }
       db.query(
         "UPDATE assets SET file_id=?,size=?,sha256=?,stored_at=?,committed=0,state='ready',error_code=NULL WHERE owner_id=? AND source_id=? AND id=? AND version=?",
@@ -156,14 +171,68 @@ export class SqliteAssets implements AssetRepository {
       );
     }).immediate();
   }
-  availableBytes(): number {
-    const row = this.input.db
-      .query<{ bytes: number }, []>(
-        'SELECT coalesce(sum(size),0) AS bytes FROM assets WHERE file_id IS NOT NULL',
-      )
-      .get()!;
-    return this.input.maxBytes - row.bytes;
+  reserve(input: Parameters<AssetRepository['reserve']>[0]): void {
+    const { db, maxBytes, maxSyncBytes } = this.input;
+    db.transaction(() => {
+      assertRun({ db, lease: input.lease });
+      const previous = db
+        .query<{ bytes: number; run_id: string; owner_id: string; source_id: string }, string[]>(
+          'SELECT bytes,run_id,owner_id,source_id FROM asset_files WHERE id=?',
+        )
+        .get(input.id);
+      if (
+        previous &&
+        (previous.run_id !== input.lease.id ||
+          previous.owner_id !== input.lease.ownerId ||
+          previous.source_id !== input.lease.installation.sourceId ||
+          input.bytes < previous.bytes)
+      ) {
+        fail('asset_reservation_conflict');
+      }
+      const delta = input.bytes - (previous?.bytes ?? 0);
+      if (
+        delta + assetBytes({ db, ownerId: input.lease.ownerId, runId: input.lease.id }) >
+        Math.min(maxBytes, maxSyncBytes)
+      ) {
+        fail('step_exceeds_asset_capacity');
+      }
+      if (
+        delta + assetBytes({ db }) > maxBytes ||
+        delta +
+          assetBytes({
+            db,
+            ownerId: input.lease.ownerId,
+            sourceId: input.lease.installation.sourceId,
+          }) >
+          maxSyncBytes
+      ) {
+        fail('waiting_for_capacity');
+      }
+      db.query(`INSERT INTO asset_files(id,owner_id,source_id,run_id,bytes) VALUES (?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET bytes=excluded.bytes`).run(
+        input.id,
+        input.lease.ownerId,
+        input.lease.installation.sourceId,
+        input.lease.id,
+        input.bytes,
+      );
+    }).immediate();
   }
+  discarded(id: string): void {
+    const deleted = this.input.db
+      .query(
+        'DELETE FROM asset_files WHERE id=? AND NOT EXISTS (SELECT 1 FROM assets WHERE file_id=?)',
+      )
+      .run(id, id);
+    if (deleted.changes) {
+      this.input.db
+        .query(
+          "UPDATE installations SET next_due_at=? WHERE enabled=1 AND status='waiting_for_capacity'",
+        )
+        .run(Date.now());
+    }
+  }
+
   garbage() {
     const { db } = this.input;
     return db
@@ -184,11 +253,23 @@ export class SqliteAssets implements AssetRepository {
         for (const row of unused) {
           db.query('UPDATE assets SET file_id=NULL WHERE file_id=?').run(row.file_id);
         }
+        const orphaned = db
+          .query<
+            { id: string },
+            [number]
+          >(`SELECT f.id FROM asset_files f WHERE NOT EXISTS (SELECT 1 FROM assets a WHERE a.file_id=f.id)
+          AND NOT EXISTS (SELECT 1 FROM runs r WHERE r.owner_id=f.owner_id AND r.id=f.run_id AND r.state='running' AND r.expires_at>?)`)
+          .all(Date.now());
         const retain = db
           .query<{ file_id: string }, []>('SELECT file_id FROM assets WHERE file_id IS NOT NULL')
           .all()
           .map((row) => row.file_id);
-        return { remove: unused.map((row) => row.file_id), retain };
+        return {
+          remove: [
+            ...new Set([...unused.map((row) => row.file_id), ...orphaned.map((row) => row.id)]),
+          ],
+          retain,
+        };
       })
       .immediate();
   }

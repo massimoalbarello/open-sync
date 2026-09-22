@@ -24,7 +24,8 @@ export interface AssetRepository {
   }): void;
   /** Keep the asset pending without counting the latest capture against its retry limit. */
   captureDeferred(input: { lease: RunLease; asset: AssetMetadata; code: string }): void;
-  availableBytes(): number;
+  reserve(input: { lease: RunLease; id: string; bytes: number }): void;
+  discarded(id: string): void;
   garbage(): { remove: string[]; retain: string[] } | undefined;
   read(input: { lease: DeliveryLease; asset: AssetRef }): CapturedAsset;
   receipt(input: { lease: DeliveryLease; asset: AssetRef }): {
@@ -38,6 +39,7 @@ export interface AssetRepository {
 export interface AssetFiles {
   write(input: {
     body: ReadableStream<Uint8Array>;
+    reserve(file: { id: string; bytes: number }): void;
     maxBytes: number;
     signal: AbortSignal;
   }): Promise<{ id: string; size: number; sha256: string }>;

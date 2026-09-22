@@ -70,6 +70,14 @@ test('credential connections use public Connector APIs and persist only owner-sc
       expect(await repository.owns({ ...alice, connectorId: connection.connectorId })).toBe(true);
       expect(await repository.owns({ ...bob, connectorId: connection.connectorId })).toBe(false);
     }
+    const reopened = openProviderDatabase(join(dir, 'providers.db'));
+    try {
+      const persisted = new SqliteProviders(reopened);
+      expect(await persisted.list(alice)).toEqual(connections);
+      expect(await persisted.list(bob)).toEqual([]);
+    } finally {
+      reopened.close();
+    }
   } finally {
     await db.close();
     await rm(dir, { recursive: true, force: true });
