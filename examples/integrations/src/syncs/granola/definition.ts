@@ -9,7 +9,7 @@ export const granolaMeetings = {
     id: 'granola.meetings',
     name: 'Granola meetings',
     description:
-      'Meeting notes and summaries from the last 30 days through Granola MCP and OAuth. Rechecks accessible meetings; unavailable notes are not treated as deletions.',
+      'Meeting notes and summaries returned by the Granola MCP last-30-days listing through OAuth. Rechecks accessible meetings; unavailable notes are not treated as deletions.',
     version: '2',
     artifactId: 'open-sync/granola-meetings/2',
     provider: {
@@ -18,7 +18,7 @@ export const granolaMeetings = {
     },
     configSchema: jsonSchema(z.strictObject({})),
     checkpointSchema: jsonSchema(checkpointSchema),
-    initialCheckpoint: { afterId: null },
+    initialCheckpoint: {},
     kinds: { meeting: jsonSchema(meetingSchema) },
   },
   load: () => ({ step }),

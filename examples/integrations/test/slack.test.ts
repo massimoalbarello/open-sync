@@ -78,6 +78,7 @@ test('Slack preserves distinct unavailable files without retaining private downl
 });
 
 test('Slack backfills historical threads across pages and restarts, preserves progress on errors, and upserts new replies on old threads', async () => {
+  const directories: JsonObject[] = [];
   const history: JsonObject[] = [];
   const replies: JsonObject[] = [];
   let expire = true;
@@ -157,6 +158,7 @@ test('Slack backfills historical threads across pages and restarts, preserves pr
               url: 'https://example.slack.com/',
             });
           case '/users.conversations':
+            directories.push(query);
             expect(query.limit).toBe(1);
             if (query.cursor && expireDirectory) {
               expireDirectory = false;
@@ -212,7 +214,11 @@ test('Slack backfills historical threads across pages and restarts, preserves pr
       ),
     ).toBe(true);
     const latest = (f.saved.checkpoint as { latest: string }).latest;
+    const discovered = directories.length;
     await f.restart();
+    await f.engine.tick();
+    expect(history.at(-1)?.cursor).toBe('history-2');
+    expect(directories).toHaveLength(discovered);
     await f.finish();
     expect(f.records.map((record) => record.id)).toEqual([
       `a:${rootTs}`,

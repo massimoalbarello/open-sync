@@ -3,6 +3,7 @@ import type { virtualPasskeyBrowser } from '@repo/browser-testing/browser';
 import { assetsEmptyJourney, assetsJourney, resumeAssetDelivery } from './assets-journey';
 import { copyAuthorizationJourney } from './copy-authorization-journey';
 import { destinationSetupJourney } from './destination-setup-journey';
+import { granolaFixtureMeetingCount } from './example-provider-fixtures';
 import { historySetupJourney } from './history-setup-journey';
 import { previewsJourney } from './previews-journey';
 import { providerSetupJourney } from './provider-setup-journey';
@@ -129,11 +130,32 @@ async function connectSource(input: {
   if (source.service === 'slack') {
     await sourceRetryJourney({ page, origin, syncId });
   }
+  if (source.service === 'granola') {
+    await page.getByRole('cell', { name: 'Retrying', exact: true }).waitFor();
+    const incomplete = await (
+      await page.request.get(`${origin}/api/open-sync/sync/installations/${syncId}`)
+    ).json();
+    assert.deepEqual(incomplete.checkpoint, {});
+    assert.equal(incomplete.checkpointRevision, 0);
+    const received = await (
+      await page.request.get(
+        `${origin}/api/receiver/records?offset=0&sourceId=${encodeURIComponent(incomplete.sourceId)}`,
+      )
+    ).json();
+    assert.equal(received.records.length, 0);
+    await page.getByRole('link', { name: 'Overview', exact: true }).click();
+    await page.getByRole('button', { name: 'Run now', exact: true }).click();
+    await page.getByRole('link', { name: 'Polling history', exact: true }).click();
+  }
   await page.getByRole('cell', { name: 'Completed', exact: true }).first().waitFor();
   await page.getByRole('link', { name: 'Overview', exact: true }).click();
   const installation = await (
     await page.request.get(`${origin}/api/open-sync/sync/installations/${syncId}`)
   ).json();
+  if (source.service === 'granola') {
+    assert.deepEqual(installation.checkpoint, {});
+    assert.equal(installation.checkpointRevision, 1);
+  }
   if (source.service === 'gmail') {
     await resumeAssetDelivery({ page, origin, sourceId: installation.sourceId });
   }
@@ -160,6 +182,13 @@ async function verifyRecords(input: {
     )
   ).json();
   assert.equal(records.records[0].kind, source.kind);
+  if (source.service === 'granola') {
+    assert.equal(records.records.length, granolaFixtureMeetingCount);
+    assert.equal(
+      new Set(records.records.map((record: { id: string }) => record.id)).size,
+      granolaFixtureMeetingCount,
+    );
+  }
   const summary = page
     .getByRole('list', { name: 'Received records' })
     .locator(':scope > li')
