@@ -106,9 +106,12 @@ test('accepted files disappear while another source is still writing, and live f
       expect(engine.api.installation({ ...alpha, id: second.id }).checkpoint).toBe(0);
       finish.resolve();
       await until(
-        async () => delivered.length === 2 && (await readdir(`${files.path}.assets`)).length === 0,
+        () =>
+          delivered.length === 2 &&
+          db.query<{ count: number }, []>('SELECT count(*) AS count FROM asset_files').get()!
+            .count === 0,
       );
-      expect(db.query('SELECT count(*) AS count FROM asset_files').get()).toEqual({ count: 0 });
+      expect(await readdir(`${files.path}.assets`)).toHaveLength(0);
     } finally {
       db.close();
     }
