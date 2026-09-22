@@ -12,34 +12,51 @@ const rateLimited = 429;
 const unavailable = 503;
 const secret = 'private-token-and-provider-payload';
 
-test('legacy ambiguous 403 remains retryable; quota classification uses HTTP semantics without a cooldown', () => {
-  const forbidden = 403;
-  const legacy = connectorFailure({
-    service: 'gmail',
-    operation: 'gmail.list_threads',
-    kind: 'rejected',
-    response: new Response(null, { status: forbidden }),
-    body: { errorCode: 'authorization_failed', data: { status: forbidden } },
-  });
-  expect(legacy.status).toBeUndefined();
-  const limited = connectorFailure({
-    service: 'gmail',
-    operation: 'gmail.list_threads',
-    kind: 'rejected',
-    response: new Response(null, { status: rateLimited }),
-    body: {
-      errorCode: 'rate_limited',
-      message: secret,
-      data: {
-        status: forbidden,
+test.each(['first-provider', 'second-provider'])(
+  '%s uses Connector HTTP semantics, not upstream status or provider identity',
+  (service) => {
+    const forbidden = 403;
+    const permission = connectorFailure({
+      service,
+      operation: 'list',
+      kind: 'rejected',
+      response: new Response(null, { status: forbidden }),
+      body: { errorCode: 'authorization_failed', data: { status: forbidden } },
+    });
+    expect(permission.status).toBe(forbidden);
+    const limited = connectorFailure({
+      service,
+      operation: 'list',
+      kind: 'rejected',
+      response: new Response(null, { status: rateLimited }),
+      body: {
+        errorCode: 'rate_limited',
+        message: secret,
+        data: {
+          status: forbidden,
+        },
       },
-    },
+    });
+    expect(limited).toMatchObject({
+      status: rateLimited,
+      diagnostics: { providerStatus: forbidden },
+    });
+    expect(JSON.stringify(limited)).not.toContain(secret);
+  },
+);
+
+test('Connector HTTP status remains authoritative over conflicting error metadata', () => {
+  const failure = connectorFailure({
+    service: 'provider',
+    operation: 'list',
+    kind: 'rejected',
+    response: new Response(null, { status: unavailable }),
+    body: { errorCode: 'rate_limited', data: { status: 403 } },
   });
-  expect(limited).toMatchObject({
-    status: rateLimited,
-    diagnostics: { providerStatus: forbidden },
+  expect(failure).toMatchObject({
+    status: unavailable,
+    diagnostics: { connectorErrorCode: 'rate_limited', providerStatus: 403 },
   });
-  expect(JSON.stringify(limited)).not.toContain(secret);
 });
 
 function client(response: () => Promise<Response>) {
