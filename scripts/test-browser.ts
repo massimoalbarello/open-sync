@@ -287,16 +287,25 @@ try {
   });
   assert.ok(pendingOAuth.ok());
   const oauthSync = await pendingOAuth.json();
-  await githubOAuthSuccessJourney({ page, origin: app.origin });
+  const accountId = await githubOAuthSuccessJourney({ page, origin: app.origin });
   const activated = await (
     await page.request.get(`${app.origin}/api/open-sync/sync/installations/${oauthSync.id}`)
   ).json();
   assert.equal(activated.enabled, true);
   assert.ok(activated.connection);
+  // Complete the initial backfill before deliberately revoking this account's first token.
+  await page.goto(`${app.origin}/syncs/${oauthSync.id}`);
+  await page.getByRole('link', { name: 'Polling history', exact: true }).click();
+  await page
+    .getByRole('cell', { name: 'Completed', exact: true })
+    .first()
+    .waitFor({ timeout: 2 * drainTimeoutMs });
+  await page.goto(`${app.origin}/providers/github`);
   await githubOAuthReconnectJourney({
     page,
     origin: app.origin,
     connectionId: activated.connection.id,
+    accountId,
   });
   const reconnected = await (
     await page.request.get(`${app.origin}/api/open-sync/sync/installations/${oauthSync.id}`)

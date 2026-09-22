@@ -5,6 +5,7 @@ import { exampleProviderResponse } from './example-provider-fixtures';
 
 const fetchNetwork = globalThis.fetch;
 let oauthToken = 0;
+const accountTokens = new Map<string, string>();
 const recordCount = 100;
 // Small provider pages exercise queue pagination with a bounded fixture.
 const discoveryPageSize = 1;
@@ -23,8 +24,13 @@ globalThis.fetch = Object.assign(
       return exampleResponse;
     }
     if (url.hostname === 'github.com' && url.pathname === '/login/oauth/access_token') {
+      const code = new URLSearchParams(await request.text()).get('code')!;
+      const account = code.split('/')[0]!;
+      const token = `browser-test-oauth-token-${++oauthToken}`;
+      // Reconnecting rotates only this fixture account's token, preserving independent syncs.
+      accountTokens.set(account, token);
       return Response.json({
-        access_token: `browser-test-oauth-token-${++oauthToken}`,
+        access_token: token,
         token_type: 'bearer',
         scope: 'read:user repo',
       });
@@ -36,7 +42,7 @@ globalThis.fetch = Object.assign(
     if (
       authorization.includes('invalid-test-token') ||
       (authorization.includes('browser-test-oauth-token-') &&
-        !authorization.endsWith(`browser-test-oauth-token-${oauthToken}`))
+        ![...accountTokens.values()].some((token) => authorization.endsWith(token)))
     ) {
       return Response.json({ message: 'Bad credentials' }, { status: 401 });
     }

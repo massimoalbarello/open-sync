@@ -45,6 +45,7 @@ export async function githubOAuthSuccessJourney(input: {
   origin: string;
 }) {
   const { page, origin } = input;
+  const accountId = crypto.randomUUID();
   await page.goto(`${origin}/providers/github`);
   await page.getByRole('button', { name: 'OAuth', exact: true }).click();
   await page.screenshot({
@@ -58,16 +59,18 @@ export async function githubOAuthSuccessJourney(input: {
   const state = authorization.searchParams.get('state');
   assert.ok(state);
   await page.goto(
-    `${origin}/api/open-sync/oauth/callback?code=browser-test-code&state=${encodeURIComponent(state)}`,
+    `${origin}/api/open-sync/oauth/callback?code=${accountId}/connect&state=${encodeURIComponent(state)}`,
   );
   await page.getByText('Connected', { exact: true }).first().waitFor();
   assert.equal(new URL(page.url()).pathname, '/providers/github');
+  return accountId;
 }
 
 export async function githubOAuthReconnectJourney(input: {
   page: Awaited<ReturnType<typeof virtualPasskeyBrowser>>['page'];
   origin: string;
   connectionId: string;
+  accountId: string;
 }) {
   const { page, origin, connectionId } = input;
   await page.locator(`a[href*="connectionId=${connectionId}"]`).click();
@@ -105,7 +108,7 @@ export async function githubOAuthReconnectJourney(input: {
   await page.getByRole('heading', { name: 'Consent boundary' }).waitFor();
   const state = new URL(page.url()).searchParams.get('state')!;
   await page.goto(
-    `${origin}/api/open-sync/oauth/callback?code=browser-test-code&state=${encodeURIComponent(state)}`,
+    `${origin}/api/open-sync/oauth/callback?code=${input.accountId}/reconnect&state=${encodeURIComponent(state)}`,
   );
   await page.getByText('Connected', { exact: true }).first().waitFor();
   assert.equal(new URL(page.url()).pathname, '/providers/github');
