@@ -13,12 +13,23 @@ Follow the repository's engineering and compatibility guidance.
 
 ## Choose the unit of progress
 
-- Make one `step()` finish one bounded page or batch of complete records. Fetch all details,
-  nested pages, and assets needed for those records before returning. Await every capture;
-  never leave background work or unfinished records for the next step.
-- Keep checkpoints small: cursors, stable key positions, and scalar scan state such as a frozen
-  time boundary or account identity. Never store discovered ID lists, response bodies, partial
-  records, or downloaded bytes. Reduce the discovery page size when complete records are large.
+- When the provider supports pagination, each `step()` fetches exactly one discovery page using
+  its native cursor or other continuation mechanism. Resume from the saved position instead of
+  fetching earlier pages and filtering locally. Each source chooses a page size small enough to
+  finish all related work within the engine's execution and capacity limits.
+- Fetch all details, nested pages, and assets for that discovery page before returning; do not
+  fetch a second discovery page. Await every capture and return complete records. Never leave
+  background work or unfinished records for the next step.
+- Store only what the next step needs to resume: the continuation position and necessary scan
+  context, such as a frozen query or account identity. Never store discovered ID lists, response
+  bodies, partial records, or downloaded bytes.
+- If the available endpoint returns an unpaginated listing, process the entire returned listing
+  in one step. Split detail requests only to respect actual API limits, and finish all those
+  requests before yielding. Do not invent continuation IDs or re-list and filter to manufacture
+  smaller steps. A request batch limit is not a checkpoint boundary.
+- Verify pagination capabilities for the actual endpoint and authentication mode; justify any
+  exception to native pagination. Reject explicit truncation and state coverage limitations.
+  Exhausting the returned list does not prove the provider exposed all historical data.
 - Return the next checkpoint with the complete output. The engine commits them atomically.
   Throw on incomplete or failed retrieval; never skip failed records to advance the cursor.
   Set `complete` only when the current scan is exhausted.
@@ -44,6 +55,7 @@ Follow the repository's engineering and compatibility guidance.
 
 Test with the real engine and durable storage: fail after some data or an asset has been fetched,
 verify no partial records or advanced checkpoint are committed, then restart and finish the step.
-Cover multi-page completion, replay without duplicate changes, cursor recovery, and the source's
-update/deletion semantics where applicable. Check schema and version compatibility when changing
-an existing source; do not silently reinterpret a saved checkpoint.
+Cover resuming at the next provider page without re-fetching preceding listing pages, multi-page
+completion, replay without duplicate changes, and cursor recovery. For pagination exceptions,
+cover incomplete listings and the declared coverage limit. Check the source's update/deletion
+semantics and schema/version compatibility; do not silently reinterpret a saved checkpoint.
