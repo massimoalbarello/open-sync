@@ -1,7 +1,7 @@
 import type { Schema } from '@cfworker/json-schema';
-import type { SourceAssets } from './asset';
-import type { Deliverable } from './delivery';
+import type { AssetRef, SourceAssets } from './asset';
 import type { JsonObject, JsonValue } from './json';
+import type { SyncRecord } from './record';
 
 // biome-ignore lint/performance/noBarrelFile: Public source-authoring entry point exposes its failure contract.
 export { SourceHttpError } from './source-http-error';
@@ -47,6 +47,10 @@ export interface SyncDefinition extends DefinitionRef {
   initialCheckpoint: JsonValue;
   kinds: Readonly<Record<string, Schema>>;
   provider?: ProviderRequirements;
+}
+export interface Deliverable {
+  records: readonly SyncRecord[];
+  assets?: readonly AssetRef[];
 }
 /** One complete source-defined unit: fetch its records and assets before returning.
  * The engine commits the output with its resume position; checkpoints do not carry unfinished records.

@@ -1,7 +1,8 @@
 import type { Database } from 'bun:sqlite';
-import type { DeliveredRecord, SyncRecord } from '../../models/delivery';
+import type { DeliveredRecord } from '../../models/delivery';
 import type { Installation } from '../../models/installation';
 import { canonicalJson } from '../../models/json';
+import type { SyncRecord } from '../../models/record';
 
 export function writeRecord(input: {
   db: Database;

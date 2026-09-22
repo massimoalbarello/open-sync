@@ -5,7 +5,8 @@ description: Add or change an Open Sync destination integration, including durab
 
 # Add a sync destination
 
-Read the [destination contract](../../../packages/sync/src/models/delivery.ts) and
+Read the [destination contract](../../../packages/sync/src/models/delivery.ts),
+[record contract](../../../packages/sync/src/models/record.ts), and
 [asset contract](../../../packages/sync/src/models/asset.ts). Implement `DestinationType` through
 public package exports and register it in the host. Keep transport and receiver-specific behavior
 in the destination; follow the repository's engineering and compatibility guidance.

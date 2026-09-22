@@ -1,6 +1,7 @@
 import type { AssetMetadata, AssetUpload } from '@context-use/open-sync/assets';
-import type { Delivery, RecordContent, SyncRecord } from '@context-use/open-sync/delivery';
+import type { Delivery } from '@context-use/open-sync/delivery';
 import type { JsonObject } from '@context-use/open-sync/json';
+import type { RecordContent, SyncRecord } from '@context-use/open-sync/record';
 export interface ReceiverScope {
   actorId: string;
   ownerId: string;

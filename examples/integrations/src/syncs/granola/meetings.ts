@@ -1,5 +1,5 @@
 import type { SyncContext, SyncStep } from '@context-use/open-sync/definition';
-import type { SyncRecord } from '@context-use/open-sync/delivery';
+import type { SyncRecord } from '@context-use/open-sync/record';
 import { checkpointSchema, responseSchema } from './models';
 
 // The connector limits get_meetings to ten IDs per request, not ten records per step.

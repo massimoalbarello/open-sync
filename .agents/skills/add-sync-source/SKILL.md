@@ -6,7 +6,7 @@ description: Add or change an Open Sync source integration, including its atomic
 # Add a sync source
 
 Read the [source contract](../../../packages/sync/src/models/definition.ts),
-[record contract](../../../packages/sync/src/models/delivery.ts), and
+[record contract](../../../packages/sync/src/models/record.ts), and
 [asset contract](../../../packages/sync/src/models/asset.ts). Use public package exports and
 register the source in the host; keep provider-specific behavior outside the engine.
 Follow the repository's engineering and compatibility guidance.

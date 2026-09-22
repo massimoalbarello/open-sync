@@ -11,9 +11,10 @@ import {
   assetPlaceholderKey,
   type DeliveryAsset,
 } from './asset';
-import type { DeliveredRecord, SyncRecord } from './delivery';
+import type { DeliveredRecord } from './delivery';
 import { fail } from './error';
 import type { JsonValue } from './json';
+import type { SyncRecord } from './record';
 import { identifier } from './validation';
 
 /** Only exact JSON values and Markdown link/image targets are protocol references. */

@@ -5,6 +5,7 @@
   "exports": {
     ".": "./src/open-sync.ts",
     "./definition": "./src/models/definition.ts",
+    "./record": "./src/models/record.ts",
     "./delivery": "./src/models/delivery.ts",
     "./json": "./src/models/json.ts",
     "./http": "./src/http/index.ts",
