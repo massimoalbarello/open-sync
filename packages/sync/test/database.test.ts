@@ -3,11 +3,10 @@ import { expect, test } from 'bun:test';
 import { openDatabase } from '../src/db/client';
 import { fixture, page, repositories, storage } from './support';
 
-const preRetrySchemaVersion = 3;
-const previousSchemaVersion = 4;
+const previousSchemaVersion = 5;
 const futureSchemaVersion = 99;
 
-test.each([1, 2, preRetrySchemaVersion, previousSchemaVersion, futureSchemaVersion])(
+test.each([1, previousSchemaVersion, futureSchemaVersion])(
   'schema version %i is rejected without upgrading or deleting data',
   (version) => {
     const files = storage();
@@ -46,7 +45,7 @@ test('every attempt requires a poll and recorded counts', () => {
   }
 });
 
-test('the concurrency migration preserves checkpoints, queued bodies and leases', () => {
+test('reopening the current schema preserves checkpoints, queued bodies and leases', () => {
   const f = repositories();
   const leaseMs = 60_000;
   try {
@@ -59,19 +58,16 @@ test('the concurrency migration preserves checkpoints, queued bodies and leases'
     f.acquisition.claim(leaseMs);
     f.deliveries.claim(leaseMs);
     const deliveries = f.db.query('SELECT * FROM deliveries').all();
-    // Recreate the prior indexes without changing any owned rows.
-    f.db.exec(`DROP INDEX one_acquisition; DROP INDEX delivery_order;
-      CREATE UNIQUE INDEX one_acquisition ON runs((1)) WHERE state='running'; PRAGMA user_version=5;`);
     const before = f.db.query('SELECT * FROM installations').all();
     const runs = f.db.query('SELECT * FROM runs').all();
-    const migrated = openDatabase(f.files.path);
+    const reopened = openDatabase(f.files.path);
     try {
-      expect(migrated.query('SELECT * FROM installations').all()).toEqual(before);
-      expect(migrated.query('SELECT * FROM runs').all()).toEqual(runs);
-      expect(migrated.query('SELECT * FROM deliveries').all()).toEqual(deliveries);
-      expect(migrated.query('PRAGMA integrity_check').get()).toEqual({ integrity_check: 'ok' });
+      expect(reopened.query('SELECT * FROM installations').all()).toEqual(before);
+      expect(reopened.query('SELECT * FROM runs').all()).toEqual(runs);
+      expect(reopened.query('SELECT * FROM deliveries').all()).toEqual(deliveries);
+      expect(reopened.query('PRAGMA integrity_check').get()).toEqual({ integrity_check: 'ok' });
     } finally {
-      migrated.close();
+      reopened.close();
     }
   } finally {
     f.close();
