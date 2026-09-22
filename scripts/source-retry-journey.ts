@@ -11,8 +11,12 @@ export async function sourceRetryJourney(input: { page: Page; origin: string; sy
   const installationPath = `/api/open-sync/sync/installations/${syncId}`;
   await page.getByRole('cell', { name: 'Retrying', exact: true }).waitFor();
   const before = await (await page.request.get(`${origin}${installationPath}`)).json();
-  assert.equal(before.checkpoint.replyCursor, 'replies-2');
-  assert.equal(before.checkpoint.messages.length, 2);
+  assert.equal(before.checkpoint.channelId, null);
+  assert.equal(before.checkpoint.messageCursor, null);
+  assert.ok(
+    Object.values(before.checkpoint).every((value) => value === null || typeof value !== 'object'),
+  );
+  assert.equal(before.checkpointRevision, 0);
   const first = await (await page.request.get(`${origin}${installationPath}/polls`)).json();
   const firstAttempt = first.polls[0].attempts[0];
   assert.equal(firstAttempt.state, 'source_http_429');
@@ -42,14 +46,15 @@ export async function sourceRetryJourney(input: { page: Page; origin: string; sy
     .getByRole('cell', { name: 'Completed', exact: true })
     .first()
     .waitFor({ timeout: retryTimeoutMs });
+  const completed = await (await page.request.get(`${origin}${installationPath}`)).json();
   await page.getByRole('button', { name: 'Run now', exact: true }).click();
   await page.getByRole('button', { name: 'Resume', exact: true }).waitFor();
   await page.getByRole('cell', { name: 'Paused', exact: true }).waitFor();
   const paused = await (await page.request.get(`${origin}${installationPath}`)).json();
   assert.equal(paused.status, 'source_http_403');
   assert.equal(paused.enabled, false);
-  assert.equal(paused.checkpoint.replyCursor, 'replies-2');
-  assert.equal(paused.checkpoint.messages.length, 2);
+  assert.deepEqual(paused.checkpoint, completed.checkpoint);
+  assert.equal(paused.checkpointRevision, completed.checkpointRevision);
   assert.equal(await page.getByText('private-upstream-detail', { exact: false }).count(), 0);
   await page.getByRole('button', { name: 'Resume', exact: true }).click();
   await page.waitForResponse(async (response) => {

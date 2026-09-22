@@ -5,16 +5,17 @@ import { checkpointSchema, responseSchema } from './models';
 const batchSize = 10;
 
 export async function step(context: SyncContext): Promise<SyncStep> {
-  let { remainingIds } = checkpointSchema.parse(context.checkpoint);
-  if (remainingIds === null) {
-    const result = responseSchema.parse(
-      await context.provider.action({ id: 'granola.list_meetings', input: {} }),
-    );
-    remainingIds = [...new Set(result.meetings.map((meeting) => meeting.id))];
-  }
-  if (remainingIds.length) {
+  const { afterId } = checkpointSchema.parse(context.checkpoint);
+  const listing = responseSchema.parse(
+    await context.provider.action({ id: 'granola.list_meetings', input: {} }),
+  );
+  // The provider exposes a listing, not a pagination token. Resume by stable ID, never an array offset.
+  const remaining = [...new Set(listing.meetings.map((meeting) => meeting.id))]
+    .sort()
+    .filter((id) => afterId === null || id > afterId);
+  const ids = remaining.slice(0, batchSize);
+  if (ids.length) {
     context.signal.throwIfAborted();
-    const ids = remainingIds.slice(0, batchSize);
     const result = responseSchema.parse(
       await context.provider.action({ id: 'granola.get_meetings', input: { meeting_ids: ids } }),
     );
@@ -38,12 +39,16 @@ export async function step(context: SyncContext): Promise<SyncStep> {
         },
       };
     });
-    remainingIds = remainingIds.slice(batchSize);
-    return { deliverable: { records }, checkpoint: { remainingIds }, complete: false };
+    const complete = ids.length === remaining.length;
+    return {
+      deliverable: { records },
+      checkpoint: { afterId: complete ? null : ids.at(-1)! },
+      complete,
+    };
   }
   return {
     deliverable: { records: [] },
-    checkpoint: { remainingIds: null },
+    checkpoint: { afterId: null },
     complete: true,
   };
 }

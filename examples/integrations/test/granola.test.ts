@@ -2,9 +2,9 @@ import { expect, test } from 'bun:test';
 import { granolaMeetings } from '../src/syncs/granola/definition';
 import { fixture, unused } from './fixture';
 
-test('Granola checkpoints the remaining meeting IDs, survives restart and preserves notes absent from a later listing', async () => {
+test('Granola resumes complete batches by ID across reordered listings and preserves notes absent from a later listing', async () => {
   const meetingCount = 11;
-  const ids = [...Array(meetingCount).keys()].map(String);
+  const ids = [...Array(meetingCount).keys()].map((id) => String(id).padStart(2, '0'));
   let visible = ids;
   let incomplete = false;
   const requested: string[][] = [];
@@ -35,11 +35,13 @@ test('Granola checkpoints the remaining meeting IDs, survives restart and preser
   });
   try {
     await f.engine.tick();
-    expect(f.saved.checkpoint).toEqual({ remainingIds: ['10'] });
+    expect(f.saved.checkpoint).toEqual({ afterId: '09' });
     await f.restart();
+    visible = [...ids].reverse();
     incomplete = true;
     await f.engine.tick();
-    expect(f.saved.checkpoint).toEqual({ remainingIds: ['10'] });
+    expect(f.saved.checkpoint).toEqual({ afterId: '09' });
+    expect(f.records).toHaveLength(meetingCount - 1);
     incomplete = false;
     f.queue();
     await f.finish();
@@ -47,10 +49,10 @@ test('Granola checkpoints the remaining meeting IDs, survives restart and preser
     expect(f.records).toHaveLength(ids.length);
     expect(f.records[0]).toMatchObject({
       kind: 'meeting',
-      id: '0',
-      preview: 'Meeting 0',
+      id: '00',
+      preview: 'Meeting 00',
       data: {
-        title: 'Meeting 0',
+        title: 'Meeting 00',
         notes: '## Decisions\nShip it.',
         date: '2026-09-19',
         attendees: 'Alice, Sam',

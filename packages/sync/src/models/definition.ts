@@ -41,7 +41,9 @@ export interface SyncDefinition extends DefinitionRef {
   kinds: Readonly<Record<string, Schema>>;
   provider?: ProviderRequirements;
 }
-/** One source-defined resumable unit. The engine commits its output and checkpoint atomically. */
+/** One complete source-defined unit: fetch its records and assets before returning.
+ * The engine commits the output with its resume position; checkpoints do not carry unfinished records.
+ */
 export interface SyncStep {
   deliverable: Deliverable;
   checkpoint: JsonValue;

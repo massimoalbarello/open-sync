@@ -105,7 +105,6 @@ export async function fixture(config: JsonObject = {}) {
     },
   };
   const options = {
-    limits: { maxPageRecords: 1 },
     databasePath: join(dir, 'sync.db'),
     definitions: [githubPullRequests],
     connector: gateway,

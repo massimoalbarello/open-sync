@@ -11,39 +11,32 @@ type Acquisition = {
   readRecord(input: { context: SyncContext; id: string }): Promise<SyncRecord>;
 };
 
-/** One hydrated record per step, retaining the rest of the discovery page across restarts. */
+/** Fetch every record in a discovery page before returning its cursor. */
 export async function acquire(input: Acquisition): Promise<SyncStep> {
   const { context } = input;
   let checkpoint = await beginCycle(context);
   try {
-    if (checkpoint.pending === null) {
-      const page = await discoverPulls({
-        context,
-        checkpoint,
-        seen: new Set(checkpoint.cursor ? [checkpoint.cursor] : []),
-      });
-      checkpoint = { ...checkpoint, pending: page.edges, more: page.more };
-    }
-    const [edge, ...pending] = checkpoint.pending!;
-    if (!edge) {
-      return { deliverable: { records: [] }, checkpoint: finishCycle(checkpoint), complete: true };
-    }
+    const page = await discoverPulls({
+      context,
+      checkpoint,
+      seen: new Set(checkpoint.cursor ? [checkpoint.cursor] : []),
+    });
     const oldest = historyStart({
       config: context.config,
       now: new Date(checkpoint.cycleStartedAt!),
     });
-    const records =
-      !oldest || Date.parse(edge.node.updatedAt) >= oldest.getTime()
-        ? [await input.readRecord({ context, id: edge.node.id })]
-        : [];
+    const records: SyncRecord[] = [];
+    for (const edge of page.edges) {
+      context.signal.throwIfAborted();
+      if (!oldest || Date.parse(edge.node.updatedAt) >= oldest.getTime()) {
+        records.push(await input.readRecord({ context, id: edge.node.id }));
+      }
+      checkpoint = { ...checkpoint, cursor: edge.cursor };
+    }
     return {
       deliverable: { records },
-      checkpoint: {
-        ...checkpoint,
-        cursor: edge.cursor,
-        pending: pending.length || !checkpoint.more ? pending : null,
-      },
-      complete: false,
+      checkpoint: page.more ? checkpoint : finishCycle(checkpoint),
+      complete: !page.more,
     };
   } catch (error) {
     if (!(error instanceof ExpiredCursor)) {
@@ -52,12 +45,7 @@ export async function acquire(input: Acquisition): Promise<SyncStep> {
     return {
       deliverable: { records: [] },
       complete: false,
-      checkpoint: {
-        ...checkpointSchema.parse(context.checkpoint),
-        cursor: null,
-        pending: null,
-        more: true,
-      },
+      checkpoint: { ...checkpointSchema.parse(context.checkpoint), cursor: null },
     };
   }
 }

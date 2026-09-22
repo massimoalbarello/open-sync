@@ -10,8 +10,8 @@ export const githubPullRequests = {
     description:
       'Authored pull requests as structured JSON. Initial backfill, then incremental polls from the saved watermark with a five-minute overlap and daily reconciliation.',
     id: 'github.pull-requests',
-    version: '2',
-    artifactId: 'open-sync/github-pull-requests/2',
+    version: '1',
+    artifactId: 'open-sync/github-pull-requests/1',
     provider: {
       service: 'github',
       actions: [],

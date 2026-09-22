@@ -205,7 +205,7 @@ try {
   await page.getByRole('cell', { name: 'Completed', exact: true }).waitFor();
   await page.getByRole('columnheader', { name: 'Records processed', exact: true }).waitFor();
   assert.equal(await page.getByRole('columnheader', { name: 'Pages', exact: true }).count(), 0);
-  await page.getByText(`${fixtureRecordCount + 1} attempts`, { exact: true }).click();
+  await page.getByText(`${fixtureRecordCount} attempts`, { exact: true }).click();
   await page
     .getByText(/Continuing from checkpoint/)
     .first()
@@ -216,7 +216,7 @@ try {
   assert.equal(polls.polls.length, 1);
   assert.equal(polls.polls[0].recordsProcessed, fixtureRecordCount);
   assert.equal(polls.polls[0].recordsChanged, fixtureRecordCount);
-  assert.equal(polls.polls[0].attempts[0].recordsProcessed, 0);
+  assert.equal(polls.polls[0].attempts[0].recordsProcessed, 1);
   await page.screenshot({
     path: 'artifacts/polling-history.png',
     fullPage: true,

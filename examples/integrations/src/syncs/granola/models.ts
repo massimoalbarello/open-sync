@@ -7,7 +7,7 @@ export const meetingSchema = z.strictObject({
   attendees: z.string(),
 });
 export const checkpointSchema = z.strictObject({
-  remainingIds: z.array(z.string().min(1)).nullable(),
+  afterId: z.string().min(1).nullable(),
 });
 export const responseSchema = z.object({
   meetings: z.array(
