@@ -5,6 +5,7 @@ import { AssetLink } from '../../components/asset-link';
 import { JsonView } from '../../components/json-view';
 import { MarkdownContent } from '../../components/markdown-content';
 import { SectionPage } from '../../components/section-page';
+import { SourceTimestamps } from '../../components/source-timestamps';
 import { recordOptions } from '../../queries/records';
 
 export const Route = createFileRoute('/_workspace/records/$sourceId/$kind/$recordId')({
@@ -16,7 +17,7 @@ function RecordDetail() {
   const { sourceId, kind, recordId } = Route.useParams();
   const query = useQuery(recordOptions({ userId, sourceId, kind, id: recordId }));
   const record = query.data;
-  const title = record?.data.title ?? record?.data.subject;
+  const title = record?.preview || record?.data.title || record?.data.subject;
   return (
     <SectionPage
       title={typeof title === 'string' && title ? title : `${kind} · ${recordId}`}
@@ -24,6 +25,7 @@ function RecordDetail() {
         <p className="break-all text-muted-foreground text-sm">
           {kind} · {recordId}
           {record ? ` · Revision ${record.revision}` : ''}
+          {record && <SourceTimestamps createdAt={record.createdAt} updatedAt={record.updatedAt} />}
         </p>
       }
       action={

@@ -29,6 +29,7 @@ export async function* run(context: SyncContext): AsyncGenerator<SyncPage> {
         kind: 'meeting',
         id,
         content: { format: 'markdown', body: meeting.summary ?? '' },
+        ...(meeting.title ? { preview: meeting.title } : {}),
         data: {
           title: meeting.title,
           notes: meeting.summary ?? '',

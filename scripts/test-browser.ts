@@ -9,6 +9,7 @@ import {
 } from './github-oauth-journey';
 import { startIsolatedApp } from './isolated-app';
 import { ownerRegistrationJourney } from './owner-registration-journey';
+import { sourceMetadataJourney } from './source-metadata-journey';
 
 const fixtureRecordCount = 100;
 const drainTimeoutMs = 120_000;
@@ -236,11 +237,17 @@ try {
   await page.getByRole('link', { name: 'Records', exact: true }).click();
   const records = page.getByRole('list', { name: 'Received records' }).getByRole('listitem');
   await records.nth(dataPageSize - 1).waitFor();
+  await records.first().getByText('PR 000', { exact: true }).waitFor();
+  assert.equal(await records.first().locator('time').count(), 2);
+  assert.equal(
+    await records.first().locator('time').first().getAttribute('datetime'),
+    '2020-01-01T00:00:00.000Z',
+  );
   assert.equal(await records.count(), dataPageSize);
   await records.last().scrollIntoViewIfNeeded();
   await records.nth(fixtureRecordCount - 1).waitFor();
   assert.equal(await records.count(), fixtureRecordCount);
-  await page.getByText('pull-request · 000', { exact: true }).click();
+  await page.getByRole('link', { name: 'PR 000', exact: true }).click();
   await page.locator('pre').getByText('"title": "PR 000"', { exact: false }).waitFor();
   await page.screenshot({ path: 'artifacts/received-records.png', animations: 'disabled' });
   await page.getByRole('link', { name: 'Syncs', exact: true }).click();
@@ -400,6 +407,7 @@ try {
     .getByText('Nothing waiting for delivery', { exact: true })
     .waitFor({ timeout: 2 * drainTimeoutMs });
   await exampleSyncsJourney({ page, origin: app.origin });
+  await sourceMetadataJourney({ page, origin: app.origin });
   console.log(
     'Browser journey passed: paginated catalogs, provider setup, deferred authorization, GitHub syncs, infinite records and queue, responsive layout and real passkeys.',
   );

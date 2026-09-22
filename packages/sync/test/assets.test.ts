@@ -2,7 +2,7 @@ import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 import { readdir } from 'node:fs/promises';
 import { assetsFirst } from '../src/delivery/assets-first';
-import type { AssetRendering, AssetUpload } from '../src/models/asset';
+import type { AssetRendering, AssetUpload, DeliveryAsset } from '../src/models/asset';
 import { assetKey, assetPlaceholder } from '../src/models/asset';
 import { resolveRecordAssets, validateAssetReferences } from '../src/models/asset-references';
 import { SourceHttpError, type SyncRegistration } from '../src/models/definition';
@@ -131,6 +131,69 @@ function separate(input: {
     }),
   };
 }
+
+test.each([false, true])(
+  'asset source timestamps remain immutable and survive delivery (unavailable: %s)',
+  async (unavailable) => {
+    let createdAt = '2020-01-01T01:00:00+01:00';
+    const received: DeliveryAsset[] = [];
+    const fixture = await setup({
+      registration: {
+        definition: source().definition,
+        load: () => ({
+          async *run({ assets }) {
+            const metadata = {
+              id: 'dated',
+              version: '1',
+              name: 'dated.txt',
+              mediaType: 'text/plain',
+              createdAt,
+            };
+            const asset = unavailable
+              ? assets.unavailable({ ...metadata, code: 'source_unavailable' })
+              : await assets.capture({
+                  ...metadata,
+                  read: () => Promise.resolve(new Blob(['file']).stream()),
+                });
+            yield { deliverable: { records: [], assets: [asset] }, checkpoint: 1, complete: true };
+          },
+        }),
+      },
+      destination: {
+        version: '1',
+        configSchema: { type: 'object' },
+        acceptsAssets: true,
+        deliver: ({ delivery }) => {
+          received.push(...delivery.deliverable.assets!);
+          return Promise.resolve({ status: 'accepted' });
+        },
+      },
+    });
+    try {
+      await fixture.tick();
+      await fixture.tick();
+      expect(received[0]).toMatchObject({ createdAt: '2020-01-01T00:00:00.000Z' });
+      expect(received[0]).not.toHaveProperty('updatedAt');
+      await fixture.restart();
+      createdAt = '2020-01-01T00:00:00.000Z';
+      const resource = { ...alpha, id: fixture.installation.id };
+      fixture.engine.api.queueRun(resource);
+      await fixture.tick();
+      await fixture.tick();
+      expect(fixture.engine.api.installation(resource).status).toBe('succeeded');
+      createdAt = '2020-01-02T00:00:00Z';
+      fixture.engine.api.queueRun(resource);
+      await fixture.tick();
+      expect(fixture.engine.api.installation(resource).status).toBe('asset_version_conflict');
+      createdAt = '2020-02-30T00:00:00Z';
+      fixture.engine.api.queueRun(resource);
+      await fixture.tick();
+      expect(fixture.engine.api.installation(resource).status).toBe('invalid_input');
+    } finally {
+      await fixture.close();
+    }
+  },
+);
 
 test('asset acceptance and materialized record survive restart, preserving source hashes and releasing only queued bytes', async () => {
   let uploads = 0;

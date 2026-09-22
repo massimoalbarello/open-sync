@@ -160,6 +160,12 @@ async function verifyRecords(input: {
     )
   ).json();
   assert.equal(records.records[0].kind, source.kind);
+  const summary = page
+    .getByRole('list', { name: 'Received records' })
+    .locator(':scope > li')
+    .first();
+  await summary.getByText(records.records[0].preview, { exact: true }).waitFor();
+  assert.equal(await summary.locator('time').count(), source.service === 'granola' ? 0 : 1);
   if (source.service === 'gmail') {
     const receivedAttachments = records.records[0].data.messages[0].attachments;
     const attachmentCount = 3;
@@ -217,7 +223,7 @@ async function verifyRecords(input: {
     await page.goto(`${origin}/records?sourceId=${encodeURIComponent(sourceId)}`);
     await page
       .getByRole('list', { name: 'Received records' })
-      .getByRole('link', { name: `${source.kind} · ${records.records[0].id}`, exact: true })
+      .getByRole('link', { name: records.records[0].preview, exact: true })
       .click();
     await page.locator('pre').getByText('"messages":', { exact: false }).waitFor();
     await page.screenshot({

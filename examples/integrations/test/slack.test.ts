@@ -197,6 +197,8 @@ test('Slack backfills historical threads across pages and restarts, preserves pr
     );
     expect(f.records[0]).toMatchObject({
       kind: 'thread',
+      preview: 'Lunch?',
+      createdAt: '2025-06-15T15:06:40.000Z',
       data: {
         channel: 'general',
         channelId: 'a',

@@ -5,6 +5,7 @@ import { type AssetMetadata, type AssetOutcome, assetKey } from '../../models/as
 import type { Delivery } from '../../models/delivery';
 import { fail } from '../../models/error';
 import { canonicalJson } from '../../models/json';
+import { normalizeSourceTimestamps } from '../../models/metadata';
 import { identifier } from '../../models/validation';
 import { assertRun } from '../acquisition/lease';
 import { assertDelivery } from '../delivery/lease';
@@ -40,7 +41,10 @@ export class SqliteAssets implements AssetRepository {
           input.asset.id,
           input.asset.version,
         ];
-        const metadata = canonicalJson(input.asset).json;
+        const metadata = canonicalJson({
+          ...input.asset,
+          ...normalizeSourceTimestamps(input.asset),
+        }).json;
         db.query(
           'INSERT OR IGNORE INTO assets(owner_id,source_id,id,version,metadata) VALUES (?,?,?,?,?)',
         ).run(...key, metadata);

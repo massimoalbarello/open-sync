@@ -3,6 +3,7 @@ import { createFileRoute, Link } from '@tanstack/react-router';
 import { AssetLink } from '../../components/asset-link';
 import { InfiniteScroll } from '../../components/infinite-scroll';
 import { SectionPage } from '../../components/section-page';
+import { SourceTimestamps } from '../../components/source-timestamps';
 import { recordsOptions } from '../../queries/records';
 
 export const Route = createFileRoute('/_workspace/records/')({
@@ -39,9 +40,17 @@ function Records() {
               params={{ sourceId: record.sourceId, kind: record.kind, recordId: record.id }}
               className="break-words font-medium underline underline-offset-4"
             >
-              {record.kind} · {record.id}
+              {record.preview || `${record.kind} · ${record.id}`}
             </Link>
             <span className="ml-3 text-muted-foreground text-sm">Revision {record.revision}</span>
+            {record.preview && (
+              <p className="mt-1 break-words text-muted-foreground text-xs">
+                {record.kind} · {record.id}
+              </p>
+            )}
+            <div className="mt-1">
+              <SourceTimestamps createdAt={record.createdAt} updatedAt={record.updatedAt} />
+            </div>
             {record.assets.length > 0 && (
               <div className="mt-4 space-y-2">
                 <h2 className="font-medium text-muted-foreground text-xs">Related assets</h2>

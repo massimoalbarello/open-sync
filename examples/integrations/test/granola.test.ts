@@ -48,6 +48,7 @@ test('Granola checkpoints the remaining meeting IDs, survives restart and preser
     expect(f.records[0]).toMatchObject({
       kind: 'meeting',
       id: '0',
+      preview: 'Meeting 0',
       data: {
         title: 'Meeting 0',
         notes: '## Decisions\nShip it.',
@@ -56,6 +57,9 @@ test('Granola checkpoints the remaining meeting IDs, survives restart and preser
       },
     });
     visible = [];
+    expect(f.records[0]).not.toHaveProperty('createdAt');
+    expect(f.records[0]).not.toHaveProperty('updatedAt');
+    expect(f.records[0]).not.toHaveProperty('occurredAt');
     f.queue();
     await f.finish();
     expect(f.records).toHaveLength(ids.length);

@@ -76,6 +76,8 @@ test('Gmail resumes thread discovery, includes older context, and updates whole 
       ['thread', 'b'],
     ]);
     expect(f.records[0]).toMatchObject({
+      preview: 'Lunch',
+      createdAt: root.messageTimestamp,
       data: {
         subject: 'Lunch',
         url: 'https://mail.google.com/mail/?authuser=alice%40example.com#all/a',
@@ -93,6 +95,7 @@ test('Gmail resumes thread discovery, includes older context, and updates whole 
       },
     });
     expect(JSON.stringify(f.records)).not.toContain('omit me');
+    expect(f.records[0]).not.toHaveProperty('updatedAt');
     f.queue();
     await f.finish();
     expect(f.records).toHaveLength(2);

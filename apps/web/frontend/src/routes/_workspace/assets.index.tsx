@@ -4,6 +4,7 @@ import { createFileRoute, Link } from '@tanstack/react-router';
 import { AssetLink } from '../../components/asset-link';
 import { InfiniteScroll } from '../../components/infinite-scroll';
 import { SectionPage } from '../../components/section-page';
+import { SourceTimestamps } from '../../components/source-timestamps';
 import { assetsOptions } from '../../queries/assets';
 
 export const Route = createFileRoute('/_workspace/assets/')({
@@ -60,6 +61,7 @@ function Assets() {
             <p className="break-words text-muted-foreground text-sm">
               {asset.mediaType} · {formatSize(asset.size)}
             </p>
+            <SourceTimestamps createdAt={asset.createdAt} updatedAt={asset.updatedAt} />
           </li>
         ))}
       </ul>

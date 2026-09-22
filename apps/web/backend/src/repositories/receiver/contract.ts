@@ -1,5 +1,5 @@
-import type { AssetUpload } from '@context-use/open-sync/assets';
-import type { Delivery, RecordContent } from '@context-use/open-sync/delivery';
+import type { AssetMetadata, AssetUpload } from '@context-use/open-sync/assets';
+import type { Delivery, RecordContent, SyncRecord } from '@context-use/open-sync/delivery';
 import type { JsonObject } from '@context-use/open-sync/json';
 export interface ReceiverScope {
   actorId: string;
@@ -10,7 +10,11 @@ export interface ReceiverStatus {
   records: number;
   receipts: number;
 }
-export interface ReceivedRecord {
+export interface ReceivedRecord
+  extends Pick<
+    Extract<SyncRecord, { operation: 'upsert' }>,
+    'preview' | 'createdAt' | 'updatedAt'
+  > {
   sourceId: string;
   kind: string;
   id: string;
@@ -19,7 +23,7 @@ export interface ReceivedRecord {
   content?: RecordContent;
   assets: ReceivedAsset[];
 }
-export interface ReceivedAsset {
+export interface ReceivedAsset extends Pick<AssetMetadata, 'createdAt' | 'updatedAt'> {
   id: string;
   sourceId: string;
   name: string;

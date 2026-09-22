@@ -28,6 +28,8 @@ const source: SyncRegistration = {
         version: '1',
         name: 'file.txt',
         mediaType: 'text/plain',
+        createdAt: '2020-01-01T01:00:00+01:00',
+        updatedAt: '2020-01-02T00:00:00Z',
         read: () => Promise.resolve(new Blob(['attachment']).stream()),
       });
       yield {
@@ -39,6 +41,8 @@ const source: SyncRegistration = {
               id: 'record',
               data: { label: 'Attachment' },
               content: { format: 'markdown', body: `[file](${assetPlaceholder('file')})` },
+              preview: ' An attached\nfile ',
+              createdAt: '2020-01-01T01:00:00+01:00',
               assetRefs: { file },
             },
           ],
@@ -95,6 +99,28 @@ test('pausing a destination holds assets and records without consuming asset att
     expect(record.assets).toHaveLength(1);
     expect(record.content?.body).toContain(`/api/receiver/assets/${record.assets[0]!.id}`);
     expect(record.content?.body).not.toContain('open-sync-asset:');
+    expect(record).toMatchObject({
+      preview: 'An attached file',
+      createdAt: '2020-01-01T00:00:00.000Z',
+    });
+    expect(record).not.toHaveProperty('updatedAt');
+    const listed = (await receiver.assets({ ...owner, offset: 0 })).assets[0]!;
+    expect(listed).toMatchObject({
+      name: 'file.txt',
+      createdAt: '2020-01-01T00:00:00.000Z',
+      updatedAt: '2020-01-02T00:00:00.000Z',
+    });
+    expect(record.assets[0]).toEqual(listed);
+    expect(await receiver.assetInfo({ ...owner, id: listed.id })).toEqual(listed);
+    expect(
+      await receiver.record({
+        ...owner,
+        sourceId: record.sourceId,
+        kind: record.kind,
+        id: record.id,
+      }),
+    ).toEqual(record);
+    expect(listed).not.toHaveProperty('preview');
     const asset = await receiver.asset({ ...owner, id: record.assets[0]!.id });
     expect(await new Response(asset!.open()).text()).toBe('attachment');
     expect(runtime.api.status(owner).queue.pendingDeliveries).toBe(0);

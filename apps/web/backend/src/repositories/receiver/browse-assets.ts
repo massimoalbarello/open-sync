@@ -7,6 +7,8 @@ interface AssetRow {
   name: string;
   media_type: string;
   size: number;
+  created_at: string | null;
+  updated_at: string | null;
 }
 function asset(row: AssetRow): ReceivedAsset {
   return {
@@ -15,6 +17,8 @@ function asset(row: AssetRow): ReceivedAsset {
     name: row.name,
     mediaType: row.media_type,
     size: row.size,
+    ...(row.created_at !== null ? { createdAt: row.created_at } : {}),
+    ...(row.updated_at !== null ? { updatedAt: row.updated_at } : {}),
   };
 }
 export async function browseAssets(
@@ -22,7 +26,9 @@ export async function browseAssets(
 ) {
   const pageSize = 50;
   const sourceId = input.sourceId ?? null;
-  const rows = await input.db<AssetRow[]>`SELECT id,source_id,name,media_type,size FROM host_assets
+  const rows = await input.db<
+    AssetRow[]
+  >`SELECT id,source_id,name,media_type,size,created_at,updated_at FROM host_assets
     WHERE owner_id=${input.ownerId} AND (${sourceId} IS NULL OR source_id=${sourceId})
     ORDER BY source_id,name,id LIMIT ${pageSize + 1} OFFSET ${input.offset}`;
   return { assets: rows.slice(0, pageSize).map(asset), hasMore: rows.length > pageSize, pageSize };
@@ -35,7 +41,9 @@ export async function relateAssets(
 ): Promise<ReceivedRecord[]> {
   const ids = [...new Set(input.records.flatMap((record) => record.assetIds))];
   const rows = ids.length
-    ? await input.db<AssetRow[]>`SELECT id,source_id,name,media_type,size FROM host_assets
+    ? await input.db<
+        AssetRow[]
+      >`SELECT id,source_id,name,media_type,size,created_at,updated_at FROM host_assets
     WHERE owner_id=${input.ownerId} AND id IN (SELECT value FROM json_each(${JSON.stringify(ids)}))`
     : [];
   const byId = new Map(rows.map((row) => [row.id, asset(row)]));
@@ -49,7 +57,9 @@ export async function relateAssets(
 }
 
 export async function findAsset(input: ReceiverScope & { db: SQL; id: string }) {
-  const [row] = await input.db<AssetRow[]>`SELECT id,source_id,name,media_type,size FROM host_assets
+  const [row] = await input.db<
+    AssetRow[]
+  >`SELECT id,source_id,name,media_type,size,created_at,updated_at FROM host_assets
     WHERE owner_id=${input.ownerId} AND id=${input.id}`;
   return row ? asset(row) : undefined;
 }
