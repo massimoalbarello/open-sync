@@ -14,11 +14,19 @@ const reply = (input: { ts: string; text: string }) => ({
 const response = (body: JsonObject): Promise<ProviderResponse> =>
   Promise.resolve({ status: 200, headers: {}, body: { ok: true, ...body } });
 
-test('Slack preserves distinct unavailable files without retaining private download URLs', async () => {
+test('Slack captures private files and preserves external limitations without retaining download URLs', async () => {
   const f = await fixture({
     registration: slackThreads,
     provider: {
       action: unused,
+      download: ({ id, input, fileField }) => {
+        expect({ id, input, fileField }).toEqual({
+          id: 'slack.download_file',
+          input: { fileId: 'F1' },
+          fileField: 'file',
+        });
+        return Promise.resolve(new Blob(['private file']).stream());
+      },
       post: unused,
       get: ({ path }) => {
         if (path === '/auth.test') {
@@ -68,7 +76,7 @@ test('Slack preserves distinct unavailable files without retaining private downl
       },
     });
     expect(f.deliveries[0]?.deliverable.assets).toMatchObject([
-      { id: 'F1', unavailable: 'provider_download_unavailable' },
+      { id: 'F1', size: Buffer.byteLength('private file') },
       { id: 'F2', unavailable: 'external_connection_required' },
     ]);
     expect(JSON.stringify(f.deliveries)).not.toContain('private.example');

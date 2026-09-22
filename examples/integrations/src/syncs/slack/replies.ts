@@ -1,8 +1,8 @@
-import { type AssetRef, assetPlaceholder } from '@context-use/open-sync/assets';
+import type { AssetRef } from '@context-use/open-sync/assets';
 import type { SyncContext } from '@context-use/open-sync/definition';
 import type { SyncRecord } from '@context-use/open-sync/delivery';
-import { canonicalJson } from '@context-use/open-sync/json';
 import type { z } from 'zod';
+import { slackAttachments } from './attachments';
 import {
   type channelSchema,
   historySchema,
@@ -35,22 +35,12 @@ export async function readThread(input: {
     throw new Error('Slack did not return the thread root.');
   }
   const assetRefs: Record<string, AssetRef> = {};
-  const recordMessages = messages.map(({ files, ...message }) => {
-    const attachments = (files ?? []).map((file) => {
-      const key = `file_${Buffer.from(file.id).toString('base64url')}`;
-      const name = file.name ?? file.title ?? file.id;
-      assetRefs[key] = context.assets.unavailable({
-        id: file.id,
-        version: canonicalJson({ name, mediaType: file.mimetype ?? 'application/octet-stream' })
-          .sha256,
-        name,
-        mediaType: file.mimetype ?? 'application/octet-stream',
-        code: file.is_external ? 'external_connection_required' : 'provider_download_unavailable',
-      });
-      return { name, file: assetPlaceholder(key) };
-    });
-    return { ...message, ...(attachments.length ? { attachments } : {}) };
-  });
+  const recordMessages = [];
+  for (const { files, ...message } of messages) {
+    const { refs, attachments } = await slackAttachments({ context, files: files ?? [] });
+    Object.assign(assetRefs, refs);
+    recordMessages.push({ ...message, ...(attachments.length ? { attachments } : {}) });
+  }
   return {
     ...(Object.keys(assetRefs).length ? { assetRefs } : {}),
     operation: 'upsert',

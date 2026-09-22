@@ -25,7 +25,15 @@ export async function exampleProviderResponse(request: Request): Promise<Respons
     return gmailResponse(request);
   }
   if (url.hostname === 'slack.com') {
-    return slackResponse(url);
+    return slackResponse(request);
+  }
+  if (url.hostname === 'files.slack.com') {
+    if (request.headers.get('authorization') !== 'Bearer slack-fixture-token') {
+      return new Response(null, { status: 401 });
+    }
+    return new Response('private Slack attachment', {
+      headers: { 'content-type': 'application/octet-stream' },
+    });
   }
   if (url.hostname === 'mcp-auth.granola.ai') {
     return await granolaOAuthResponse(request);
@@ -135,8 +143,9 @@ function gmailMessage(input: { id: string; date: string; text: string }) {
   };
 }
 
-function slackResponse(url: URL) {
-  const scopes = 'channels:read,channels:history,groups:read,groups:history';
+function slackResponse(request: Request) {
+  const url = new URL(request.url);
+  const scopes = 'channels:read,channels:history,groups:read,groups:history,files:read';
   if (url.pathname.includes('oauth.')) {
     return Response.json({
       ok: true,
@@ -188,6 +197,19 @@ function slackResponse(url: URL) {
           team: 'Example',
           url: 'https://example.slack.com/',
         };
+      case '/api/files.info':
+        if (request.headers.get('authorization') !== 'Bearer slack-fixture-token') {
+          throw new Error('Slack file metadata requires the selected credential');
+        }
+        return {
+          file: {
+            id: 'F1',
+            name: 'private.bin',
+            mimetype: 'application/octet-stream',
+            size: 24,
+            url_private_download: 'https://files.slack.com/files-pri/T1-F1/private.bin',
+          },
+        };
       case '/api/users.conversations':
         return {
           channels: [{ id: 'C1', name: 'general' }],
@@ -228,7 +250,14 @@ function slackReplies(url: URL) {
       }
     : {
         messages: [
-          { ts: root, thread_ts: root, text: 'Lunch?', user: 'U1', reply_count: 2 },
+          {
+            ts: root,
+            thread_ts: root,
+            text: 'Lunch?',
+            user: 'U1',
+            reply_count: 2,
+            files: [{ id: 'F1', name: 'private.bin', mimetype: 'application/octet-stream' }],
+          },
           { ts: '1577880001.000001', thread_ts: root, text: 'At noon?', user: 'U2' },
         ],
         has_more: true,

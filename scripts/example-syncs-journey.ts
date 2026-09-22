@@ -237,6 +237,15 @@ async function verifyRecords(input: {
       notFoundStatus,
     );
   }
+  if (source.service === 'slack') {
+    const attachment = records.records[0].data.messages[0].attachments[0];
+    assert.equal(attachment.name, 'private.bin');
+    assert.equal(typeof attachment.file, 'string');
+    const downloaded = await page.request.get(`${origin}/api/receiver/assets/${attachment.file}`);
+    assert.equal(downloaded.status(), successStatus);
+    assert.equal(await downloaded.text(), 'private Slack attachment');
+    assert.ok(!JSON.stringify(records).includes('files.slack.com'));
+  }
   assert.ok(!JSON.stringify(records).includes('fixture-token'));
   if (source.kind === 'thread') {
     assert.equal(records.records.length, 1);
