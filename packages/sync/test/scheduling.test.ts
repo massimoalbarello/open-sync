@@ -114,7 +114,11 @@ test('an uncooperative step times out, releases its slot, and cannot commit a la
     held = first.sourceId;
     const other = await configure(engine);
     engine.start();
-    await until(() => engine.api.installation({ ...alpha, id: other.id }).status === 'succeeded');
+    await until(
+      () =>
+        engine.api.installation({ ...alpha, id: other.id }).status === 'succeeded' &&
+        engine.api.status(alpha).queue.pendingRecords === 0,
+    );
     expect(engine.api.installation({ ...alpha, id: first.id }).status).toBe('timed_out');
     late.resolve(page);
     await Bun.sleep(1);
