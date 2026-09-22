@@ -31,6 +31,7 @@ test.each(['paused', 'interrupted', 'timed_out', 'waiting_for_capacity'])(
       assets: new SqliteAssets({
         db: f.db,
         maxBytes: defaultLimits.maxPendingAssetBytes,
+        maxSyncBytes: defaultLimits.maxSyncAssetBytes,
         maxDeliveryBytes: defaultLimits.maxPendingBytes,
         maxMaterializedBytes: defaultLimits.maxMaterializedBytes,
       }),

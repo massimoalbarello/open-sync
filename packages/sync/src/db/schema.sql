@@ -76,3 +76,10 @@ CREATE TABLE asset_receipts (
   PRIMARY KEY(owner_id, destination_id, source_id, asset_id, asset_version),
   FOREIGN KEY(owner_id, destination_id) REFERENCES destinations(owner_id, id)
 );
+
+CREATE TABLE asset_files (
+  id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, source_id TEXT NOT NULL,
+  run_id TEXT, bytes INTEGER NOT NULL CHECK(bytes>=0),
+  FOREIGN KEY(owner_id,source_id) REFERENCES installations(owner_id,source_id)
+);
+CREATE INDEX asset_file_source ON asset_files(owner_id,source_id);

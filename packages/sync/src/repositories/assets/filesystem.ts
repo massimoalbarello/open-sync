@@ -10,8 +10,9 @@ import type { AssetFiles } from './contract';
 export class DirectoryAssets implements AssetFiles {
   constructor(private readonly directory: string) {}
   async write(input: Parameters<AssetFiles['write']>[0]) {
-    await mkdir(this.directory, { recursive: true, mode: 0o700 });
     const id = crypto.randomUUID();
+    input.reserve({ id, bytes: 0 });
+    await mkdir(this.directory, { recursive: true, mode: 0o700 });
     const file = await open(this.path(id), 'wx', privateFileMode);
     const reader = input.body.getReader();
     const hash = createHash('sha256');
@@ -32,6 +33,7 @@ export class DirectoryAssets implements AssetFiles {
         if (size > input.maxBytes) {
           fail('asset_too_large');
         }
+        input.reserve({ id, bytes: size });
         hash.update(chunk.value);
         let offset = 0;
         while (offset < chunk.value.byteLength) {

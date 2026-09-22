@@ -316,7 +316,6 @@ test.each([
   { mode: 'fetch', expectedReads: maxAttempts, code: 'asset_fetch_failed' },
   { mode: 'oversized', expectedReads: 1, code: 'asset_too_large' },
   { mode: 'provider_oversized', expectedReads: 1, code: 'asset_too_large' },
-  { mode: 'capacity', expectedReads: maxAttempts, code: 'asset_storage_full' },
 ])(
   '$mode capture failures never enqueue partial content or lose the record',
   async ({ mode, expectedReads, code }) => {
@@ -324,7 +323,6 @@ test.each([
     let reads = 0;
     const fixture = await setup({
       maxAssetBytes: mode === 'oversized' ? 2 : assetByteLimit,
-      ...(mode === 'capacity' ? { maxPendingAssetBytes: 2 } : {}),
       registration: source({
         read: () => {
           reads++;

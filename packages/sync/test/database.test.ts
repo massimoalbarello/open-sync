@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test';
 import { openDatabase } from '../src/db/client';
 import { fixture, page, repositories, storage } from './support';
 
-const previousSchemaVersion = 5;
+const previousSchemaVersion = 6;
 const futureSchemaVersion = 99;
 
 test.each([1, previousSchemaVersion, futureSchemaVersion])(

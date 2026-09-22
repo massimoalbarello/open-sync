@@ -116,7 +116,10 @@ export class Worker implements WorkerControl {
   private completed(): void {
     this.wake();
     if (this.#started) {
-      void this.cleanup().catch(() => this.input.log({ code: 'cleanup_failed' }));
+      void this.cleanup().then(
+        () => this.wake(),
+        () => this.input.log({ code: 'cleanup_failed' }),
+      );
     }
   }
   private cleanup(): Promise<void> {

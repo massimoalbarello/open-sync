@@ -28,8 +28,8 @@ export class SqliteAcquisition implements AcquisitionRepository {
   claim(leaseMs: number) {
     return claimRun({ ...this.input, leaseMs });
   }
-  hasCapacity() {
-    return hasQueueCapacity(this.input);
+  hasCapacity(lease?: RunLease) {
+    return hasQueueCapacity({ ...this.input, installation: lease?.installation });
   }
   commit(input: { lease: RunLease; page: SyncStep; definition: SyncDefinition }): void {
     const { db, limits } = this.input;

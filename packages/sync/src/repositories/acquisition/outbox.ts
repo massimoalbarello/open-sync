@@ -31,11 +31,17 @@ export function enqueue(input: {
   };
   const body = canonicalJson(delivery).json;
   const bytes = Buffer.byteLength(body);
-  if (bytes > limits.maxPendingBytes || input.records.length > limits.maxPendingRecords) {
+  if (
+    bytes > Math.min(limits.maxPendingBytes, limits.maxSyncPendingBytes) ||
+    input.records.length > Math.min(limits.maxPendingRecords, limits.maxSyncPendingRecords)
+  ) {
     fail('page_exceeds_queue_capacity');
   }
   const usage = queueUsage({ db });
+  const own = queueUsage({ db, ownerId: installation.ownerId, installationId: installation.id });
   if (
+    bytes + own.pendingBytes > limits.maxSyncPendingBytes ||
+    input.records.length + own.pendingRecords > limits.maxSyncPendingRecords ||
     bytes + usage.pendingBytes > limits.maxPendingBytes ||
     input.records.length + usage.pendingRecords > limits.maxPendingRecords
   ) {

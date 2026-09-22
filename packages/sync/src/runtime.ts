@@ -57,6 +57,7 @@ export function createSyncRuntime(options: SyncRuntimeOptions) {
     const assets = new SqliteAssets({
       db,
       maxBytes: limits.maxPendingAssetBytes,
+      maxSyncBytes: limits.maxSyncAssetBytes,
       maxDeliveryBytes: limits.maxPendingBytes,
       maxMaterializedBytes: limits.maxMaterializedBytes,
     });
@@ -83,6 +84,7 @@ export function createSyncRuntime(options: SyncRuntimeOptions) {
         }
         for (const id of garbage.remove) {
           await files.remove(id);
+          assets.discarded(id);
         }
         await files.sweep({ retain: garbage.retain, before: Date.now() - timing.leaseMs });
       },
