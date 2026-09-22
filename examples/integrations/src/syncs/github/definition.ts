@@ -2,7 +2,7 @@ import type { SyncRegistration } from '@context-use/open-sync/definition';
 import { jsonSchema } from '../../schema';
 import { historyConfigSchema } from '../history';
 import { checkpointSchema, initialCheckpoint } from './acquisition/state';
-import { run } from './pull-requests';
+import { step } from './pull-requests';
 
 export const githubPullRequests = {
   definition: {
@@ -10,8 +10,8 @@ export const githubPullRequests = {
     description:
       'Authored pull requests as structured JSON. Initial backfill, then incremental polls from the saved watermark with a five-minute overlap and daily reconciliation.',
     id: 'github.pull-requests',
-    version: '1',
-    artifactId: 'open-sync/github-pull-requests/1',
+    version: '2',
+    artifactId: 'open-sync/github-pull-requests/2',
     provider: {
       service: 'github',
       actions: [],
@@ -55,5 +55,5 @@ export const githubPullRequests = {
       },
     },
   },
-  load: () => ({ run }),
+  load: () => ({ step }),
 } satisfies SyncRegistration;

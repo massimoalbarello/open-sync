@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import type { SyncPage, SyncRegistration } from '../src/models/definition';
+import type { SyncRegistration, SyncStep } from '../src/models/definition';
 import type { Delivery } from '../src/models/delivery';
 import { accepted, alpha, configure, fixture, runtime } from './support';
 
@@ -21,8 +21,8 @@ test('each record kind uses its own schema and an invalid kind leaves the whole 
     },
     load: () => ({
       // biome-ignore lint/suspicious/useAwait: Trusted fixture implements the asynchronous source boundary.
-      async *run(): AsyncGenerator<SyncPage> {
-        yield {
+      async step(): Promise<SyncStep> {
+        return {
           deliverable: {
             records: [
               { operation: 'upsert', kind: 'item', id: 'same-id', data: { value: 1 } },

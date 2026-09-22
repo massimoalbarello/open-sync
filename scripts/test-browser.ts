@@ -189,7 +189,10 @@ try {
   await githubOAuthSuccessJourney({ page, origin: app.origin });
   await page.goto(`${app.origin}/syncs/${syncId}`);
   await page.getByRole('link', { name: 'Polling history', exact: true }).click();
-  await page.getByRole('cell', { name: 'Completed', exact: true }).first().waitFor();
+  await page
+    .getByRole('cell', { name: 'Completed', exact: true })
+    .first()
+    .waitFor({ timeout: 2 * drainTimeoutMs });
   await page.getByRole('link', { name: 'Overview', exact: true }).click();
   assert.equal(await page.getByText('Record schemas', { exact: true }).count(), 0);
   assert.equal(await page.getByText('Source configuration', { exact: true }).count(), 0);
@@ -202,8 +205,11 @@ try {
   await page.getByRole('cell', { name: 'Completed', exact: true }).waitFor();
   await page.getByRole('columnheader', { name: 'Records processed', exact: true }).waitFor();
   assert.equal(await page.getByRole('columnheader', { name: 'Pages', exact: true }).count(), 0);
-  await page.getByText('2 attempts', { exact: true }).click();
-  await page.getByText(/Continuing from checkpoint/).waitFor();
+  await page.getByText(`${fixtureRecordCount + 1} attempts`, { exact: true }).click();
+  await page
+    .getByText(/Continuing from checkpoint/)
+    .first()
+    .waitFor();
   const polls = await (
     await page.request.get(`${app.origin}/api/open-sync/sync/installations/${syncId}/polls`)
   ).json();
@@ -233,7 +239,7 @@ try {
   await page.getByRole('button', { name: 'Resume delivery', exact: true }).click();
   await page
     .getByText(`${fixtureRecordCount} records received`, { exact: true })
-    .waitFor({ timeout: drainTimeoutMs });
+    .waitFor({ timeout: 2 * drainTimeoutMs });
   await page.getByText('Nothing waiting for delivery', { exact: true }).waitFor();
   await page.getByRole('link', { name: 'Records', exact: true }).click();
   const records = page.getByRole('list', { name: 'Received records' }).getByRole('listitem');
@@ -304,7 +310,10 @@ try {
   assert.equal(accounts.connections.length, expectedConnections);
   await page.goto(`${app.origin}/syncs/${oauthSync.id}`);
   await page.getByRole('link', { name: 'Polling history', exact: true }).click();
-  await page.getByRole('cell', { name: 'Completed', exact: true }).first().waitFor();
+  await page
+    .getByRole('cell', { name: 'Completed', exact: true })
+    .first()
+    .waitFor({ timeout: 2 * drainTimeoutMs });
   await page.getByRole('link', { name: 'Overview', exact: true }).click();
   const beforeRun = await (
     await page.request.get(`${app.origin}/api/open-sync/sync/installations/${oauthSync.id}`)

@@ -1,5 +1,5 @@
 import { type AssetRef, assetPlaceholder } from '@context-use/open-sync/assets';
-import type { SyncContext, SyncPage } from '@context-use/open-sync/definition';
+import type { SyncContext, SyncStep } from '@context-use/open-sync/definition';
 import { canonicalJson } from '@context-use/open-sync/json';
 import type { z } from 'zod';
 import {
@@ -19,7 +19,7 @@ export async function readThread(input: {
   context: SyncContext;
   checkpoint: Checkpoint;
   workspaceUrl: string;
-}): Promise<SyncPage> {
+}): Promise<SyncStep> {
   const { context, checkpoint } = input;
   const root = checkpoint.threads[0]!;
   const rootTs = root.thread_ts ?? root.ts;

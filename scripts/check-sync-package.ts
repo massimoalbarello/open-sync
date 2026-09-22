@@ -60,7 +60,7 @@ import { granolaMeetings } from '@open-sync/examples/syncs/granola';
 import { localDestination } from '@open-sync/examples/destinations/local';
 for (const source of [githubPullRequests, gmailThreads, slackThreads, granolaMeetings]) {
   const definition = await source.load();
-  if (typeof definition.run !== 'function') throw new Error('Missing source implementation');
+  if (typeof definition.step !== 'function') throw new Error('Missing source implementation');
 }
 const local = localDestination({ isPaused: async () => false, accept: async () => true, acceptAsset: async () => "asset_1" });
 if (typeof local.deliver !== 'function') throw new Error('Missing destination implementation');

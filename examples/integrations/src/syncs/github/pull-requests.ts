@@ -10,7 +10,7 @@ const query = `query SyncPullSummary($id: ID!) {
   } }
 }`;
 
-export function run(context: SyncContext) {
+export function step(context: SyncContext) {
   return acquire({
     context,
     async readRecord({ context, id }) {

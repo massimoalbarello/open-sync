@@ -2,17 +2,10 @@
 import type { SyncContext } from '@context-use/open-sync/definition';
 import { z } from 'zod';
 import { object, request } from './response';
-import type { Checkpoint } from './state';
+import { type Checkpoint, edgeSchema } from './state';
 
 const pullPage = z.object({
-  edges: z
-    .array(
-      z.object({
-        cursor: z.string().min(1),
-        node: z.object({ id: z.string().min(1), updatedAt: z.iso.datetime({ offset: true }) }),
-      }),
-    )
-    .max(10),
+  edges: z.array(edgeSchema).max(10),
   pageInfo: z.object({ hasNextPage: z.boolean() }),
 });
 export async function discoverPulls(input: {

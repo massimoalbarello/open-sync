@@ -21,7 +21,7 @@
     "postpack": "rm ./LICENSE"
   },
   "peerDependencies": {
-    "@context-use/open-sync": "0.2.0"
+    "@context-use/open-sync": "0.3.0"
   },
   "devDependencies": {
     "@context-use/open-sync": "workspace:*",

@@ -1,6 +1,6 @@
 import { assetKey } from './asset';
 import { validateAssetReferences } from './asset-references';
-import type { SyncDefinition, SyncPage } from './definition';
+import type { SyncDefinition, SyncStep } from './definition';
 import type { SyncRecord } from './delivery';
 import { fail } from './error';
 import { canonicalJson } from './json';
@@ -9,16 +9,16 @@ import { normalizeRecordMetadata } from './metadata';
 import { identifier, validate } from './validation';
 
 export function preparePage(input: {
-  page: SyncPage;
+  page: SyncStep;
   definition: SyncDefinition;
   limits: QueueLimits;
-}): SyncPage {
+}): SyncStep {
   try {
     const json = canonicalJson(input.page);
     if (Buffer.byteLength(json.json) > input.limits.maxPageBytes) {
       fail('invalid_page');
     }
-    const page = json.value as unknown as SyncPage;
+    const page = json.value as unknown as SyncStep;
     if (
       Object.keys(page).some((key) => !['deliverable', 'checkpoint', 'complete'].includes(key)) ||
       typeof page.complete !== 'boolean'
@@ -96,7 +96,7 @@ function validateRecord(input: { record: SyncRecord; definition: SyncDefinition 
   }
 }
 
-function validatePageAssets(input: { page: SyncPage; limits: QueueLimits }) {
+function validatePageAssets(input: { page: SyncStep; limits: QueueLimits }) {
   const assets = input.page.deliverable.assets ?? [];
   if (!Array.isArray(assets) || assets.length > input.limits.maxPageAssets) {
     fail('invalid_assets');

@@ -24,7 +24,6 @@ export const defaultTiming = {
   leaseMs: 60_000,
   timeoutMs: 30_000,
   retryMs: 30_000,
-  maxPages: 100,
   historyLimit: 1000,
   assetAttempts: 3,
   deliveryConcurrency: 4,

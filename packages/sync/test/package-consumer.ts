@@ -38,13 +38,13 @@ const definition: SyncRegistration = {
     provider: { service: 'github', actions: ['github.get_current_user'], proxyPaths: ['/user'] },
   },
   load: () => ({
-    async *run({ provider }) {
+    async step({ provider }) {
       const user = await provider.get({ path: '/user' });
       if (user.status !== okStatus) {
         throw new Error('Provider request failed');
       }
       const profile = await provider.action({ id: 'github.get_current_user', input: {} });
-      yield {
+      return {
         checkpoint: 1,
         complete: true,
         deliverable: {

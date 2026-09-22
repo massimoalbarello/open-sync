@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite';
-import { definitionKey, type SyncDefinition, type SyncPage } from '../../models/definition';
+import { definitionKey, type SyncDefinition, type SyncStep } from '../../models/definition';
 import type { DeliveredRecord } from '../../models/delivery';
 import { fail } from '../../models/error';
 import { canonicalJson } from '../../models/json';
@@ -21,7 +21,7 @@ export class SqliteAcquisition implements AcquisitionRepository {
   hasCapacity() {
     return hasQueueCapacity(this.input);
   }
-  commit(input: { lease: RunLease; page: SyncPage; definition: SyncDefinition }): void {
+  commit(input: { lease: RunLease; page: SyncStep; definition: SyncDefinition }): void {
     const { db, limits } = this.input;
     const page = preparePage({ ...input, limits });
     db.transaction(() => {
@@ -51,15 +51,13 @@ export class SqliteAcquisition implements AcquisitionRepository {
         input.lease.ownerId,
         input.lease.id,
       );
-      if (page.complete) {
-        finishRun({
-          db,
-          lease: input.lease,
-          state: 'succeeded',
-          delay: installation.intervalMs,
-          failureCount: 0,
-        });
-      }
+      finishRun({
+        db,
+        lease: input.lease,
+        state: page.complete ? 'succeeded' : 'yielded',
+        delay: page.complete ? installation.intervalMs : 0,
+        failureCount: page.complete ? 0 : undefined,
+      });
     }).immediate();
     input.lease.checkpointRevision++;
   }

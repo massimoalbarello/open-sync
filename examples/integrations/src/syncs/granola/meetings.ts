@@ -1,10 +1,10 @@
-import type { SyncContext, SyncPage } from '@context-use/open-sync/definition';
+import type { SyncContext, SyncStep } from '@context-use/open-sync/definition';
 import type { SyncRecord } from '@context-use/open-sync/delivery';
 import { checkpointSchema, responseSchema } from './models';
 
 const batchSize = 10;
 
-export async function* run(context: SyncContext): AsyncGenerator<SyncPage> {
+export async function step(context: SyncContext): Promise<SyncStep> {
   let { remainingIds } = checkpointSchema.parse(context.checkpoint);
   if (remainingIds === null) {
     const result = responseSchema.parse(
@@ -12,7 +12,7 @@ export async function* run(context: SyncContext): AsyncGenerator<SyncPage> {
     );
     remainingIds = [...new Set(result.meetings.map((meeting) => meeting.id))];
   }
-  while (remainingIds.length) {
+  if (remainingIds.length) {
     context.signal.throwIfAborted();
     const ids = remainingIds.slice(0, batchSize);
     const result = responseSchema.parse(
@@ -39,9 +39,9 @@ export async function* run(context: SyncContext): AsyncGenerator<SyncPage> {
       };
     });
     remainingIds = remainingIds.slice(batchSize);
-    yield { deliverable: { records }, checkpoint: { remainingIds }, complete: false };
+    return { deliverable: { records }, checkpoint: { remainingIds }, complete: false };
   }
-  yield {
+  return {
     deliverable: { records: [] },
     checkpoint: { remainingIds: null },
     complete: true,

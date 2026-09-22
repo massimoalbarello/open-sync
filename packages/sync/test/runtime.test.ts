@@ -42,13 +42,15 @@ test('local delivery drains independently and unblocks bounded acquisition', asy
   }
 });
 
-test('committed pages survive generator failure and restart resumes from their checkpoint', async () => {
+test('committed pages survive step failure and restart resumes from their checkpoint', async () => {
   const definition: SyncRegistration = {
     ...fixture,
     load: () => ({
       // biome-ignore lint/suspicious/useAwait: Failure fixture implements the async execution contract.
-      async *run() {
-        yield page;
+      async step({ checkpoint }) {
+        if (checkpoint === 0) {
+          return page;
+        }
         throw new Error('network interrupted');
       },
     }),
@@ -57,11 +59,16 @@ test('committed pages survive generator failure and restart resumes from their c
   try {
     const installation = await configure(f.engine);
     await f.engine.tick();
+    await f.engine.tick();
     expect(f.engine.api.installation({ ...alpha, id: installation.id }).checkpoint).toBe(1);
+    expect(f.engine.api.installation({ ...alpha, id: installation.id }).status).toBe(
+      'execution_failed',
+    );
     await f.engine.close();
     const resumed = createSyncRuntime({ ...f.options, definitions: [fixture] });
     try {
       resumed.api.queueRun({ ...alpha, id: installation.id });
+      await resumed.tick();
       await resumed.tick();
       expect(resumed.api.installation({ ...alpha, id: installation.id }).checkpoint).toBe(count);
     } finally {
@@ -78,15 +85,18 @@ test('an invalid page cannot advance a valid earlier checkpoint', async () => {
       ...fixture,
       load: () => ({
         // biome-ignore lint/suspicious/useAwait: Invalid output fixture implements the async execution contract.
-        async *run() {
-          yield page;
-          yield { ...page, checkpoint: 'invalid', complete: true };
+        async step({ checkpoint }) {
+          if (checkpoint === 0) {
+            return page;
+          }
+          return { ...page, checkpoint: 'invalid', complete: true };
         },
       }),
     },
   });
   try {
     const installation = await configure(f.engine);
+    await f.engine.tick();
     await f.engine.tick();
     const result = f.engine.api.installation({ ...alpha, id: installation.id });
     expect(result.checkpoint).toBe(1);
@@ -159,21 +169,24 @@ test('changing a destination implementation cannot reroute its queued deliveries
   }
 });
 
-test('shutdown aborts trusted execution, closes the iterator, and leaves a resumable checkpoint', async () => {
+test('shutdown aborts trusted execution, cancels the step, and leaves a resumable checkpoint', async () => {
   const entered = Promise.withResolvers<void>();
   let cleaned = false;
   const f = runtime({
     registration: {
       ...fixture,
       load: () => ({
-        async *run({ signal }) {
+        async step({ signal, checkpoint }) {
           try {
-            yield page;
+            if (checkpoint === 0) {
+              return page;
+            }
             entered.resolve();
             await new Promise<void>((resolve) =>
               signal.addEventListener('abort', () => resolve(), { once: true }),
             );
             signal.throwIfAborted();
+            return page;
           } finally {
             cleaned = true;
           }
@@ -183,6 +196,7 @@ test('shutdown aborts trusted execution, closes the iterator, and leaves a resum
   });
   try {
     await configure(f.engine);
+    await f.engine.tick();
     const tick = f.engine.tick();
     await entered.promise;
     await f.engine.close();

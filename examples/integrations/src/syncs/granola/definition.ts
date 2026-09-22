@@ -1,7 +1,7 @@
 import type { SyncRegistration } from '@context-use/open-sync/definition';
 import { z } from 'zod';
 import { jsonSchema } from '../../schema';
-import { run } from './meetings';
+import { step } from './meetings';
 import { checkpointSchema, meetingSchema } from './models';
 
 export const granolaMeetings = {
@@ -21,5 +21,5 @@ export const granolaMeetings = {
     initialCheckpoint: { remainingIds: null },
     kinds: { meeting: jsonSchema(meetingSchema) },
   },
-  load: () => ({ run }),
+  load: () => ({ step }),
 } satisfies SyncRegistration;

@@ -85,12 +85,14 @@ test('source failures back off durably despite partial progress and pruned histo
         ...fixture,
         load: () => ({
           // biome-ignore lint/suspicious/useAwait: The fixture implements the asynchronous execution boundary.
-          async *run() {
-            yield page;
+          async step({ checkpoint }: SyncContext) {
+            if (checkpoint === 0) {
+              return page;
+            }
             if (failing) {
               throw new Error('private upstream payload');
             }
-            yield { ...page, complete: true };
+            return { ...page, complete: true };
           },
         }),
       },
@@ -114,6 +116,7 @@ test('source failures back off durably despite partial progress and pruned histo
       eighth: maxBackoff,
       ninth: maxBackoff,
     });
+    await engine.tick();
     for (const delay of delays) {
       await engine.tick();
       expect(engine.api.installation(scope)).toMatchObject({
@@ -145,6 +148,7 @@ test('source failures back off durably despite partial progress and pruned histo
       config: { count: 1 },
       destinationId: destination.id,
     });
+    await engine.tick();
     await engine.tick();
     await engine.tick();
     expect(engine.api.installation({ ...beta, id: other.id }).nextDueAt).toBe(now + retryMs);
@@ -180,7 +184,7 @@ test.each(['records', 'assets'])(
         {
           ...fixture,
           load: () => ({
-            async *run(context: SyncContext) {
+            async step(context: SyncContext) {
               if (failing) {
                 const failure = new SyncError({
                   code: 'connector_request_failed',
@@ -199,13 +203,13 @@ test.each(['records', 'assets'])(
                   throw failure;
                 }
               }
-              yield page;
+              return page;
             },
           }),
         },
       ],
       destinationTypes: { local: accepted },
-      timing: { retryMs, maxPages: 1, assetAttempts: 4 },
+      timing: { retryMs, assetAttempts: 4 },
       onEvent: (event: SyncEvent) => events.push(event),
     };
     let engine = createSyncRuntime(options);

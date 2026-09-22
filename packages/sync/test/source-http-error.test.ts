@@ -77,14 +77,16 @@ test.each(
       {
         ...fixture,
         load: () => ({
-          // biome-ignore lint/suspicious/useAwait: Async generator is the source execution contract.
-          async *run({ checkpoint }: { checkpoint: unknown }) {
+          // biome-ignore lint/suspicious/useAwait: A promise is the source execution contract.
+          async step({ checkpoint }: { checkpoint: unknown }) {
             seen.push(checkpoint);
-            yield page;
+            if (checkpoint === 0) {
+              return page;
+            }
             if (rejected) {
               throw new SourceHttpError({ status });
             }
-            yield { ...page, complete: true };
+            return { ...page, complete: true };
           },
         }),
       },
@@ -96,6 +98,7 @@ test.each(
     const installation = await configure(engine);
     const scope = { ...alpha, id: installation.id };
     await engine.tick();
+    await engine.tick();
     expect(engine.api.installation(scope)).toMatchObject({
       enabled: false,
       checkpoint: 1,
@@ -105,11 +108,11 @@ test.each(
     await engine.close();
     engine = createSyncRuntime(options);
     await engine.tick();
-    expect(seen).toEqual([0]);
+    expect(seen).toEqual([0, 1]);
     rejected = false;
     await engine.api.setEnabled({ ...scope, enabled: true });
     await engine.tick();
-    expect(seen).toEqual([0, 1]);
+    expect(seen).toEqual([0, 1, 1]);
     expect(engine.api.installation(scope)).toMatchObject({ enabled: true, status: 'succeeded' });
   } finally {
     await engine.close();
@@ -131,8 +134,10 @@ test.each([rateLimited, forbidden, unavailable])(
         {
           ...fixture,
           load: () => ({
-            async *run(context: SyncContext) {
-              yield page;
+            async step(context: SyncContext) {
+              if (context.checkpoint === 0) {
+                return page;
+              }
               await context.assets.capture({
                 id: 'file',
                 version: '1',
@@ -143,7 +148,7 @@ test.each([rateLimited, forbidden, unavailable])(
                     ? Promise.reject(new SourceHttpError({ status }))
                     : Promise.resolve(new Blob(['attachment']).stream()),
               });
-              yield { ...page, complete: true };
+              return { ...page, complete: true };
             },
           }),
         },
@@ -157,6 +162,7 @@ test.each([rateLimited, forbidden, unavailable])(
       const installation = await configure(engine);
       const scope = { ...alpha, id: installation.id };
       const delays = Object.values({ first: 30_000, second: 60_000, third: 120_000 });
+      await engine.tick();
       for (const [index, delay] of delays.entries()) {
         await engine.tick();
         expect(engine.api.installation(scope)).toMatchObject({

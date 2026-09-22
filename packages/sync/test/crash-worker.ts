@@ -26,5 +26,6 @@ catalog.createInstallation({
   initialCheckpoint: 0,
 });
 acquisition.commit({ lease: acquisition.claim(leaseMs)!, page, definition: fixture.definition });
+acquisition.claim(leaseMs);
 deliveries.claim(leaseMs);
 process.kill(process.pid, 'SIGKILL');

@@ -48,7 +48,7 @@ test('SIGKILL recovery reclaims expired acquisition and delivery without changin
         state: 'succeeded',
         recordsProcessed: targetCount,
         recordsChanged: targetCount,
-        attemptCount: 2,
+        attemptCount: 4,
       });
     } finally {
       await engine.close();

@@ -53,7 +53,8 @@ test('GitHub resumes committed pages after restart, then polls only updates sinc
     await f.engine.tick();
     const partial = f.engine.api.installation(resource).checkpoint;
     expect(partial).toMatchObject({
-      cursor: 'cursor-b',
+      cursor: 'cursor-a',
+      pending: [{ node: { id: 'b' } }],
       accountId: 'github-native-user-1',
       watermark: null,
     });
@@ -140,6 +141,8 @@ test('partial results, repeated cursors and changed accounts cannot advance GitH
           }
         : reply(input);
     await f.engine.tick();
+    await f.engine.tick();
+    await f.engine.tick();
     const committed = f.engine.api.installation(resource).checkpoint;
     f.provider.respond = (input) =>
       reply(input.query.includes(discover) ? { ...input, variables: { after: null } } : input);
@@ -173,6 +176,8 @@ test('cursor recovery preserves account and cycle identity after a committed rec
         ? { status: 200, headers: {}, body: { errors: [{ type: 'INVALID_CURSOR_ARGUMENTS' }] } }
         : reply(input);
     await f.engine.tick();
+    await f.engine.tick();
+    await f.engine.tick();
     expect(f.engine.api.installation(resource).checkpoint).toMatchObject({
       cursor: null,
       accountId: 'github-native-user-1',
@@ -200,6 +205,7 @@ test('an interrupted incremental poll retains its old watermark and resumes the 
     await f.engine.tick();
     await f.engine.tick();
     await f.engine.tick();
+    await f.engine.tick();
     const baseline = f.engine.api.installation(resource).checkpoint as { watermark: string };
     const updatedAt = new Date().toISOString();
     f.pulls[0]!.updatedAt = updatedAt;
@@ -214,6 +220,7 @@ test('an interrupted incremental poll retains its old watermark and resumes the 
       return reply(input);
     };
     f.engine.api.queueRun(resource);
+    await f.engine.tick();
     await f.engine.tick();
     const partial = f.engine.api.installation(resource).checkpoint as { cycleStartedAt: string };
     expect(partial).toMatchObject({ cursor: 'cursor-a', watermark: baseline.watermark });

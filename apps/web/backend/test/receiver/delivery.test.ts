@@ -22,7 +22,7 @@ const source: SyncRegistration = {
     kinds: { note: { type: 'object' } },
   },
   load: () => ({
-    async *run({ assets }) {
+    async step({ assets }) {
       const file = await assets.capture({
         id: 'file',
         version: '1',
@@ -32,7 +32,7 @@ const source: SyncRegistration = {
         updatedAt: '2020-01-02T00:00:00Z',
         read: () => Promise.resolve(new Blob(['attachment']).stream()),
       });
-      yield {
+      return {
         deliverable: {
           records: [
             {

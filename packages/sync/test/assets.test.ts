@@ -36,7 +36,7 @@ function source(
       kinds: { note: { type: 'object' } },
     },
     load: () => ({
-      async *run(context) {
+      async step(context) {
         const asset = await context.assets.capture({
           id: 'file',
           version: input.version ?? '1',
@@ -45,7 +45,7 @@ function source(
           read:
             input.read ?? (() => Promise.resolve(new Blob([new Uint8Array(binaryBytes)]).stream())),
         });
-        yield {
+        return {
           deliverable: {
             records: [
               {
@@ -141,7 +141,7 @@ test.each([false, true])(
       registration: {
         definition: source().definition,
         load: () => ({
-          async *run({ assets }) {
+          async step({ assets }) {
             const metadata = {
               id: 'dated',
               version: '1',
@@ -155,7 +155,7 @@ test.each([false, true])(
                   ...metadata,
                   read: () => Promise.resolve(new Blob(['file']).stream()),
                 });
-            yield { deliverable: { records: [], assets: [asset] }, checkpoint: 1, complete: true };
+            return { deliverable: { records: [], assets: [asset] }, checkpoint: 1, complete: true };
           },
         }),
       },
@@ -503,13 +503,12 @@ test('a failed acquisition retains completed captures for restart without advanc
     load: async () => {
       const executable = await original.load();
       return {
-        async *run(context) {
-          for await (const page of executable.run(context)) {
-            if (failPage) {
-              throw new Error('Source interrupted after capture');
-            }
-            yield page;
+        async step(context) {
+          const page = await executable.step(context);
+          if (failPage) {
+            throw new Error('Source interrupted after capture');
           }
+          return page;
         },
       };
     },

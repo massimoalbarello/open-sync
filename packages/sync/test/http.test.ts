@@ -53,7 +53,13 @@ test('mountable management routes require host authorization and preserve resour
 });
 
 test('queue inspection pages a real backlog without exposing another owner or changing work', async () => {
-  const f = runtime();
+  const f = runtime({
+    destination: {
+      version: '1',
+      configSchema: { type: 'object' },
+      deliver: () => Promise.resolve({ status: 'retry', retryAfterMs: 0 }),
+    },
+  });
   const count = 51;
   try {
     const destination = f.engine.api.createDestination({ ...alpha, type: 'local', config: {} });
@@ -63,7 +69,9 @@ test('queue inspection pages a real backlog without exposing another owner or ch
       destinationId: destination.id,
       config: { count },
     });
-    await f.engine.tick();
+    for (let step = 0; step < count; step++) {
+      await f.engine.tick();
+    }
     const app = createSyncController({
       api: f.engine.api,
       authorize: (request) => (request.headers.get('test-owner') === 'beta' ? beta : alpha),

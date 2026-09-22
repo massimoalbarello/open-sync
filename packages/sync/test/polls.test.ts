@@ -4,7 +4,7 @@ import type { SyncRegistration } from '../src/models/definition';
 import { createSyncRuntime } from '../src/runtime';
 import { accepted, alpha, beta, configure, fixture, page, repositories, storage } from './support';
 
-test('a poll spans fair worker slices and restart, counts records, and retains owner isolation', async () => {
+test('a poll spans source steps and restart, counts records, and retains owner isolation', async () => {
   const files = storage();
   let now = Date.now();
   const clock = spyOn(Date, 'now').mockImplementation(() => now);
@@ -12,7 +12,6 @@ test('a poll spans fair worker slices and restart, counts records, and retains o
     databasePath: files.path,
     definitions: [fixture],
     destinationTypes: { local: accepted },
-    timing: { maxPages: 1 },
   };
   let engine = createSyncRuntime(options);
   try {
@@ -83,19 +82,18 @@ test('a poll spans fair worker slices and restart, counts records, and retains o
   }
 });
 
-test('healthy work yields at a committed checkpoint before the hard deadline', async () => {
+test('each call commits one step and returns control to the scheduler', async () => {
   const files = storage();
   const timeoutMs = 800;
   let cleaned = false;
   const registration: SyncRegistration = {
     ...fixture,
     load: () => ({
-      async *run() {
+      async step() {
         try {
           const firstPageDurationMs = 650;
           await Bun.sleep(firstPageDurationMs);
-          yield page;
-          throw new Error('The next page must run in another attempt.');
+          return page;
         } finally {
           cleaned = true;
         }
@@ -133,15 +131,16 @@ test('a stalled attempt times out; pausing preserves its poll and reprocessing c
   const registration: SyncRegistration = {
     ...fixture,
     load: () => ({
-      async *run({ signal, checkpoint }) {
+      async step({ signal, checkpoint }) {
         if (checkpoint === 0) {
-          yield page;
+          return page;
         }
         signal.throwIfAborted();
         await new Promise<void>((resolve) =>
           signal.addEventListener('abort', () => resolve(), { once: true }),
         );
         signal.throwIfAborted();
+        return page;
       },
     }),
   };
@@ -149,7 +148,7 @@ test('a stalled attempt times out; pausing preserves its poll and reprocessing c
     databasePath: files.path,
     definitions: [registration],
     destinationTypes: { local: accepted },
-    timing: { timeoutMs: 100, maxPages: 1 },
+    timing: { timeoutMs: 100 },
   });
   try {
     const installation = await configure(engine);
@@ -176,32 +175,37 @@ test('a stalled attempt times out; pausing preserves its poll and reprocessing c
   }
 });
 
-test('record totals roll back with the checkpoint when finishing the poll fails', () => {
-  const f = repositories();
-  try {
-    const leaseMs = 60_000;
-    const lease = f.acquisition.claim(leaseMs)!;
-    f.db.exec(
-      "CREATE TRIGGER fail_finish BEFORE UPDATE OF state ON runs BEGIN SELECT RAISE(ABORT,'injected'); END",
-    );
-    expect(() =>
-      f.acquisition.commit({
-        lease,
-        page: { ...page, complete: true },
-        definition: fixture.definition,
-      }),
-    ).toThrow('injected');
-    expect(f.catalog.polls({ ...alpha, id: f.installation.id, offset: 0 }).polls[0]).toMatchObject({
-      recordsProcessed: 0,
-      recordsChanged: 0,
-      completedAt: null,
-    });
-    expect(f.catalog.installation({ ...alpha, id: f.installation.id }).checkpoint).toBe(0);
-    expect(f.deliveries.status(alpha).pendingRecords).toBe(0);
-  } finally {
-    f.close();
-  }
-});
+test.each([false, true])(
+  'step output and scheduling roll back together (complete: %s)',
+  (complete) => {
+    const f = repositories();
+    try {
+      const leaseMs = 60_000;
+      const lease = f.acquisition.claim(leaseMs)!;
+      f.db.exec(
+        "CREATE TRIGGER fail_finish BEFORE UPDATE OF state ON runs BEGIN SELECT RAISE(ABORT,'injected'); END",
+      );
+      expect(() =>
+        f.acquisition.commit({
+          lease,
+          page: { ...page, complete },
+          definition: fixture.definition,
+        }),
+      ).toThrow('injected');
+      expect(
+        f.catalog.polls({ ...alpha, id: f.installation.id, offset: 0 }).polls[0],
+      ).toMatchObject({
+        recordsProcessed: 0,
+        recordsChanged: 0,
+        completedAt: null,
+      });
+      expect(f.catalog.installation({ ...alpha, id: f.installation.id }).checkpoint).toBe(0);
+      expect(f.deliveries.status(alpha).pendingRecords).toBe(0);
+    } finally {
+      f.close();
+    }
+  },
+);
 
 test('empty completion batches do not inflate record totals', () => {
   const f = repositories();
@@ -210,7 +214,7 @@ test('empty completion batches do not inflate record totals', () => {
     const lease = f.acquisition.claim(leaseMs)!;
     f.acquisition.commit({ lease, page, definition: fixture.definition });
     f.acquisition.commit({
-      lease,
+      lease: f.acquisition.claim(leaseMs)!,
       page: { ...page, deliverable: { records: [] }, complete: true },
       definition: fixture.definition,
     });
@@ -220,7 +224,7 @@ test('empty completion batches do not inflate record totals', () => {
       recordsProcessed: 1,
       recordsChanged: 1,
     });
-    expect(history.polls[0]?.attempts[0]).toMatchObject({ recordsProcessed: 1, recordsChanged: 1 });
+    expect(history.polls[0]?.attempts[0]).toMatchObject({ recordsProcessed: 0, recordsChanged: 0 });
   } finally {
     f.close();
   }

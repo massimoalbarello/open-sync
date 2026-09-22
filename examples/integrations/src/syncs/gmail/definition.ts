@@ -2,7 +2,7 @@ import type { SyncRegistration } from '@context-use/open-sync/definition';
 import { jsonSchema } from '../../schema';
 import { historyConfigSchema } from '../history';
 import { checkpointSchema, initialCheckpoint, threadSchema } from './models';
-import { run } from './threads';
+import { step } from './threads';
 
 export const gmailThreads = {
   definition: {
@@ -22,5 +22,5 @@ export const gmailThreads = {
     initialCheckpoint,
     kinds: { thread: jsonSchema(threadSchema) },
   },
-  load: () => ({ run }),
+  load: () => ({ step }),
 } satisfies SyncRegistration;

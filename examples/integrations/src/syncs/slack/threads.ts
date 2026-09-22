@@ -1,4 +1,4 @@
-import type { SyncContext, SyncPage } from '@context-use/open-sync/definition';
+import type { SyncContext, SyncStep } from '@context-use/open-sync/definition';
 import { z } from 'zod';
 import { historyStart } from '../history';
 import {
@@ -18,34 +18,30 @@ const millisecondsPerSecond = 1000;
 const directoryPageSize = 100;
 const historyPageSize = 15;
 
-export async function* run(context: SyncContext): AsyncGenerator<SyncPage> {
+export async function step(context: SyncContext): Promise<SyncStep> {
   const identity = z
     .object({ team_id: z.string(), user_id: z.string(), url: z.url() })
     .parse(await request({ context, path: '/auth.test' }));
   const account = `${identity.team_id}:${identity.user_id}`;
   let checkpoint: z.infer<typeof checkpointSchema> = beginCycle({ context, account });
-  while (true) {
-    context.signal.throwIfAborted();
-    if (!checkpoint.channels.length && checkpoint.directoryComplete) {
-      yield {
-        deliverable: { records: [] },
-        checkpoint: { ...initialCheckpoint, account },
-        complete: true,
-      };
-      return;
-    }
-    try {
-      const page = checkpoint.threads.length
-        ? await readThread({ context, checkpoint, workspaceUrl: identity.url })
-        : checkpoint.channels.length
-          ? await readHistory({ context, checkpoint })
-          : await readDirectory({ context, checkpoint });
-      checkpoint = checkpointSchema.parse(page.checkpoint);
-      yield page;
-    } catch (error) {
-      checkpoint = recover({ checkpoint, error });
-      yield { deliverable: { records: [] }, checkpoint, complete: false };
-    }
+  context.signal.throwIfAborted();
+  if (!checkpoint.channels.length && checkpoint.directoryComplete) {
+    return {
+      deliverable: { records: [] },
+      checkpoint: { ...initialCheckpoint, account },
+      complete: true,
+    };
+  }
+  try {
+    const page = checkpoint.threads.length
+      ? await readThread({ context, checkpoint, workspaceUrl: identity.url })
+      : checkpoint.channels.length
+        ? await readHistory({ context, checkpoint })
+        : await readDirectory({ context, checkpoint });
+    return page;
+  } catch (error) {
+    checkpoint = recover({ checkpoint, error });
+    return { deliverable: { records: [] }, checkpoint, complete: false };
   }
 }
 
@@ -63,7 +59,7 @@ function recover(input: { checkpoint: z.infer<typeof checkpointSchema>; error: u
 async function readDirectory(input: {
   context: SyncContext;
   checkpoint: z.infer<typeof checkpointSchema>;
-}): Promise<SyncPage> {
+}): Promise<SyncStep> {
   const { context, checkpoint } = input;
   const response = z
     .object({
@@ -100,7 +96,7 @@ async function readDirectory(input: {
 async function readHistory(input: {
   context: SyncContext;
   checkpoint: z.infer<typeof checkpointSchema>;
-}): Promise<SyncPage> {
+}): Promise<SyncStep> {
   const { context, checkpoint } = input;
   const channel = checkpoint.channels[0]!;
   const response = historySchema.parse(

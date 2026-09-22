@@ -3,10 +3,16 @@ import type { SyncContext } from '@context-use/open-sync/definition';
 import { z } from 'zod';
 import { object, request } from './response';
 
+export const edgeSchema = z.object({
+  cursor: z.string().min(1),
+  node: z.object({ id: z.string().min(1), updatedAt: z.iso.datetime({ offset: true }) }),
+});
 export const checkpointSchema = z.strictObject({
   accountId: z.string().nullable(),
   phase: z.enum(['backfill', 'updates', 'reconcile']),
   cursor: z.string().nullable(),
+  pending: z.array(edgeSchema).max(10).nullable(),
+  more: z.boolean(),
   cycleStartedAt: z.iso.datetime({ offset: true }).nullable(),
   watermark: z.iso.datetime({ offset: true }).nullable(),
   reconciledAt: z.iso.datetime({ offset: true }).nullable(),
@@ -16,6 +22,8 @@ export const initialCheckpoint: Checkpoint = {
   accountId: null,
   phase: 'backfill',
   cursor: null,
+  pending: null,
+  more: true,
   cycleStartedAt: null,
   watermark: null,
   reconciledAt: null,
