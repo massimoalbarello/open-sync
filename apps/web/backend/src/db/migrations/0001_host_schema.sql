@@ -17,5 +17,8 @@ CREATE TABLE host_records (
   deleted INTEGER NOT NULL,
   data TEXT,
   content TEXT,
+  preview TEXT,
+  created_at TEXT,
+  updated_at TEXT,
   PRIMARY KEY(owner_id, source_id, kind, record_id)
 );

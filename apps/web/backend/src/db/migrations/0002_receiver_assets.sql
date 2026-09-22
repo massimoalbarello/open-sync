@@ -10,6 +10,8 @@ CREATE TABLE host_assets (
   name TEXT NOT NULL,
   media_type TEXT NOT NULL,
   size INTEGER NOT NULL,
+  created_at TEXT,
+  updated_at TEXT,
   PRIMARY KEY(owner_id, id),
   UNIQUE(owner_id, idempotency_key),
   UNIQUE(owner_id, source_id, asset_id, asset_version)
