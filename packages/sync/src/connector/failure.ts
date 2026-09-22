@@ -33,15 +33,12 @@ export function connectorFailure(input: {
   ) {
     diagnostics.providerStatus = Number(providerStatus);
   }
+  const status = input.response?.status;
   return new SyncError({
     code: 'connector_request_failed',
     message: 'connector request failed',
     diagnostics,
-    status: recoveryStatus({
-      service: input.service,
-      code,
-      status: providerStatus ?? input.response?.status,
-    }),
+    status: isErrorStatus(status) ? status : undefined,
   });
 }
 
@@ -49,21 +46,4 @@ function object(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
-}
-
-function recoveryStatus(input: {
-  service: string;
-  code: unknown;
-  status: unknown;
-}): number | undefined {
-  const rateLimited = 429;
-  const forbidden = 403;
-  if (input.code === 'rate_limited') {
-    return rateLimited;
-  }
-  // Only Gmail's released adapter distinguishes quota 403s from permission failures.
-  if (input.status === forbidden && input.service !== 'gmail') {
-    return undefined;
-  }
-  return isErrorStatus(input.status) ? input.status : undefined;
 }
