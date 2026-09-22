@@ -5,6 +5,7 @@ import type { Scope } from '../models/identity';
 import type { JsonObject, JsonValue } from '../models/json';
 import { matchesProviderPath } from '../models/provider-path';
 import { connectorFailure } from './failure';
+import { downloadFile } from './file';
 import { connectorData, providerResponse } from './response';
 
 interface RequestInput {
@@ -82,6 +83,7 @@ export function createConnectorClient(options: ConnectorClientOptions): Provider
       checkConnection({ metadata, connection: input.connection, requirements: input.requirements });
       return operations({
         request,
+        download: (file) => downloadFile({ ...options, ...file, signal: input.signal }),
         requirements: input.requirements,
         alias: metadata.alias as string,
         signal: input.signal,
@@ -107,29 +109,39 @@ function checkConnection(input: {
 }
 function operations(input: {
   request(input: RequestInput): Promise<JsonValue>;
+  download(input: {
+    file: JsonValue;
+    service: string;
+    operation: string;
+  }): Promise<ReadableStream<Uint8Array>>;
   requirements: ProviderRequirements;
   alias: string;
   signal: AbortSignal;
 }): ProviderOperations {
   const { request, requirements, alias, signal } = input;
+  const action: ProviderOperations['action'] = async (operation) => {
+    if (!requirements.actions.includes(operation.id)) {
+      fail('operation_denied');
+    }
+    const path = `/v1/actions/${encodeURIComponent(operation.id)}`;
+    const diagnostics = { service: requirements.service, operation: operation.id };
+    const metadata = (await request({ ...diagnostics, path, signal })) as JsonObject;
+    if (metadata.service !== requirements.service) {
+      fail('operation_denied');
+    }
+    return await request({
+      ...diagnostics,
+      path,
+      body: { input: operation.input },
+      alias,
+      signal,
+    });
+  };
   return {
-    async action(operation) {
-      if (!requirements.actions.includes(operation.id)) {
-        fail('operation_denied');
-      }
-      const path = `/v1/actions/${encodeURIComponent(operation.id)}`;
-      const diagnostics = { service: requirements.service, operation: operation.id };
-      const metadata = (await request({ ...diagnostics, path, signal })) as JsonObject;
-      if (metadata.service !== requirements.service) {
-        fail('operation_denied');
-      }
-      return await request({
-        ...diagnostics,
-        path,
-        body: { input: operation.input },
-        alias,
-        signal,
-      });
+    action,
+    async download(operation) {
+      const file = await action(operation);
+      return input.download({ file, service: requirements.service, operation: operation.id });
     },
     get(operation) {
       const { path } = operation;
