@@ -30,7 +30,12 @@ export interface ProviderResponse {
 export interface ProviderOperations {
   action(input: { id: string; input: JsonObject }): Promise<JsonValue>;
   /** Execute a declared file action and consume its temporary file through the owned Connector. */
-  download?(input: { id: string; input: JsonObject }): Promise<ReadableStream<Uint8Array>>;
+  download?(input: {
+    id: string;
+    input: JsonObject;
+    /** Top-level result field containing the file; omit when the action returns it directly. */
+    fileField?: string;
+  }): Promise<ReadableStream<Uint8Array>>;
   get(input: { path: string; query?: JsonObject }): Promise<ProviderResponse>;
   post(input: { path: string; body: JsonObject }): Promise<ProviderResponse>;
 }
