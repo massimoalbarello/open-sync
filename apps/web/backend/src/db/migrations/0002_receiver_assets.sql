@@ -18,5 +18,6 @@ CREATE TABLE host_assets (
 );
 
 CREATE INDEX host_assets_file_id ON host_assets(file_id);
+CREATE INDEX host_assets_updated_at ON host_assets(owner_id, updated_at DESC, id);
 
 ALTER TABLE host_records ADD COLUMN asset_ids TEXT NOT NULL DEFAULT '[]';

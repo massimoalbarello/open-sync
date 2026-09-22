@@ -22,3 +22,5 @@ CREATE TABLE host_records (
   updated_at TEXT,
   PRIMARY KEY(owner_id, source_id, kind, record_id)
 );
+
+CREATE INDEX host_records_updated_at ON host_records(owner_id, updated_at DESC, source_id, kind, record_id) WHERE deleted=0;
