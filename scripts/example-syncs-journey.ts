@@ -197,12 +197,20 @@ async function verifyRecords(input: {
   assert.equal(await summary.locator('time').count(), source.service === 'granola' ? 0 : 1);
   if (source.service === 'gmail') {
     const receivedAttachments = records.records[0].data.messages[0].attachments;
-    const attachmentCount = 3;
+    const attachmentCount = 4;
     assert.equal(receivedAttachments.length, attachmentCount);
-    assert.deepEqual(receivedAttachments[2], {
+    assert.deepEqual(receivedAttachments[3], {
       name: 'oversized.bin',
       file: { status: 'failed', code: 'asset_too_large' },
     });
+    const large = await page.request.get(
+      `${origin}/api/receiver/assets/${receivedAttachments[2].file}`,
+    );
+    assert.equal(large.status(), successStatus);
+    const bytes = await large.body();
+    const largeSize = 18_874_373;
+    assert.equal(bytes.length, largeSize);
+    assert.ok(bytes.every((byte) => byte === 'A'.charCodeAt(0)));
     const attachments = receivedAttachments.slice(0, 2) as {
       name: string;
       file: string;

@@ -14,8 +14,7 @@ export const gmailThreads = {
     artifactId: 'open-sync/gmail-threads/2',
     provider: {
       service: 'gmail',
-      actions: ['gmail.get_profile', 'gmail.list_threads'],
-      proxyPaths: ['/users/me/messages/:messageId/attachments/:attachmentId'],
+      actions: ['gmail.get_profile', 'gmail.list_threads', 'gmail.download_attachment'],
     },
     configSchema: jsonSchema(historyConfigSchema),
     checkpointSchema: jsonSchema(checkpointSchema),

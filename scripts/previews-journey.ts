@@ -34,7 +34,9 @@ export async function previewsJourney(input: {
   });
   await page.setViewportSize({ width: 1280, height: 900 });
 
-  for (const asset of record.assets.filter((item) => item.name !== 'attachment.bin')) {
+  for (const asset of record.assets.filter(
+    (item) => item.mediaType !== 'application/octet-stream',
+  )) {
     await page.goto(recordUrl);
     await page
       .getByRole('list', { name: `Assets for ${record.kind} ${record.id}` })
