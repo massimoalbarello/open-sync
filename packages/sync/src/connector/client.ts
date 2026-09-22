@@ -140,7 +140,11 @@ function operations(input: {
   return {
     action,
     async download(operation) {
-      const file = await action(operation);
+      const result = await action(operation);
+      const file =
+        operation.fileField && result && typeof result === 'object' && !Array.isArray(result)
+          ? (result[operation.fileField] ?? null)
+          : result;
       return input.download({ file, service: requirements.service, operation: operation.id });
     },
     get(operation) {
