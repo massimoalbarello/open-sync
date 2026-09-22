@@ -4,6 +4,7 @@ import { AssetLink } from '../../components/asset-link';
 import { InfiniteScroll } from '../../components/infinite-scroll';
 import { SectionPage } from '../../components/section-page';
 import { SourceTimestamps } from '../../components/source-timestamps';
+import { UpdatedDayList } from '../../components/updated-day-list';
 import { recordsOptions } from '../../queries/records';
 
 export const Route = createFileRoute('/_workspace/records/')({
@@ -28,13 +29,19 @@ function Records() {
         ) : undefined
       }
     >
-      <p className="mb-6 text-muted-foreground text-sm">Records received from your syncs.</p>
+      <p className="mb-6 text-muted-foreground text-sm">
+        Records received from your syncs. Most recently updated first, grouped by your local day.
+      </p>
       {query.isPending && <p>Loading records…</p>}
       {query.error && <p role="alert">{query.error.message}</p>}
       {query.data && records.length === 0 && <p>No records received yet.</p>}
-      <ul aria-label="Received records" className="divide-y divide-border">
-        {records.map((record) => (
-          <li key={JSON.stringify([record.sourceId, record.kind, record.id])} className="py-4">
+      <UpdatedDayList
+        items={records}
+        label="Received records"
+        itemKey={(record) => JSON.stringify([record.sourceId, record.kind, record.id])}
+      >
+        {(record) => (
+          <>
             <Link
               to="/records/$sourceId/$kind/$recordId"
               params={{ sourceId: record.sourceId, kind: record.kind, recordId: record.id }}
@@ -49,11 +56,11 @@ function Records() {
               </p>
             )}
             <div className="mt-1">
-              <SourceTimestamps createdAt={record.createdAt} updatedAt={record.updatedAt} />
+              <SourceTimestamps createdAt={record.createdAt} />
             </div>
             {record.assets.length > 0 && (
               <div className="mt-4 space-y-2">
-                <h2 className="font-medium text-muted-foreground text-xs">Related assets</h2>
+                <h3 className="font-medium text-muted-foreground text-xs">Related assets</h3>
                 <ul
                   aria-label={`Assets for ${record.kind} ${record.id}`}
                   className="flex flex-wrap gap-x-6 gap-y-2"
@@ -66,9 +73,9 @@ function Records() {
                 </ul>
               </div>
             )}
-          </li>
-        ))}
-      </ul>
+          </>
+        )}
+      </UpdatedDayList>
       <InfiniteScroll
         hasMore={query.hasNextPage}
         fetching={query.isFetching}

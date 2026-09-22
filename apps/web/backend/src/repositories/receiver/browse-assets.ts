@@ -30,7 +30,7 @@ export async function browseAssets(
     AssetRow[]
   >`SELECT id,source_id,name,media_type,size,created_at,updated_at FROM host_assets
     WHERE owner_id=${input.ownerId} AND (${sourceId} IS NULL OR source_id=${sourceId})
-    ORDER BY source_id,name,id LIMIT ${pageSize + 1} OFFSET ${input.offset}`;
+    ORDER BY updated_at DESC,id LIMIT ${pageSize + 1} OFFSET ${input.offset}`;
   return { assets: rows.slice(0, pageSize).map(asset), hasMore: rows.length > pageSize, pageSize };
 }
 export async function relateAssets(

@@ -69,7 +69,7 @@ export class SqliteReceiver implements ReceiverRepository {
       RecordRow[]
     >`SELECT source_id,kind,record_id,revision,data,content,asset_ids,preview,created_at,updated_at FROM host_records
       WHERE owner_id=${input.ownerId} AND deleted=0 AND (${sourceId} IS NULL OR source_id=${sourceId})
-      ORDER BY source_id,kind,record_id LIMIT ${limit + 1} OFFSET ${input.offset}`;
+      ORDER BY updated_at DESC,source_id,kind,record_id LIMIT ${limit + 1} OFFSET ${input.offset}`;
     return {
       records: await relateAssets({
         ...input,
