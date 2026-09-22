@@ -15,6 +15,16 @@ export class SqliteAcquisition implements AcquisitionRepository {
   constructor(
     private readonly input: { db: Database; limits: QueueLimits; historyLimit: number },
   ) {}
+  nextDue(): number | undefined {
+    return (
+      this.input.db
+        .query<{ due: number | null }, []>(`
+      SELECT MIN(COALESCE((SELECT expires_at FROM runs r WHERE r.owner_id=i.owner_id
+      AND r.installation_id=i.id AND r.state='running'), i.next_due_at)) AS due
+      FROM installations i WHERE enabled=1`)
+        .get()?.due ?? undefined
+    );
+  }
   claim(leaseMs: number) {
     return claimRun({ ...this.input, leaseMs });
   }

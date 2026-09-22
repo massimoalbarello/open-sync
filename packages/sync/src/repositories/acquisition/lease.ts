@@ -46,12 +46,11 @@ export function claimRun(input: {
   return db
     .transaction(() => {
       recoverRuns(input);
-      if (db.query("SELECT 1 FROM runs WHERE state='running'").get()) {
-        return;
-      }
       const row = db
         .query<{ id: string; owner_id: string; failure_count: number }, [number]>(
-          'SELECT id,owner_id,failure_count FROM installations WHERE enabled=1 AND next_due_at<=? ORDER BY next_due_at,id LIMIT 1',
+          `SELECT id,owner_id,failure_count FROM installations i WHERE enabled=1 AND next_due_at<=?
+          AND NOT EXISTS (SELECT 1 FROM runs r WHERE r.owner_id=i.owner_id AND r.installation_id=i.id AND r.state='running')
+          ORDER BY next_due_at,(SELECT COALESCE(MAX(rowid),0) FROM runs r WHERE r.owner_id=i.owner_id AND r.installation_id=i.id),id LIMIT 1`,
         )
         .get(Date.now());
       if (!row) {

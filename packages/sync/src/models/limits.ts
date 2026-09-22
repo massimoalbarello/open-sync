@@ -20,12 +20,12 @@ export const defaultLimits: QueueLimits = {
   maxMaterializedBytes: 67_108_864,
 };
 export const defaultTiming = {
-  pollMs: 1000,
   leaseMs: 60_000,
   timeoutMs: 30_000,
   retryMs: 30_000,
   historyLimit: 1000,
   assetAttempts: 3,
+  sourceConcurrency: 4,
   deliveryConcurrency: 4,
 };
 export type Timing = typeof defaultTiming;

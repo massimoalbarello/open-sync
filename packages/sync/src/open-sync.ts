@@ -28,6 +28,8 @@ export interface OpenSyncOptions {
   destinationTypes: Readonly<Record<string, DestinationType>>;
   limits?: Partial<QueueLimits>;
   executionTimeoutMs?: number;
+  sourceConcurrency?: number;
+  deliveryConcurrency?: number;
   onEvent?: Logger;
   dataDirectory: string;
   assetDirectory?: string;
@@ -115,10 +117,7 @@ export async function createOpenSync(options: OpenSyncOptions): Promise<OpenSync
       destinationTypes: options.destinationTypes,
       limits: options.limits,
       onEvent: options.onEvent,
-      timing: {
-        timeoutMs: options.executionTimeoutMs ?? defaultTiming.timeoutMs,
-        leaseMs: (options.executionTimeoutMs ?? defaultTiming.timeoutMs) + defaultTiming.timeoutMs,
-      },
+      timing: executionTiming(options),
       databasePath: join(options.dataDirectory, 'sync.db'),
       assetDirectory: options.assetDirectory ?? join(options.dataDirectory, 'queued-assets'),
       connector: {
@@ -210,3 +209,13 @@ export interface OpenSyncRuntime {
   close(): Promise<void>;
 }
 export type { ProviderApi, SyncApi } from './api';
+
+function executionTiming(options: OpenSyncOptions) {
+  const timeoutMs = options.executionTimeoutMs ?? defaultTiming.timeoutMs;
+  return {
+    timeoutMs,
+    leaseMs: timeoutMs + defaultTiming.timeoutMs,
+    sourceConcurrency: options.sourceConcurrency ?? defaultTiming.sourceConcurrency,
+    deliveryConcurrency: options.deliveryConcurrency ?? defaultTiming.deliveryConcurrency,
+  };
+}

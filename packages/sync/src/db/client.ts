@@ -2,7 +2,8 @@ import { Database } from 'bun:sqlite';
 import { SyncError } from '../models/error';
 import schema from './schema.sql' with { type: 'text' };
 
-const schemaVersion = 5;
+const serialWorkerSchemaVersion = 5;
+const schemaVersion = 6;
 
 export function openDatabase(path: string): Database {
   const db = new Database(path, { create: true, strict: true });
@@ -15,6 +16,11 @@ export function openDatabase(path: string): Database {
       if (version === 0) {
         db.exec(schema);
         db.exec(`PRAGMA user_version=${schemaVersion}`);
+      } else if (version === serialWorkerSchemaVersion) {
+        db.exec(`DROP INDEX one_acquisition;
+          CREATE UNIQUE INDEX one_acquisition ON runs(owner_id,installation_id) WHERE state='running';
+          CREATE INDEX delivery_order ON deliveries(owner_id,installation_id,destination_id,sequence);
+          PRAGMA user_version=${schemaVersion};`);
       } else if (version !== schemaVersion) {
         throw new SyncError({
           code: 'schema_version',

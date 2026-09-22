@@ -1,3 +1,4 @@
+import { abortable } from '../execution/abortable';
 import type { AssetOutcome, AssetResult, DestinationAssets } from '../models/asset';
 import type { DeliveryResult } from '../models/delivery';
 import { validateResult } from '../models/delivery-result';
@@ -17,12 +18,15 @@ export class DeliveryService {
       files: AssetFiles;
     },
   ) {}
-  async execute(signal: AbortSignal): Promise<void> {
+  claim() {
+    return this.input.repository.claim(this.input.timing.leaseMs);
+  }
+  nextDue() {
+    return this.input.repository.nextDue();
+  }
+  async execute(input: { lease: DeliveryLease; signal: AbortSignal }): Promise<void> {
     const { repository, registry, timing } = this.input;
-    const lease = repository.claim(timing.leaseMs);
-    if (!lease) {
-      return;
-    }
+    const { lease, signal } = input;
     let result: DeliveryResult;
     try {
       const type = registry.destination(lease.destination.type);
@@ -32,18 +36,22 @@ export class DeliveryService {
         result = { status: 'rejected', code: 'destination_assets_unsupported' };
       } else {
         result = validateResult(
-          await type.deliver({
-            scope: { actorId: lease.actorId, ownerId: lease.ownerId },
-            config: structuredClone(lease.destination.config),
-            delivery: structuredClone(lease.delivery),
+          await abortable({
             signal,
-            assets: destinationAssets({
-              repository: this.input.assets,
-              files: this.input.files,
-              lease,
-              signal,
-              attempts: timing.assetAttempts,
-            }),
+            run: () =>
+              type.deliver({
+                scope: { actorId: lease.actorId, ownerId: lease.ownerId },
+                config: structuredClone(lease.destination.config),
+                delivery: structuredClone(lease.delivery),
+                signal,
+                assets: destinationAssets({
+                  repository: this.input.assets,
+                  files: this.input.files,
+                  lease,
+                  signal,
+                  attempts: timing.assetAttempts,
+                }),
+              }),
           }),
         );
       }
@@ -86,8 +94,12 @@ function destinationAssets(input: {
   };
   return {
     open,
-    materialize: (build) => input.repository.materialize({ lease: input.lease, build }),
+    materialize: (build) => {
+      input.signal.throwIfAborted();
+      return input.repository.materialize({ lease: input.lease, build });
+    },
     async transfer({ asset, upload }) {
+      input.signal.throwIfAborted();
       const receipt = input.repository.receipt({ lease: input.lease, asset });
       if (receipt.outcome) {
         return receipt.outcome;
@@ -120,6 +132,7 @@ function destinationAssets(input: {
       if (!outcome) {
         return result as Exclude<AssetResult, { status: 'accepted' }>;
       }
+      input.signal.throwIfAborted();
       input.repository.recordOutcome({ lease: input.lease, asset, outcome });
       return outcome;
     },
