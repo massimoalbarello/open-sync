@@ -11,6 +11,7 @@ import { identifier, validate } from './validation';
 
 export class Registry {
   readonly #definitions = new Map<string, SyncRegistration>();
+  readonly #upgrades: { from: SyncDefinition; to: SyncDefinition }[] = [];
   readonly #destinations: ReadonlyMap<string, DestinationType>;
   constructor(input: {
     definitions: readonly SyncRegistration[];
@@ -49,10 +50,33 @@ export class Registry {
         fail('definition_conflict');
       }
       this.#definitions.set(key, { definition, load: () => registration.load() });
+      this.registerUpgrades({ registration, definition });
+    }
+  }
+  private registerUpgrades(input: { registration: SyncRegistration; definition: SyncDefinition }) {
+    const { registration, definition } = input;
+    for (const from of registration.upgradeFrom ?? []) {
+      if (
+        from.id !== definition.id ||
+        from.version === definition.version ||
+        from.provider?.service !== definition.provider?.service ||
+        (['configSchema', 'checkpointSchema', 'initialCheckpoint', 'kinds'] as const).some(
+          (field) => canonicalJson(from[field]).json !== canonicalJson(definition[field]).json,
+        )
+      ) {
+        fail('incompatible_definition_upgrade');
+      }
+      if (this.#upgrades.some((upgrade) => definitionKey(upgrade.from) === definitionKey(from))) {
+        fail('definition_conflict');
+      }
+      this.#upgrades.push({ from: structuredClone(from), to: definition });
     }
   }
   definitions(): SyncDefinition[] {
     return [...this.#definitions.values()].map((entry) => structuredClone(entry.definition));
+  }
+  upgrades() {
+    return structuredClone(this.#upgrades);
   }
   definition(ref: DefinitionRef): SyncRegistration {
     const registration = this.#definitions.get(definitionKey(ref));

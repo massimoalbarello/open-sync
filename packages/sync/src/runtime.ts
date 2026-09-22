@@ -50,9 +50,7 @@ export function createSyncRuntime(options: SyncRuntimeOptions) {
   const db = openDatabase(options.databasePath);
   try {
     const catalog = new SqliteCatalog(db);
-    for (const definition of registry.definitions()) {
-      catalog.register(definition);
-    }
+    catalog.registerAll({ definitions: registry.definitions(), upgrades: registry.upgrades() });
     const deliveries = new SqliteDeliveries(db);
     const assets = new SqliteAssets({
       db,

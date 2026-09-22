@@ -68,6 +68,8 @@ export interface SyncExecutable {
 /** Trusted host code only. Loading uploaded code requires a separate isolated execution layer. */
 export interface SyncRegistration {
   definition: SyncDefinition;
+  /** Explicitly upgrade these exact manifests, preserving compatible config, checkpoints and records. */
+  upgradeFrom?: readonly SyncDefinition[];
   load(): SyncExecutable | Promise<SyncExecutable>;
 }
 export function definitionKey(ref: DefinitionRef): string {

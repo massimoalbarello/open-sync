@@ -11,6 +11,36 @@ import { readPolls } from './history';
 
 export class SqliteCatalog implements CatalogRepository {
   constructor(private readonly db: Database) {}
+  registerAll(input: {
+    definitions: SyncDefinition[];
+    upgrades: { from: SyncDefinition; to: SyncDefinition }[];
+  }): void {
+    this.db
+      .transaction(() => {
+        for (const definition of input.definitions) {
+          this.register(definition);
+        }
+        for (const { from, to } of input.upgrades) {
+          const previous = this.db
+            .query<{ manifest: string }, [string, string]>(
+              'SELECT manifest FROM definitions WHERE id=? AND version=?',
+            )
+            .get(from.id, from.version);
+          if (!previous) {
+            continue;
+          }
+          if (previous.manifest !== canonicalJson(from).json) {
+            fail('definition_conflict');
+          }
+          // An explicit compatible upgrade retains identities, checkpoints, queue and receipts.
+          this.db
+            .query(`UPDATE installations SET definition_version=?,artifact_id=?
+          WHERE definition_id=? AND definition_version=? AND artifact_id=?`)
+            .run(to.version, to.artifactId, from.id, from.version, from.artifactId);
+        }
+      })
+      .immediate();
+  }
   register(definition: SyncDefinition): void {
     const manifest = canonicalJson(definition).json;
     this.db
