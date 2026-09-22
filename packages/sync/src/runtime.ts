@@ -63,6 +63,7 @@ export function createSyncRuntime(options: SyncRuntimeOptions) {
     });
     const files = new DirectoryAssets(options.assetDirectory ?? `${options.databasePath}.assets`);
     const log = safeLogger(options.onEvent);
+    let recoverFiles = true;
     const worker = new Worker({
       acquisition: new AcquisitionService({
         repository: new SqliteAcquisition({ db, limits, historyLimit: timing.historyLimit }),
@@ -78,15 +79,14 @@ export function createSyncRuntime(options: SyncRuntimeOptions) {
       timing,
       log,
       async cleanup() {
-        const garbage = assets.garbage();
-        if (!garbage) {
-          return;
-        }
-        for (const id of garbage.remove) {
+        for (const id of assets.garbage()) {
           await files.remove(id);
           assets.discarded(id);
         }
-        await files.sweep({ retain: garbage.retain, before: Date.now() - timing.leaseMs });
+        if (recoverFiles) {
+          await files.sweep({ retain: (id) => assets.retained(id) });
+          recoverFiles = false;
+        }
       },
     });
     const api = new SyncManagement({

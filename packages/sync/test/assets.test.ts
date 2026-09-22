@@ -487,7 +487,7 @@ test.each([
   },
 );
 
-test('a failed acquisition retains completed captures for restart without advancing the checkpoint', async () => {
+test('a failed step releases staged bytes and retries without advancing its checkpoint', async () => {
   let reads = 0;
   let failPage = true;
   const original = source({
@@ -523,12 +523,12 @@ test('a failed acquisition retains completed captures for restart without advanc
     expect(
       fixture.engine.api.installation({ ...alpha, id: fixture.installation.id }).checkpoint,
     ).toBe(0);
-    expect(await readdir(`${fixture.files.path}.assets`)).toHaveLength(1);
+    expect(await readdir(`${fixture.files.path}.assets`)).toHaveLength(0);
     await fixture.restart();
     failPage = false;
     await fixture.tick();
     await fixture.tick();
-    expect(reads).toBe(1);
+    expect(reads).toBe(2);
     expect(fixture.engine.api.status(alpha).queue.pendingRecords).toBe(0);
   } finally {
     await fixture.close();

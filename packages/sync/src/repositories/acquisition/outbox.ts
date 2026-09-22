@@ -60,9 +60,6 @@ export function enqueue(input: {
     Date.now(),
   );
   for (const asset of assets) {
-    db.query(
-      'UPDATE assets SET committed=1 WHERE owner_id=? AND source_id=? AND id=? AND version=?',
-    ).run(installation.ownerId, installation.sourceId, asset.id, asset.version);
     db.query('INSERT INTO delivery_assets VALUES (?,?,?,?,?)').run(
       installation.ownerId,
       delivery.id,

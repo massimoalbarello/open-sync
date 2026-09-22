@@ -19,7 +19,7 @@ export interface AssetCapture extends AssetMetadata {
   read(): Promise<ReadableStream<Uint8Array>>;
 }
 export interface SourceAssets {
-  /** Retries failed reads across acquisition runs; returns a reference after success or exhaustion. */
+  /** Capture for this step, with durable read retry counts. Later steps must capture again. */
   capture(input: AssetCapture): Promise<AssetRef>;
   /** Declare a known permanent source limitation without downloading or discarding the attachment. */
   unavailable(input: AssetMetadata & { code: string }): AssetRef;

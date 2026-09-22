@@ -17,6 +17,9 @@ export class Worker implements WorkerControl {
   readonly #acquisitions = new Map<string, { abort: AbortController; task: Promise<void> }>();
   readonly #deliveries = new Set<Promise<void>>();
   #cleaning?: Promise<void>;
+  #cleanupRequested = false;
+  #capacityReleased = false;
+  #cleanupTimer?: ReturnType<typeof setTimeout>;
   #closing?: Promise<void>;
   constructor(
     private readonly input: {
@@ -38,7 +41,7 @@ export class Worker implements WorkerControl {
       return;
     }
     this.#started = true;
-    this.wake();
+    this.completed();
   }
   wake(): void {
     this.schedule(0);
@@ -98,6 +101,9 @@ export class Worker implements WorkerControl {
       }
       const task = delivery
         .execute({ lease, signal: this.signal() })
+        .then((accepted) => {
+          this.#capacityReleased ||= accepted;
+        })
         .catch(() => this.input.log({ code: 'delivery_failed' }))
         .finally(() => {
           this.#deliveries.delete(task);
@@ -118,15 +124,38 @@ export class Worker implements WorkerControl {
     if (this.#started) {
       void this.cleanup().then(
         () => this.wake(),
-        () => this.input.log({ code: 'cleanup_failed' }),
+        () => {
+          this.input.log({ code: 'cleanup_failed' });
+          if (!this.#lifetime.signal.aborted && !this.#cleanupTimer) {
+            this.#cleanupTimer = setTimeout(() => {
+              this.#cleanupTimer = undefined;
+              this.completed();
+            }, this.input.timing.retryMs);
+          }
+        },
       );
     }
   }
   private cleanup(): Promise<void> {
-    this.#cleaning ??= this.input.cleanup().finally(() => {
-      this.#cleaning = undefined;
-    });
+    this.#cleanupRequested = true;
+    this.#cleaning ??= Promise.resolve().then(() => this.drainCleanup());
     return this.#cleaning;
+  }
+  private async drainCleanup(): Promise<void> {
+    try {
+      do {
+        this.#cleanupRequested = false;
+        await this.input.cleanup();
+      } while (this.#cleanupRequested);
+      if (this.#capacityReleased) {
+        this.#capacityReleased = false;
+        this.input.acquisition.capacityReleased();
+      }
+      clearTimeout(this.#cleanupTimer);
+      this.#cleanupTimer = undefined;
+    } finally {
+      this.#cleaning = undefined;
+    }
   }
   private signal(extra?: AbortSignal): AbortSignal {
     return AbortSignal.any([
@@ -147,6 +176,7 @@ export class Worker implements WorkerControl {
   }
   private async stop(): Promise<void> {
     clearTimeout(this.#timer);
+    clearTimeout(this.#cleanupTimer);
     this.#lifetime.abort('interrupted');
     await Promise.allSettled([
       ...[...this.#acquisitions.values()].map(({ task }) => task),

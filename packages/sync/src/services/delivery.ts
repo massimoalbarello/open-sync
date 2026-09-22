@@ -24,7 +24,7 @@ export class DeliveryService {
   nextDue() {
     return this.input.repository.nextDue();
   }
-  async execute(input: { lease: DeliveryLease; signal: AbortSignal }): Promise<void> {
+  async execute(input: { lease: DeliveryLease; signal: AbortSignal }): Promise<boolean> {
     const { repository, registry, timing } = this.input;
     const { lease, signal } = input;
     let result: DeliveryResult;
@@ -69,10 +69,12 @@ export class DeliveryService {
     });
     try {
       repository.complete({ lease, result, delay });
+      return result.status === 'accepted';
     } catch (error) {
       if (!(error instanceof SyncError && error.code === 'lease_lost')) {
         throw error;
       }
+      return false;
     }
   }
 }

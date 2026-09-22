@@ -59,7 +59,7 @@ CREATE INDEX IF NOT EXISTS deliveries_due ON deliveries(state, due_at);
 CREATE TABLE IF NOT EXISTS assets (
   owner_id TEXT NOT NULL, source_id TEXT NOT NULL, id TEXT NOT NULL, version TEXT NOT NULL,
   metadata TEXT NOT NULL, file_id TEXT, size INTEGER NOT NULL DEFAULT 0, sha256 TEXT,
-  attempt INTEGER NOT NULL DEFAULT 0, committed INTEGER NOT NULL DEFAULT 0, stored_at INTEGER NOT NULL DEFAULT 0, error_code TEXT, state TEXT NOT NULL DEFAULT 'pending',
+  attempt INTEGER NOT NULL DEFAULT 0, error_code TEXT, state TEXT NOT NULL DEFAULT 'pending',
   PRIMARY KEY(owner_id, source_id, id, version)
 );
 CREATE TABLE IF NOT EXISTS delivery_assets (
