@@ -6,9 +6,7 @@ export const meetingSchema = z.strictObject({
   date: z.string().nullable(),
   attendees: z.string(),
 });
-export const checkpointSchema = z.strictObject({
-  remainingIds: z.array(z.string().min(1)).nullable(),
-});
+export const checkpointSchema = z.strictObject({});
 export const responseSchema = z.object({
   meetings: z.array(
     z.object({

@@ -84,9 +84,9 @@ test('connector failures use engine backoff despite timing headers and retain on
     ...fixture,
     definition: { ...fixture.definition, provider: requirements },
     load: () => ({
-      async *run({ provider }) {
+      async step({ provider }) {
         await provider.get({ path: '/conversations.replies', query: { token: secret } });
-        yield { ...page, complete: true };
+        return { ...page, complete: true };
       },
     }),
   };

@@ -84,7 +84,7 @@
         "typescript": "catalog:",
       },
       "peerDependencies": {
-        "@context-use/open-sync": "0.2.0",
+        "@context-use/open-sync": "0.3.0",
       },
     },
     "packages/browser-testing": {
@@ -106,7 +106,7 @@
     },
     "packages/sync": {
       "name": "@context-use/open-sync",
-      "version": "0.2.1",
+      "version": "0.3.0",
       "dependencies": {
         "@cfworker/json-schema": "4.1.1",
         "@oomol-lab/open-connector": "1.6.3",

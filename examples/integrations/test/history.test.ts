@@ -84,6 +84,8 @@ for (const registration of [gmailThreads, slackThreads]) {
               body = { team_id: 'team', user_id: 'alice', url: 'https://example.slack.com/' };
             } else if (path === '/users.conversations') {
               body = { channels: [{ id: 'general' }] };
+            } else if (path === '/conversations.info') {
+              body = { channel: { id: query.channel! } };
             } else {
               queries.push(query);
               const matches = dates.filter(

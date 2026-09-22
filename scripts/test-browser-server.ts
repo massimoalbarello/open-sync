@@ -6,7 +6,8 @@ import { exampleProviderResponse } from './example-provider-fixtures';
 const fetchNetwork = globalThis.fetch;
 let oauthToken = 0;
 const recordCount = 100;
-const discoveryPageSize = 10;
+// Small provider pages exercise queue pagination with a bounded fixture.
+const discoveryPageSize = 1;
 const idWidth = 3;
 const records = Array.from(
   { length: recordCount },

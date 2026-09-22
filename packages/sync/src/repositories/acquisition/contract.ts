@@ -1,4 +1,4 @@
-import type { SyncDefinition, SyncPage } from '../../models/definition';
+import type { SyncDefinition, SyncStep } from '../../models/definition';
 import type { Scope } from '../../models/identity';
 import type { Installation } from '../../models/installation';
 
@@ -13,7 +13,7 @@ export interface RunLease extends Scope {
 export interface AcquisitionRepository {
   claim(leaseMs: number): RunLease | undefined;
   hasCapacity(): boolean;
-  commit(input: { lease: RunLease; page: SyncPage; definition: SyncDefinition }): void;
+  commit(input: { lease: RunLease; page: SyncStep; definition: SyncDefinition }): void;
   finish(input: {
     lease: RunLease;
     state: string;

@@ -18,10 +18,13 @@ test('catalog exposes serializable metadata, and polling history survives restar
         setupSchema: { type: 'object', additionalProperties: false },
       },
     ]);
-    await f.engine.tick();
+    const stepCount = 3;
+    for (let step = 0; step < stepCount; step++) {
+      await f.engine.tick();
+    }
     const history = f.engine.api.polls(resource);
     expect(history.polls).toMatchObject([
-      { state: 'succeeded', recordsProcessed: 3, recordsChanged: 3, attemptCount: 1 },
+      { state: 'succeeded', recordsProcessed: 3, recordsChanged: 3, attemptCount: 3 },
     ]);
     expect(history.hasMore).toBe(false);
     expect(history.polls[0]!.completedAt).not.toBeNull();

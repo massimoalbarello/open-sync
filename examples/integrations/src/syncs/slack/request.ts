@@ -2,7 +2,11 @@ import { SourceHttpError, type SyncContext } from '@context-use/open-sync/defini
 import type { JsonObject } from '@context-use/open-sync/json';
 import { z } from 'zod';
 
-export class ExpiredCursor extends Error {}
+export class ExpiredCursor extends Error {
+  constructor(readonly path: string) {
+    super('Slack cursor expired.');
+  }
+}
 export class ThreadNotFound extends Error {}
 
 export async function request(input: { context: SyncContext; path: string; query?: JsonObject }) {
@@ -14,7 +18,7 @@ export async function request(input: { context: SyncContext; path: string; query
   }
   const result = body.parse(response.body);
   if (result.error === 'invalid_cursor') {
-    throw new ExpiredCursor();
+    throw new ExpiredCursor(input.path);
   }
   if (input.path === '/conversations.replies' && result.error === 'thread_not_found') {
     throw new ThreadNotFound();

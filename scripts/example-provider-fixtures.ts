@@ -2,7 +2,12 @@ import { readFileSync } from 'node:fs';
 
 // Provider HTTP boundaries only: authentication, OAuth state, MCP and storage stay real.
 let granolaRegistrationAttempts = 0;
+let granolaListingAttempts = 0;
 let slackReplyAttempts = 0;
+export const granolaFixtureMeetingCount = 23;
+const granolaMeetingIds = [...Array(granolaFixtureMeetingCount).keys()].map(
+  (index) => `meeting-${index + 1}`,
+);
 export async function exampleProviderResponse(request: Request): Promise<Response | undefined> {
   const url = new URL(request.url);
   if (url.hostname === 'oauth2.googleapis.com') {
@@ -238,7 +243,11 @@ async function granolaResponse(request: Request) {
   const body = (await request.json()) as {
     id?: string | number;
     method: string;
-    params?: { protocolVersion?: string; name?: string };
+    params?: {
+      protocolVersion?: string;
+      name?: string;
+      arguments?: { time_range?: string; meeting_ids?: string[] };
+    };
   };
   if (body.id === undefined) {
     return new Response(null, { status: 202 });
@@ -261,22 +270,44 @@ async function granolaResponse(request: Request) {
       };
       break;
     case 'tools/call':
-      if (!['list_meetings', 'get_meetings'].includes(body.params?.name ?? '')) {
-        throw new Error('Unexpected Granola tool');
-      }
-      result = {
-        content: [
-          {
-            type: 'text',
-            text: '<meetings_data count="1"><meeting id="meeting-1" title="Planning" date="2026-09-19"><known_participants>Alice, Sam</known_participants><summary>## Decisions\nShip it.</summary></meeting></meetings_data>',
-          },
-        ],
-      };
+      result = granolaToolResponse(body.params ?? {});
       break;
     default:
       throw new Error(`Unexpected MCP method: ${body.method}`);
   }
   return Response.json({ jsonrpc: '2.0', id: body.id, result });
+}
+
+function granolaToolResponse(params: {
+  name?: string;
+  arguments?: { time_range?: string; meeting_ids?: string[] };
+}) {
+  if (!['list_meetings', 'get_meetings'].includes(params.name ?? '')) {
+    throw new Error('Unexpected Granola tool');
+  }
+  const listing = params.name === 'list_meetings';
+  const ids = listing ? granolaMeetingIds : params.arguments?.meeting_ids;
+  const detailRequestLimit = 10;
+  if (
+    !ids ||
+    (!listing &&
+      (ids.length > detailRequestLimit || ids.some((id) => !granolaMeetingIds.includes(id))))
+  ) {
+    throw new Error('Invalid Granola detail request');
+  }
+  if (listing && params.arguments?.time_range !== 'last_30_days') {
+    throw new Error('Unexpected Granola listing window');
+  }
+  // Exercise the real connector's rejection of explicit MCP listing truncation.
+  const truncated = listing && ++granolaListingAttempts === 1;
+  return {
+    content: [
+      {
+        type: 'text',
+        text: `<meetings_data count="${ids.length}"${truncated ? ' has_more="true"' : ''}>${ids.map((id) => `<meeting id="${id}" title="Planning ${id}" date="2026-09-19"><known_participants>Alice, Sam</known_participants><summary>## Decisions\nShip it.</summary></meeting>`).join('')}</meetings_data>`,
+      },
+    ],
+  };
 }
 
 async function granolaOAuthResponse(request: Request) {

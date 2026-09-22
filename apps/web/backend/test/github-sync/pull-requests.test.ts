@@ -140,6 +140,8 @@ test('partial results, repeated cursors and changed accounts cannot advance GitH
           }
         : reply(input);
     await f.engine.tick();
+    await f.engine.tick();
+    await f.engine.tick();
     const committed = f.engine.api.installation(resource).checkpoint;
     f.provider.respond = (input) =>
       reply(input.query.includes(discover) ? { ...input, variables: { after: null } } : input);
@@ -163,7 +165,7 @@ test('partial results, repeated cursors and changed accounts cannot advance GitH
   }
 });
 
-test('cursor recovery preserves account and cycle identity after a committed record', async () => {
+test('cursor recovery preserves account and cycle identity after a committed page', async () => {
   const f = await fixture();
   const resource = { ...owner, id: f.installation.id };
   try {
@@ -172,6 +174,7 @@ test('cursor recovery preserves account and cycle identity after a committed rec
       input.query.includes(discover) && input.variables.after
         ? { status: 200, headers: {}, body: { errors: [{ type: 'INVALID_CURSOR_ARGUMENTS' }] } }
         : reply(input);
+    await f.engine.tick();
     await f.engine.tick();
     expect(f.engine.api.installation(resource).checkpoint).toMatchObject({
       cursor: null,
@@ -193,10 +196,11 @@ test('cursor recovery preserves account and cycle identity after a committed rec
   }
 });
 
-test('an interrupted incremental poll retains its old watermark and resumes the pending record', async () => {
+test('an interrupted incremental poll retains its watermark and resumes the next complete page', async () => {
   const f = await fixture();
   const resource = { ...owner, id: f.installation.id };
   try {
+    await f.engine.tick();
     await f.engine.tick();
     await f.engine.tick();
     await f.engine.tick();
@@ -204,19 +208,21 @@ test('an interrupted incremental poll retains its old watermark and resumes the 
     const updatedAt = new Date().toISOString();
     f.pulls[0]!.updatedAt = updatedAt;
     f.pulls[1]!.updatedAt = updatedAt;
+    f.pulls[2]!.updatedAt = updatedAt;
     f.pulls[0]!.body = 'Updated A';
     f.pulls[1]!.body = 'Updated B';
     const reply = f.provider.respond;
     f.provider.respond = (input) => {
-      if (input.query.includes(summary) && input.variables.id === 'b') {
+      if (input.query.includes(summary) && input.variables.id === 'c') {
         throw new Error('Interrupted');
       }
       return reply(input);
     };
     f.engine.api.queueRun(resource);
     await f.engine.tick();
+    await f.engine.tick();
     const partial = f.engine.api.installation(resource).checkpoint as { cycleStartedAt: string };
-    expect(partial).toMatchObject({ cursor: 'cursor-a', watermark: baseline.watermark });
+    expect(partial).toMatchObject({ cursor: 'cursor-b', watermark: baseline.watermark });
     await f.restart();
     f.provider.respond = reply;
     f.requests.length = 0;
@@ -227,7 +233,7 @@ test('an interrupted incremental poll retains its old watermark and resumes the 
       f.requests
         .filter((request) => request.query.includes(summary))
         .map((request) => request.variables.id),
-    ).toEqual(['b']);
+    ).toEqual(['c']);
     expect(f.engine.api.installation(resource).checkpoint).toMatchObject({
       cursor: null,
       watermark: partial.cycleStartedAt,
@@ -237,7 +243,55 @@ test('an interrupted incremental poll retains its old watermark and resumes the 
         .flatMap((batch) => batch.deliverable.records)
         .filter((record) => record.revision === 2)
         .map((record) => record.id),
-    ).toEqual(['a', 'b']);
+    ).toEqual(['a', 'b', 'c']);
+  } finally {
+    await f.close();
+  }
+});
+
+test('GitHub commits no partial page when a later record fails, then retries the whole page after restart', async () => {
+  const f = await fixture();
+  const resource = { ...owner, id: f.installation.id };
+  try {
+    const checkpoint = f.engine.api.installation(resource).checkpoint;
+    const respond = f.provider.respond;
+    f.provider.respond = (input) => {
+      if (input.query.includes(summary) && input.variables.id === 'b') {
+        throw new Error('Second record failed');
+      }
+      return respond(input);
+    };
+    await f.engine.tick();
+    expect(f.engine.api.installation(resource)).toMatchObject({
+      checkpoint,
+      checkpointRevision: 0,
+    });
+    expect(f.engine.api.status(owner).queue.pendingRecords).toBe(0);
+    expect((await f.receiver.status(owner)).records).toBe(0);
+    await f.restart();
+    f.provider.respond = respond;
+    f.requests.length = 0;
+    f.engine.api.queueRun(resource);
+    await f.engine.tick();
+    const saved = f.engine.api.installation(resource);
+    expect(saved.checkpoint).toMatchObject({ cursor: 'cursor-b' });
+    expect(
+      Object.values(saved.checkpoint!).every(
+        (value) => value === null || typeof value !== 'object',
+      ),
+    ).toBe(true);
+    expect(saved.checkpointRevision).toBe(1);
+    expect(f.engine.api.status(owner).queue.pendingRecords).toBe(2);
+    await f.engine.tick();
+    await f.engine.tick();
+    expect(
+      f.requests
+        .filter((request) => request.query.includes(summary))
+        .map((request) => request.variables.id),
+    ).toEqual(['a', 'b', 'c']);
+    expect(
+      f.delivered.map((batch) => batch.deliverable.records.map((record) => record.id)),
+    ).toEqual([['a', 'b'], ['c']]);
   } finally {
     await f.close();
   }

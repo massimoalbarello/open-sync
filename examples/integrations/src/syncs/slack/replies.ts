@@ -1,10 +1,10 @@
 import { type AssetRef, assetPlaceholder } from '@context-use/open-sync/assets';
-import type { SyncContext, SyncPage } from '@context-use/open-sync/definition';
+import type { SyncContext } from '@context-use/open-sync/definition';
+import type { SyncRecord } from '@context-use/open-sync/delivery';
 import { canonicalJson } from '@context-use/open-sync/json';
 import type { z } from 'zod';
 import {
-  type Checkpoint,
-  finishThread,
+  type channelSchema,
   historySchema,
   type messageSchema,
   nextCursor,
@@ -17,27 +17,18 @@ const pageSize = 15;
 
 export async function readThread(input: {
   context: SyncContext;
-  checkpoint: Checkpoint;
+  channel: z.infer<typeof channelSchema>;
+  root: z.infer<typeof providerMessageSchema>;
   workspaceUrl: string;
-}): Promise<SyncPage> {
-  const { context, checkpoint } = input;
-  const root = checkpoint.threads[0]!;
+}): Promise<SyncRecord> {
+  const { context, channel, root } = input;
   const rootTs = root.thread_ts ?? root.ts;
   let messages: z.infer<typeof messageSchema>[];
-  let cursor: string | null = null;
   if (rootTs === root.ts && !root.reply_count) {
     // Ordinary messages are single-message threads; join/leave events cannot use replies.
     messages = [normalize(root)];
   } else {
-    ({ messages, cursor } = await readReplies({ context, checkpoint, rootTs }));
-  }
-  if (cursor) {
-    // Persist partial fetch progress, but only ever deliver a complete thread.
-    return {
-      deliverable: { records: [] },
-      checkpoint: { ...checkpoint, replyCursor: cursor, messages },
-      complete: false,
-    };
+    messages = await readReplies({ context, channelId: channel.id, rootTs });
   }
   const rootMessage = messages.find((message) => message.id === rootTs);
   if (!rootMessage) {
@@ -60,68 +51,60 @@ export async function readThread(input: {
     });
     return { ...message, ...(attachments.length ? { attachments } : {}) };
   });
-  const channel = checkpoint.channels[0]!;
   return {
-    deliverable: {
-      records: [
-        {
-          ...(Object.keys(assetRefs).length ? { assetRefs } : {}),
-          operation: 'upsert',
-          kind: 'thread',
-          id: `${channel.id}:${rootTs}`,
-          preview: rootMessage.body,
-          createdAt: rootMessage.sentAt,
-          data: {
-            channel: channel.name ?? channel.id,
-            channelId: channel.id,
-            url: new URL(
-              `archives/${encodeURIComponent(channel.id)}/p${rootTs.replace('.', '')}`,
-              input.workspaceUrl,
-            ).href,
-            messages: recordMessages,
-          },
-        },
-      ],
+    ...(Object.keys(assetRefs).length ? { assetRefs } : {}),
+    operation: 'upsert',
+    kind: 'thread',
+    id: `${channel.id}:${rootTs}`,
+    preview: rootMessage.body,
+    createdAt: rootMessage.sentAt,
+    data: {
+      channel: channel.name ?? channel.id,
+      channelId: channel.id,
+      url: new URL(
+        `archives/${encodeURIComponent(channel.id)}/p${rootTs.replace('.', '')}`,
+        input.workspaceUrl,
+      ).href,
+      messages: recordMessages,
     },
-    checkpoint: finishThread(checkpoint),
-    complete: false,
   };
 }
 
-async function readReplies(input: {
-  context: SyncContext;
-  checkpoint: Checkpoint;
-  rootTs: string;
-}) {
-  const { context, checkpoint, rootTs } = input;
-  const response = historySchema.parse(
-    await request({
-      context,
-      path: '/conversations.replies',
-      query: {
-        channel: checkpoint.channels[0]!.id,
-        ts: rootTs,
-        limit: pageSize,
-        ...(checkpoint.replyCursor ? { cursor: checkpoint.replyCursor } : {}),
-      },
-    }),
-  );
-  if (response.messages.some((message) => message.ts !== rootTs && message.thread_ts !== rootTs)) {
-    throw new Error('Slack returned a message from a different thread.');
-  }
-  const cursor = nextCursor({ response, previous: checkpoint.replyCursor });
-  const merged = new Map(checkpoint.messages.map((message) => [message.id, message]));
-  for (const message of response.messages) {
-    merged.set(message.ts, normalize(message));
-  }
-  const messages = [...merged.values()].sort(
+async function readReplies(input: { context: SyncContext; channelId: string; rootTs: string }) {
+  const { context, channelId, rootTs } = input;
+  const merged = new Map<string, z.infer<typeof messageSchema>>();
+  const seen = new Set<string>();
+  let cursor: string | null = null;
+  do {
+    context.signal.throwIfAborted();
+    const response = historySchema.parse(
+      await request({
+        context,
+        path: '/conversations.replies',
+        query: { channel: channelId, ts: rootTs, limit: pageSize, ...(cursor ? { cursor } : {}) },
+      }),
+    );
+    if (
+      response.messages.some((message) => message.ts !== rootTs && message.thread_ts !== rootTs)
+    ) {
+      throw new Error('Slack returned a message from a different thread.');
+    }
+    const previousSize = merged.size;
+    for (const message of response.messages) {
+      merged.set(message.ts, normalize(message));
+    }
+    cursor = nextCursor({ response, previous: cursor });
+    if (cursor && (seen.has(cursor) || merged.size <= previousSize)) {
+      throw new Error('Slack reply pagination made no progress.');
+    }
+    if (cursor) {
+      seen.add(cursor);
+    }
+  } while (cursor);
+  return [...merged.values()].sort(
     // biome-ignore lint/complexity/useMaxParams: Array.sort passes both messages.
     (a, b) => Number(a.id) - Number(b.id),
   );
-  if (cursor && messages.length <= checkpoint.messages.length) {
-    throw new Error('Slack reply pagination made no progress.');
-  }
-  return { messages, cursor };
 }
 
 function normalize(message: z.infer<typeof providerMessageSchema>) {

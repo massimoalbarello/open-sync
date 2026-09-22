@@ -41,7 +41,10 @@ export interface SyncDefinition extends DefinitionRef {
   kinds: Readonly<Record<string, Schema>>;
   provider?: ProviderRequirements;
 }
-export interface SyncPage {
+/** One complete source-defined unit: fetch its records and assets before returning.
+ * The engine commits the output with its resume position; checkpoints do not carry unfinished records.
+ */
+export interface SyncStep {
   deliverable: Deliverable;
   checkpoint: JsonValue;
   complete: boolean;
@@ -56,7 +59,7 @@ export interface SyncContext {
   log(input: { message: string; fields?: JsonObject }): void;
 }
 export interface SyncExecutable {
-  run(context: SyncContext): AsyncIterable<SyncPage>;
+  step(context: SyncContext): Promise<SyncStep>;
 }
 /** Trusted host code only. Loading uploaded code requires a separate isolated execution layer. */
 export interface SyncRegistration {

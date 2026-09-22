@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import type { SyncPage } from '../src/models/definition';
+import type { SyncStep } from '../src/models/definition';
 import type { Delivery, RecordContent } from '../src/models/delivery';
 import { defaultLimits } from '../src/models/limits';
 import { preparePage } from '../src/models/page';
@@ -13,7 +13,7 @@ test('content is independent of the data schema and invalid content rejects the 
       },
       checkpoint: 1,
       complete: true,
-    }) as SyncPage;
+    }) as SyncStep;
   const valid = { format: 'markdown', body: '# Full record\n\nNo copy in data.' };
   expect(
     preparePage({ page: page(valid), definition: fixture.definition, limits: defaultLimits })
@@ -41,8 +41,8 @@ test('content-only changes and removal advance revisions, and deduplicate unchan
       ...fixture,
       load: () => ({
         // biome-ignore lint/suspicious/useAwait: The fixture implements the asynchronous source boundary.
-        async *run() {
-          yield {
+        async step() {
+          return {
             deliverable: {
               records: [
                 {

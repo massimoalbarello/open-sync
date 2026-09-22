@@ -35,26 +35,24 @@ export const fixture: SyncRegistration = {
     },
   },
   load: () => ({
-    // Async iteration is the execution boundary, even when this trusted fixture performs no I/O.
+    // A step is the execution boundary, even when this trusted fixture performs no I/O.
     // biome-ignore lint/suspicious/useAwait: Implement the asynchronous definition contract.
-    async *run({ checkpoint, config, signal }) {
+    async step({ checkpoint, config, signal }) {
       let cursor = checkpoint as number;
-      do {
-        signal.throwIfAborted();
-        const records =
-          cursor < Number(config.count)
-            ? [
-                {
-                  operation: 'upsert' as const,
-                  kind: 'item',
-                  id: String(cursor),
-                  data: { value: cursor },
-                },
-              ]
-            : [];
-        cursor = Math.min(cursor + 1, Number(config.count));
-        yield { deliverable: { records }, checkpoint: cursor, complete: cursor === config.count };
-      } while (cursor < Number(config.count));
+      signal.throwIfAborted();
+      const records =
+        cursor < Number(config.count)
+          ? [
+              {
+                operation: 'upsert' as const,
+                kind: 'item',
+                id: String(cursor),
+                data: { value: cursor },
+              },
+            ]
+          : [];
+      cursor = Math.min(cursor + 1, Number(config.count));
+      return { deliverable: { records }, checkpoint: cursor, complete: cursor === config.count };
     },
   }),
 };

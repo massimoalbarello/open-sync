@@ -14,7 +14,6 @@ test.each([false, true])(
   (withContent) => {
     const f = repositories();
     try {
-      const lease = f.acquisition.claim(leaseMs)!;
       let revision = 0;
       let previousHash: string | undefined;
       const content = { format: 'markdown' as const, body: '# Note' };
@@ -28,7 +27,11 @@ test.each([false, true])(
         {},
       ]) {
         const output = { ...page, deliverable: { records: [{ ...original, ...metadata }] } };
-        f.acquisition.commit({ lease, page: output, definition: fixture.definition });
+        f.acquisition.commit({
+          lease: f.acquisition.claim(leaseMs)!,
+          page: output,
+          definition: fixture.definition,
+        });
         const delivery = f.deliveries.claim(leaseMs)!;
         const record = delivery.delivery.deliverable.records[0]!;
         expect(record).toMatchObject({ ...metadata, revision: ++revision });
@@ -48,7 +51,7 @@ test.each([false, true])(
           ...(metadata.preview ? { preview: `  ${metadata.preview.replace(' ', '\n')}  ` } : {}),
         };
         f.acquisition.commit({
-          lease,
+          lease: f.acquisition.claim(leaseMs)!,
           page: { ...page, deliverable: { records: [equivalent] } },
           definition: fixture.definition,
         });

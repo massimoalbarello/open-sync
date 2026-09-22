@@ -47,7 +47,11 @@ test('Slack preserves distinct unavailable files without retaining private downl
   });
   try {
     await f.engine.tick();
-    await f.engine.tick();
+    expect(
+      Object.values(f.saved.checkpoint!).every(
+        (value) => value === null || typeof value !== 'object',
+      ),
+    ).toBe(true);
     expect(JSON.stringify(f.saved.checkpoint)).not.toContain('private.example');
     await f.finish();
     expect(f.records[0]).toMatchObject({
@@ -74,14 +78,21 @@ test('Slack preserves distinct unavailable files without retaining private downl
 });
 
 test('Slack backfills historical threads across pages and restarts, preserves progress on errors, and upserts new replies on old threads', async () => {
+  const directories: JsonObject[] = [];
   const history: JsonObject[] = [];
   const replies: JsonObject[] = [];
   let expire = true;
+  let expireHistory = true;
+  let expireDirectory = true;
   let edited = false;
   let denied = false;
   let removed = false;
   function historyResponse(query: JsonObject) {
     history.push(query);
+    if (query.cursor && expireHistory) {
+      expireHistory = false;
+      return response({ ok: false, error: 'invalid_cursor' });
+    }
     const inWindow = (message: { ts: string }) =>
       Number(message.ts) >= Number(query.oldest ?? 0) && Number(message.ts) <= Number(query.latest);
     return response(
@@ -147,6 +158,12 @@ test('Slack backfills historical threads across pages and restarts, preserves pr
               url: 'https://example.slack.com/',
             });
           case '/users.conversations':
+            directories.push(query);
+            expect(query.limit).toBe(1);
+            if (query.cursor && expireDirectory) {
+              expireDirectory = false;
+              return response({ ok: false, error: 'invalid_cursor' });
+            }
             return response(
               query.cursor
                 ? { channels: [{ id: 'b', name: 'random' }] }
@@ -155,6 +172,10 @@ test('Slack backfills historical threads across pages and restarts, preserves pr
                     response_metadata: { next_cursor: 'channels-2' },
                   },
             );
+          case '/conversations.info':
+            return response({
+              channel: { id: query.channel!, name: query.channel === 'a' ? 'general' : 'random' },
+            });
           case '/conversations.history':
             return historyResponse(query);
           case '/conversations.replies':
@@ -166,32 +187,45 @@ test('Slack backfills historical threads across pages and restarts, preserves pr
     },
   });
   try {
-    await f.engine.tick(); // Channel directory.
-    await f.engine.tick(); // Pending thread roots; no message records.
-    await f.engine.tick(); // First reply page; still no partial thread delivered.
+    const initial = f.saved.checkpoint;
+    await f.engine.tick(); // The second reply page expires; the whole step remains uncommitted.
+    expect(f.saved.status).toBe('execution_failed');
     expect(f.records).toHaveLength(0);
-    expect(f.saved.checkpoint).toMatchObject({
-      replyCursor: 'replies-2',
-      messages: [{ id: rootTs }, { id: '1750000001.000001' }],
-    });
+    expect(f.saved.checkpoint).toEqual(initial);
+    expect(f.engine.api.status(owner).queue.pendingRecords).toBe(0);
     await f.restart();
     denied = true;
-    const saved = f.saved.checkpoint;
+    f.queue();
     await f.engine.tick();
     expect(f.saved.status).toBe('source_http_403');
     expect(f.saved.enabled).toBe(false);
-    expect(f.saved.checkpoint).toEqual(saved);
+    expect(f.saved.checkpoint).toEqual(initial);
     denied = false;
     await f.engine.api.setEnabled({ ...owner, id: f.saved.id, enabled: true });
-    await f.engine.tick(); // Expired reply cursor restarts only this thread.
-    expect(f.saved.checkpoint).toMatchObject({ replyCursor: null, messages: [] });
+    await f.engine.tick(); // Both reply pages complete before the history cursor advances.
+    expect(f.saved.checkpoint).toMatchObject({
+      channelId: 'a',
+      messageCursor: 'history-2',
+      directoryCursor: 'channels-2',
+    });
+    expect(
+      Object.values(f.saved.checkpoint!).every(
+        (value) => value === null || typeof value !== 'object',
+      ),
+    ).toBe(true);
+    const latest = (f.saved.checkpoint as { latest: string }).latest;
+    const discovered = directories.length;
+    await f.restart();
+    await f.engine.tick();
+    expect(history.at(-1)?.cursor).toBe('history-2');
+    expect(directories).toHaveLength(discovered);
     await f.finish();
     expect(f.records.map((record) => record.id)).toEqual([
       `a:${rootTs}`,
       'a:1750000009.000001',
       `b:${rootTs}`,
     ]);
-    expect(history[0]?.latest).toBe(history.at(-1)?.latest);
+    expect(history.at(-1)?.latest).toBe(latest);
     expect(replies.every((query) => query.oldest === undefined && query.latest === undefined)).toBe(
       true,
     );
@@ -218,8 +252,6 @@ test('Slack backfills historical threads across pages and restarts, preserves pr
     expect(f.records).toHaveLength(threadCount);
     edited = true;
     f.queue();
-    await f.engine.tick();
-    await f.engine.tick();
     await f.engine.tick();
     expect(f.records).toHaveLength(threadCount);
     await f.finish();
@@ -285,11 +317,6 @@ test.each(['missing-root', 'foreign-reply', 'missing-cursor', 'repeated-cursor']
       },
     });
     try {
-      await f.engine.tick();
-      await f.engine.tick();
-      if (mode === 'repeated-cursor') {
-        await f.engine.tick();
-      }
       const committed = f.saved.checkpoint;
       await f.engine.tick();
       expect(f.saved.status).toBe('execution_failed');

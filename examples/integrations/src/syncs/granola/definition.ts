@@ -1,7 +1,7 @@
 import type { SyncRegistration } from '@context-use/open-sync/definition';
 import { z } from 'zod';
 import { jsonSchema } from '../../schema';
-import { run } from './meetings';
+import { step } from './meetings';
 import { checkpointSchema, meetingSchema } from './models';
 
 export const granolaMeetings = {
@@ -9,17 +9,17 @@ export const granolaMeetings = {
     id: 'granola.meetings',
     name: 'Granola meetings',
     description:
-      'Meeting notes and summaries from the last 30 days through Granola MCP and OAuth. Rechecks accessible meetings; unavailable notes are not treated as deletions.',
-    version: '1',
-    artifactId: 'open-sync/granola-meetings/1',
+      'Meeting notes and summaries returned by the Granola MCP last-30-days listing through OAuth. Rechecks accessible meetings; unavailable notes are not treated as deletions.',
+    version: '2',
+    artifactId: 'open-sync/granola-meetings/2',
     provider: {
       service: 'granola',
       actions: ['granola.list_meetings', 'granola.get_meetings'],
     },
     configSchema: jsonSchema(z.strictObject({})),
     checkpointSchema: jsonSchema(checkpointSchema),
-    initialCheckpoint: { remainingIds: null },
+    initialCheckpoint: {},
     kinds: { meeting: jsonSchema(meetingSchema) },
   },
-  load: () => ({ run }),
+  load: () => ({ step }),
 } satisfies SyncRegistration;

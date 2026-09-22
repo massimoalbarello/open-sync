@@ -42,12 +42,8 @@ export const checkpointSchema = z.strictObject({
   latest: z.string().nullable(),
   directoryCursor: z.string().nullable(),
   directoryComplete: z.boolean(),
-  channels: z.array(channelSchema),
+  channelId: z.string().nullable(),
   messageCursor: z.string().nullable(),
-  historyComplete: z.boolean(),
-  threads: z.array(providerMessageSchema),
-  replyCursor: z.string().nullable(),
-  messages: z.array(messageSchema),
 });
 export type Checkpoint = z.infer<typeof checkpointSchema>;
 export const initialCheckpoint: Checkpoint = {
@@ -56,12 +52,8 @@ export const initialCheckpoint: Checkpoint = {
   latest: null,
   directoryCursor: null,
   directoryComplete: false,
-  channels: [],
+  channelId: null,
   messageCursor: null,
-  historyComplete: false,
-  threads: [],
-  replyCursor: null,
-  messages: [],
 };
 export const paginationSchema = z.object({ next_cursor: z.string().optional() });
 export const historySchema = z.object({
@@ -69,21 +61,6 @@ export const historySchema = z.object({
   has_more: z.boolean().optional(),
   response_metadata: paginationSchema.optional(),
 });
-
-export function finishChannel(checkpoint: Checkpoint): Checkpoint {
-  return !checkpoint.threads.length && checkpoint.historyComplete
-    ? { ...checkpoint, channels: checkpoint.channels.slice(1), historyComplete: false }
-    : checkpoint;
-}
-
-export function finishThread(checkpoint: Checkpoint): Checkpoint {
-  return finishChannel({
-    ...checkpoint,
-    threads: checkpoint.threads.slice(1),
-    replyCursor: null,
-    messages: [],
-  });
-}
 
 export function nextCursor(input: {
   response: z.infer<typeof historySchema>;

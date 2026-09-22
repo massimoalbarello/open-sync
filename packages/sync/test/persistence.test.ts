@@ -44,7 +44,11 @@ test('queue capacity counts blocked and leased work and rejects whole pages atom
       checkpoint: 2,
     };
     expect(() =>
-      f.acquisition.commit({ lease, page: next, definition: fixture.definition }),
+      f.acquisition.commit({
+        lease: f.acquisition.claim(leaseMs)!,
+        page: next,
+        definition: fixture.definition,
+      }),
     ).toThrow('waiting for capacity');
     expect(f.catalog.installation({ ...alpha, id: f.installation.id }).checkpoint).toBe(1);
     expect(f.db.query('SELECT * FROM records').all()).toHaveLength(1);
@@ -100,11 +104,18 @@ test('binding changes, stale generations and stale checkpoint revisions cannot c
         definition: fixture.definition,
       }),
     ).toThrow('lease lost');
+    expect(() =>
+      f.acquisition.commit({
+        lease: { ...lease, checkpointRevision: -1 },
+        page,
+        definition: fixture.definition,
+      }),
+    ).toThrow('checkpoint conflict');
     const stale = { ...lease };
     f.acquisition.commit({ lease, page, definition: fixture.definition });
     expect(() =>
       f.acquisition.commit({ lease: stale, page, definition: fixture.definition }),
-    ).toThrow('checkpoint conflict');
+    ).toThrow('lease lost');
     f.catalog.setEnabled({ ...alpha, id: f.installation.id, enabled: false });
     f.catalog.setEnabled({ ...alpha, id: f.installation.id, enabled: true });
     expect(() => f.acquisition.commit({ lease, page, definition: fixture.definition })).toThrow(
@@ -118,7 +129,6 @@ test('binding changes, stale generations and stale checkpoint revisions cannot c
 test('hashes suppress repeats and tombstones retain monotonic revisions', () => {
   const f = repositories();
   try {
-    const lease = f.acquisition.claim(leaseMs)!;
     for (const output of [
       page,
       page,
@@ -128,7 +138,11 @@ test('hashes suppress repeats and tombstones retain monotonic revisions', () => 
       },
       page,
     ]) {
-      f.acquisition.commit({ lease, page: output, definition: fixture.definition });
+      f.acquisition.commit({
+        lease: f.acquisition.claim(leaseMs)!,
+        page: output,
+        definition: fixture.definition,
+      });
     }
     expect(f.deliveries.status(alpha).pendingRecords).toBe(changedRecords);
     const stored = f.db.query<{ revision: number }, []>('SELECT revision FROM records').get();

@@ -2,7 +2,7 @@ import type { SyncRegistration } from '@context-use/open-sync/definition';
 import { jsonSchema } from '../../schema';
 import { historyConfigSchema } from '../history';
 import { checkpointSchema, initialCheckpoint } from './acquisition/state';
-import { run } from './pull-requests';
+import { step } from './pull-requests';
 
 export const githubPullRequests = {
   definition: {
@@ -55,5 +55,5 @@ export const githubPullRequests = {
       },
     },
   },
-  load: () => ({ run }),
+  load: () => ({ step }),
 } satisfies SyncRegistration;

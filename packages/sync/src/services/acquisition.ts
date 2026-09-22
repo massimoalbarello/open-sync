@@ -69,9 +69,6 @@ export class AcquisitionService {
   private async consume(input: { lease: RunLease; signal: AbortSignal }): Promise<void> {
     const { repository, registry, timing } = this.input;
     const { lease, signal } = input;
-    // Leave a quarter of the hard deadline for the final page and iterator cleanup.
-    const workBudgetFraction = 0.75;
-    const yieldAt = performance.now() + timing.timeoutMs * workBudgetFraction;
     const entry = registry.definition(lease.installation.definition);
     const provider = await bindProvider({
       actorId: lease.actorId,
@@ -83,8 +80,7 @@ export class AcquisitionService {
     });
     const executable = await entry.load();
     signal.throwIfAborted();
-    let pages = 0;
-    for await (const page of executable.run({
+    const page = await executable.step({
       config: lease.installation.config,
       checkpoint: lease.installation.checkpoint,
       sourceId: lease.installation.sourceId,
@@ -105,27 +101,11 @@ export class AcquisitionService {
           ownerId: lease.ownerId,
           installationId: lease.installation.id,
         }),
-    })) {
-      signal.throwIfAborted();
-      repository.commit({ lease, page, definition: entry.definition });
-      pages++;
-      if (page.complete) {
-        return;
-      }
-      if (!repository.hasCapacity()) {
-        this.finish({ lease, state: 'waiting_for_capacity', delay: timing.retryMs });
-        return;
-      }
-      if (pages >= timing.maxPages || performance.now() >= yieldAt) {
-        this.finish({ lease, state: 'yielded', delay: 0 });
-        return;
-      }
-    }
-    throw new SyncError({
-      code: 'incomplete_run',
-      message: 'Definition ended without a complete page.',
     });
+    signal.throwIfAborted();
+    repository.commit({ lease, page, definition: entry.definition });
   }
+
   private finish(input: {
     lease: RunLease;
     state: string;

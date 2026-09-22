@@ -19,7 +19,6 @@ export async function fixture(input: {
   const options = {
     databasePath: join(directory, 'sync.db'),
     definitions: [input.registration],
-    timing: { maxPages: 1 },
     connector: { bind: () => Promise.resolve(input.provider) },
     destinationTypes: {
       test: {
