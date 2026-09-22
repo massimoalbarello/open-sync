@@ -12,16 +12,25 @@ const rateLimited = 429;
 const unavailable = 503;
 const secret = 'private-token-and-provider-payload';
 
-test('legacy ambiguous 403 remains retryable; quota classification uses HTTP semantics without a cooldown', () => {
+test('permission failures remain distinct from quota failures without provider cooldowns', () => {
   const forbidden = 403;
-  const legacy = connectorFailure({
+  const permission = connectorFailure({
     service: 'gmail',
     operation: 'gmail.list_threads',
     kind: 'rejected',
     response: new Response(null, { status: forbidden }),
     body: { errorCode: 'authorization_failed', data: { status: forbidden } },
   });
-  expect(legacy.status).toBeUndefined();
+  expect(permission.status).toBe(forbidden);
+  expect(
+    connectorFailure({
+      service: 'github',
+      operation: '/graphql',
+      kind: 'rejected',
+      response: new Response(null, { status: forbidden }),
+      body: { errorCode: 'authorization_failed', data: { status: forbidden } },
+    }).status,
+  ).toBeUndefined();
   const limited = connectorFailure({
     service: 'gmail',
     operation: 'gmail.list_threads',

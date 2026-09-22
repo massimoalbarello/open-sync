@@ -37,7 +37,11 @@ export function connectorFailure(input: {
     code: 'connector_request_failed',
     message: 'connector request failed',
     diagnostics,
-    status: recoveryStatus({ code, status: providerStatus ?? input.response?.status }),
+    status: recoveryStatus({
+      service: input.service,
+      code,
+      status: providerStatus ?? input.response?.status,
+    }),
   });
 }
 
@@ -47,12 +51,19 @@ function object(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-function recoveryStatus(input: { code: unknown; status: unknown }): number | undefined {
+function recoveryStatus(input: {
+  service: string;
+  code: unknown;
+  status: unknown;
+}): number | undefined {
   const rateLimited = 429;
   const forbidden = 403;
   if (input.code === 'rate_limited') {
     return rateLimited;
   }
-  // Connector 1.6.3 conflates quota and permission 403s. Keep retrying until it can classify them.
-  return isErrorStatus(input.status) && input.status !== forbidden ? input.status : undefined;
+  // Only Gmail's released adapter distinguishes quota 403s from permission failures.
+  if (input.status === forbidden && input.service !== 'gmail') {
+    return undefined;
+  }
+  return isErrorStatus(input.status) ? input.status : undefined;
 }
