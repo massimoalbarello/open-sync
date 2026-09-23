@@ -14,7 +14,7 @@ export const slackThreads = {
     artifactId: 'open-sync/slack-threads/3',
     provider: {
       service: 'slack',
-      actions: [],
+      actions: ['slack.download_file'],
       proxyPaths: [
         '/auth.test',
         '/users.conversations',
