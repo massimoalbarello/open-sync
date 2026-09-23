@@ -10,6 +10,12 @@ export type DeliveredRecord = SyncRecord & {
   revision: number;
   contentHash: string;
 };
+/** Original source records plus engine identities and captured asset descriptors. */
+export interface Deliverable {
+  records: DeliveredRecord[];
+  assets?: DeliveryAsset[];
+}
+/** Stable queued envelope, retried until the destination durably accepts its whole deliverable. */
 export interface Delivery {
   version: 1 | 2;
   id: string;
@@ -17,7 +23,7 @@ export interface Delivery {
   sourceId: string;
   installationId: string;
   definition: DefinitionRef;
-  deliverable: { records: DeliveredRecord[]; assets?: DeliveryAsset[] };
+  deliverable: Deliverable;
 }
 export type DeliveryResult =
   | { status: 'accepted' }
@@ -36,7 +42,10 @@ export interface DestinationType {
     schema: Schema;
     prepare(input: { scope: Scope; input: JsonObject }): JsonObject | Promise<JsonObject>;
   };
-  /** Accepted means durable acceptance of the whole delivery. Receivers must tolerate retries. */
+  /** At-least-once delivery: accepted means durable acceptance of all records and assets.
+   * Receive the original source representation and use assets.open() for captured bytes.
+   * The destination chooses whether to send the bundle or upload assets and resolve references first.
+   */
   deliver(input: {
     scope: Scope;
     config: JsonObject;

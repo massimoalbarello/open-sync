@@ -13,10 +13,10 @@ export type SyncRecord =
       operation: 'upsert';
       kind: string;
       id: string;
-      /** Source-defined structured representation, from metadata to the complete record. */
+      /** Source-defined JSON. The engine validates its schema but does not interpret its values. */
       data: JsonObject;
       content?: RecordContent;
+      /** Maps record-local placeholder keys to captured immutable assets. References need not appear in data/content. */
       assetRefs?: Record<string, AssetRef>;
-      markdownFields?: string[];
     })
   | { operation: 'delete'; kind: string; id: string };

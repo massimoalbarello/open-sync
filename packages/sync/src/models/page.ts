@@ -1,5 +1,4 @@
-import { assetKey } from './asset';
-import { validateAssetReferences } from './asset-references';
+import { assetKey, assetPlaceholder } from './asset';
 import type { SyncDefinition, SyncStep } from './definition';
 import { fail } from './error';
 import { canonicalJson } from './json';
@@ -64,7 +63,6 @@ function validateRecord(input: { record: SyncRecord; definition: SyncDefinition 
           'data',
           'content',
           'assetRefs',
-          'markdownFields',
           'preview',
           'createdAt',
           'updatedAt',
@@ -122,5 +120,24 @@ function validatePageAssets(input: { page: SyncStep; limits: QueueLimits }) {
   }
   if (keys.size > input.limits.maxPageAssets) {
     fail('invalid_assets');
+  }
+}
+
+/** Validate declarations only. The engine does not interpret record data or content. */
+function validateAssetReferences(record: SyncRecord): void {
+  if (record.operation !== 'upsert') {
+    return;
+  }
+  const refs = record.assetRefs === undefined ? {} : record.assetRefs;
+  if (!refs || Array.isArray(refs) || typeof refs !== 'object') {
+    fail('invalid_asset_references');
+  }
+  for (const [key, ref] of Object.entries(refs)) {
+    assetPlaceholder(key);
+    identifier(ref.id);
+    identifier(ref.version);
+    if (Object.keys(ref).some((field) => !['id', 'version'].includes(field))) {
+      fail('invalid_asset_reference');
+    }
   }
 }

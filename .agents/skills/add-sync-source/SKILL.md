@@ -43,7 +43,9 @@ Follow the repository's engineering and compatibility guidance.
   fetch-time values that turn unchanged records into updates. Define what updates and deletions
   the source can actually observe, and guard against resuming under a different account.
 - Capture assets through `context.assets`, give each immutable version a stable identity, and
-  link the returned references from records using the asset contract. Keep credentials,
+  declare the returned references in each record's `assetRefs`. Use `assetPlaceholder()` when
+  embedding a reference in JSON or readable content; keep Markdown in `content`, not engine-marked
+  fields inside `data`. The engine treats `data` values as opaque. Keep credentials,
   temporary download URLs, and file paths out of checkpoints and queued output. Preserve
   explicit unavailable-asset outcomes instead of silently dropping attachments.
 - Use the bound provider operations and declare their required capabilities. Preserve classified

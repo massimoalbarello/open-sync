@@ -48,7 +48,8 @@ export interface SyncDefinition extends DefinitionRef {
   kinds: Readonly<Record<string, Schema>>;
   provider?: ProviderRequirements;
 }
-export interface Deliverable {
+/** Complete source output. Assets are captured through SyncContext.assets before returning. */
+export interface SourceDeliverable {
   records: readonly SyncRecord[];
   assets?: readonly AssetRef[];
 }
@@ -56,7 +57,7 @@ export interface Deliverable {
  * The engine commits the output with its resume position; checkpoints do not carry unfinished records.
  */
 export interface SyncStep {
-  deliverable: Deliverable;
+  deliverable: SourceDeliverable;
   checkpoint: JsonValue;
   complete: boolean;
 }

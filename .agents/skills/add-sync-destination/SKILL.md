@@ -31,7 +31,9 @@ in the destination; follow the repository's engineering and compatibility guidan
   assets before sending records that reference them. The optional
   [assetsFirst helper](../../../packages/sync/src/delivery/assets-first.ts) reuses persisted upload
   outcomes and freezes the resolved record representation across retries. Use the supplied upload
-  idempotency key. Handle explicit unavailable-asset outcomes deliberately.
+  idempotency key. The pure `resolveAssetReference()` and `resolveRecordAssets()` helpers resolve
+  declared placeholders when the receiver needs its own IDs or URLs; arbitrary strings in `data`
+  are not Markdown fields. Handle explicit unavailable-asset outcomes deliberately.
 - Consume streams during the delivery attempt. After acceptance the engine may delete its local
   files immediately, so deferred receiver work needs its own durable copy or reference.
 
