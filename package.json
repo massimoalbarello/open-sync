@@ -11,7 +11,7 @@
     "catalog": {
       "@better-auth/passkey": "^1.7.2",
       "better-auth": "^1.7.2",
-      "typescript": "^7.0.2"
+      "typescript": "6.0.3"
     }
   },
   "scripts": {
@@ -24,11 +24,11 @@
     "check:types": "bun run --bun turbo check:types && bun run --bun tsc -p tsconfig.json",
     "check:codestyle": "bun run --bun biome check",
     "check:frontend": "node node_modules/eslint/bin/eslint.js apps/web/frontend/src",
-    "check:backend": "node node_modules/dependency-cruiser/bin/dependency-cruiser.mjs --config apps/web/backend/dependency-cruiser.config.mjs apps/web/backend/src packages/sync/src examples/integrations/src",
+    "check:backend": "node scripts/check-backend.mjs",
     "check:all": "bun run --parallel check:types check:codestyle check:frontend check:backend",
     "check:commit-message": "bun run --bun commitlint",
     "fix:codestyle": "bun run --bun biome check --write",
-    "test": "bun run --bun turbo test",
+    "test": "bun test scripts/check-backend.test.ts && bun run --bun turbo test",
     "test:browser": "bun run scripts/test-browser.ts",
     "test:binary": "bun --filter @repo/web test:binary",
     "check:package": "bun run scripts/check-sync-package.ts"
@@ -44,11 +44,10 @@
     "@tanstack/eslint-plugin-query": "5.103.0",
     "@types/bun": "^1.4.0",
     "@typescript-eslint/parser": "8.70.0",
-    "@typescript/native": "npm:typescript@7.0.2",
     "dependency-cruiser": "18.3.1",
     "eslint": "9.39.5",
     "turbo": "^2.10.12",
-    "typescript": "npm:@typescript/typescript6@6.0.2"
+    "typescript": "catalog:"
   },
   "engines": {
     "bun": "1.4.0",
