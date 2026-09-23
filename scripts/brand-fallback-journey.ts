@@ -8,7 +8,7 @@ export async function brandFallbackJourney({ origin }: { origin: string }) {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto(origin);
     await page.locator('[data-light-state="unavailable"]').waitFor();
-    const register = page.getByRole('button', { name: 'Create account with a passkey' });
+    const register = page.getByRole('button', { name: 'Create account' });
     assert.ok(await register.isEnabled());
     assert.equal(await page.locator('[data-light-state] span').isVisible(), true);
     await page.screenshot({ path: 'artifacts/login-reduced-motion.png' });

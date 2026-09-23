@@ -10,7 +10,7 @@ try {
   browser = await virtualPasskeyBrowser({ headless: false });
   await browser.page.goto(app.origin);
   if (Bun.argv.includes('--seed')) {
-    await browser.page.getByRole('button', { name: 'Create account with a passkey' }).click();
+    await browser.page.getByRole('button', { name: 'Create account' }).click();
     await browser.page.getByRole('heading', { name: 'Syncs', exact: true }).waitFor();
   }
   console.log(`Isolated application: ${app.origin} (data: ${app.dataFolder})`);

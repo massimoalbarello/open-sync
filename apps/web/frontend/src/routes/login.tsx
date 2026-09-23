@@ -39,31 +39,19 @@ function Login() {
       </div>
       <section className="flex min-w-0 items-center justify-center bg-background px-6 py-12 sm:px-10 lg:px-16">
         <div className="flex w-full max-w-sm flex-col gap-8">
-          <p className="font-mono text-muted-foreground text-xs uppercase tracking-widest">
-            {registration.ownerRegistered ? 'Welcome back' : 'First-time setup'}
-          </p>
           <div className="space-y-4">
-            <h1 className="font-semibold text-4xl tracking-tight sm:text-5xl">
-              {registration.ownerRegistered ? 'Sign in' : 'Your data. Kept in sync.'}
-            </h1>
-            <p className="text-lg text-muted-foreground">
-              One place to manage your providers, follow your syncs, and check delivery.
-            </p>
+            <h1 className="font-semibold text-4xl tracking-tight sm:text-5xl">Open Sync</h1>
+            <p className="text-lg text-muted-foreground">Your data. Kept in sync.</p>
           </div>
           <div className="flex flex-col items-start gap-3">
             {registration.ownerRegistered ? (
               <Button size="lg" disabled={pending} onClick={() => login.mutate()}>
-                {login.isPending ? 'Signing in…' : 'Sign in with a passkey'}
+                {login.isPending ? 'Signing in…' : 'Sign in'}
               </Button>
             ) : (
-              <>
-                <Button size="lg" disabled={pending} onClick={() => register.mutate()}>
-                  {register.isPending ? 'Creating your account…' : 'Create account with a passkey'}
-                </Button>
-                <p className="text-muted-foreground text-sm">
-                  Your passkey will make you the owner of this Open Sync instance.
-                </p>
-              </>
+              <Button size="lg" disabled={pending} onClick={() => register.mutate()}>
+                {register.isPending ? 'Creating account…' : 'Create account'}
+              </Button>
             )}
           </div>
           {(register.error || login.error) && (
@@ -71,9 +59,6 @@ function Login() {
               {(register.error || login.error)?.message}
             </p>
           )}
-          <p className="text-muted-foreground text-sm">
-            Use your fingerprint, face, or device lock. No password to remember.
-          </p>
         </div>
       </section>
     </main>
