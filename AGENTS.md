@@ -24,6 +24,8 @@ Load workflow skills when performing their task, independently of file scope:
 
 - Implementing a feature or fix: [ship-change](.agents/skills/ship-change/SKILL.md).
 - Preparing or opening a PR: [open-pull-request](.agents/skills/open-pull-request/SKILL.md).
+- Adding or changing a source: [add-sync-source](.agents/skills/add-sync-source/SKILL.md).
+- Adding or changing a destination: [add-sync-destination](.agents/skills/add-sync-destination/SKILL.md).
 - Building or deploying the nibrun executable, or changing its runtime contract:
   [deploy-to-nibrun](.agents/skills/deploy-to-nibrun/SKILL.md). This includes relevant work in
   `apps/web/scripts/`, `apps/web/test/`, `packages/build-tools/`, and build/deployment CI.

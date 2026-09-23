@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test';
-import type { SyncRecord } from '../src/models/delivery';
 import { canonicalJson } from '../src/models/json';
 import { defaultLimits } from '../src/models/limits';
 import { preparePage } from '../src/models/page';
+import type { SyncRecord } from '../src/models/record';
 import { alpha, fixture, page, repositories } from './support';
 
 const leaseMs = 60_000;

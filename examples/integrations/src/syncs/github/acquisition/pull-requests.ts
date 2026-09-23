@@ -1,6 +1,6 @@
 // Adapted from massimoalbarello/open-connector at 1d72cbfd7d7348eb64b9a2daaf6457de63f16f38.
 import type { SyncContext, SyncStep } from '@context-use/open-sync/definition';
-import type { SyncRecord } from '@context-use/open-sync/delivery';
+import type { SyncRecord } from '@context-use/open-sync/record';
 import { historyStart } from '../../history';
 import { discoverPulls } from './discovery';
 import { ExpiredCursor } from './response';

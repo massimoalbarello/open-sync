@@ -1,8 +1,9 @@
 import { createReadStream } from 'node:fs';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
-import type { DeliveredRecord, Delivery, RecordContent } from '@context-use/open-sync/delivery';
+import type { DeliveredRecord, Delivery } from '@context-use/open-sync/delivery';
 import { canonicalJson } from '@context-use/open-sync/json';
+import type { RecordContent } from '@context-use/open-sync/record';
 import type { SQL, TransactionSQL } from 'bun';
 import { acceptAsset, recoverAssetFiles } from './assets';
 import { browseAssets, findAsset, relateAssets } from './browse-assets';

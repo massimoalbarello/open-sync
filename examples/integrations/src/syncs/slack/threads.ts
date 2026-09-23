@@ -1,5 +1,5 @@
 import type { SyncContext, SyncStep } from '@context-use/open-sync/definition';
-import type { SyncRecord } from '@context-use/open-sync/delivery';
+import type { SyncRecord } from '@context-use/open-sync/record';
 import { z } from 'zod';
 import { historyStart } from '../history';
 import {

@@ -1,6 +1,6 @@
 import type { AssetRef } from '@context-use/open-sync/assets';
 import type { SyncContext } from '@context-use/open-sync/definition';
-import type { SyncRecord } from '@context-use/open-sync/delivery';
+import type { SyncRecord } from '@context-use/open-sync/record';
 import type { z } from 'zod';
 import { slackAttachments } from './attachments';
 import {

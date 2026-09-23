@@ -1,11 +1,11 @@
 import { assetKey } from './asset';
 import { validateAssetReferences } from './asset-references';
 import type { SyncDefinition, SyncStep } from './definition';
-import type { SyncRecord } from './delivery';
 import { fail } from './error';
 import { canonicalJson } from './json';
 import type { QueueLimits } from './limits';
 import { normalizeRecordMetadata } from './metadata';
+import type { SyncRecord } from './record';
 import { identifier, validate } from './validation';
 
 export function preparePage(input: {

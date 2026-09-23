@@ -1,6 +1,6 @@
 import type { ProviderResponse } from '@context-use/open-sync/definition';
-import type { SyncRecord } from '@context-use/open-sync/delivery';
 import type { JsonObject, JsonValue } from '@context-use/open-sync/json';
+import type { SyncRecord } from '@context-use/open-sync/record';
 import { checkResponse } from './http';
 
 export function object(value: JsonValue | undefined): JsonObject {

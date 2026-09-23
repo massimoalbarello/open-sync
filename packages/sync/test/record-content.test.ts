@@ -1,8 +1,9 @@
 import { expect, test } from 'bun:test';
 import type { SyncStep } from '../src/models/definition';
-import type { Delivery, RecordContent } from '../src/models/delivery';
+import type { Delivery } from '../src/models/delivery';
 import { defaultLimits } from '../src/models/limits';
 import { preparePage } from '../src/models/page';
+import type { RecordContent } from '../src/models/record';
 import { accepted, alpha, configure, fixture, runtime } from './support';
 
 test('content is independent of the data schema and invalid content rejects the entire page', () => {

@@ -1,32 +1,10 @@
 import type { Schema } from '@cfworker/json-schema';
-import type { AssetRef, DeliveryAsset, DestinationAssets } from './asset';
+import type { DeliveryAsset, DestinationAssets } from './asset';
 import type { DefinitionRef } from './definition';
 import type { Scope } from './identity';
 import type { JsonObject } from './json';
-import type { RecordMetadata } from './metadata';
+import type { SyncRecord } from './record';
 
-/** Source-authored readable content; it need not duplicate or be derived from data. */
-export interface RecordContent {
-  format: 'markdown';
-  body: string;
-}
-
-export type SyncRecord =
-  | (RecordMetadata & {
-      operation: 'upsert';
-      kind: string;
-      id: string;
-      /** Source-defined structured representation, from metadata to the complete record. */
-      data: JsonObject;
-      content?: RecordContent;
-      assetRefs?: Record<string, AssetRef>;
-      markdownFields?: string[];
-    })
-  | { operation: 'delete'; kind: string; id: string };
-export interface Deliverable {
-  records: readonly SyncRecord[];
-  assets?: readonly AssetRef[];
-}
 export type DeliveredRecord = SyncRecord & {
   eventId: string;
   revision: number;
