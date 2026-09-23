@@ -2,50 +2,91 @@
   <h1><img src="apps/web/frontend/src/assets/open-sync.svg" alt="" width="32" height="32" align="absmiddle" /> Open Sync</h1>
   <p><em>Data sync from any source to any destination.</em></p>
   <img src=".github/assets/open-sync-logo.gif" alt="Open Sync's two arrows illuminated by moving warm light" width="640" height="360" />
+  <br /><br />
+
+[![Deploy on nibrun](.github/assets/deploy-on-nibrun.svg)](https://app.nibrun.com/deploy?name=open-sync&binary=https%3A%2F%2Fgithub.com%2Fmassimoalbarello%2Fopen-sync%2Freleases%2Fdownload%2Fnibrun-latest%2Fopen-sync&port=3000&minimal)
+
 </div>
 
-Open Sync provides a headless Bun sync engine and a default web host with separate Providers,
-Syncs and Delivery queue sections. The host uses Elysia, Better Auth passkeys, React and TanStack Router/Query.
+Open Sync is a headless sync engine that handles checkpointing, queuing, and retries. You define
+how sources read data and how destinations deliver it, so the same engine can fit different
+providers, storage systems, and workflows.
 
-Requires Bun 1.4 and Node 24. Start locally with:
+Embed it as a dependency and call it directly from your host's business logic. The engine runs
+in the same process; your application keeps its own UI and authentication.
+
+This repository also includes a default host implementation as a sample app: a dashboard with
+sources for GitHub pull requests, Gmail and Slack threads, and Granola meetings.
+
+## How it works
+
+![Any external API exchanges data with your source logic through polling, followed by the Open Sync engine, your delivery logic, and your destination.](.github/assets/open-sync-flow.svg)
+
+**Components**
+
+| Component | What it does | How to configure it |
+| --- | --- | --- |
+| **External API** | The system your source polls. | Choose it in your source logic; connect provider accounts through `sync.providers` when needed. |
+| **Source logic** | Your code that reads data and returns a deliverable. | Register it in `definitions`; declare inputs in `configSchema` and read data in `step()`. |
+| **Engine** | Coordinates polling, saves checkpoints, queues deliveries, and retries failed work. | Register sources and delivery handlers with `createOpenSync()`. Your host controls its `start()` and `close()` lifecycle. |
+| **Delivery logic** | Your code that writes each delivery to the destination. | Register it in `destinationTypes` with a `configSchema` and `deliver()`. Set `acceptsAssets: true` to handle assets. |
+| **Destination** | The service, database, or storage that receives your data. | Pass its settings as `config` to `sync.api.createDestination()`. |
+
+**Data types**
+
+| Data | What it is | How to use it |
+| --- | --- | --- |
+| **Record** | A structured item, such as an email thread. | Set `operation` (`upsert` or `delete`), `kind`, and a stable `id`. Upserts include `data` matching the source's `kinds` schema. |
+| **Asset** | Binary content, such as an attachment or image. | Capture it with `assets.capture()` and include its reference in a record's `assetRefs` or the deliverable's `assets`. |
+| **Deliverable** | A batch of records and optional assets produced by a source. | Return it from `step()` alongside a `checkpoint` (where to resume) and `complete` (whether this poll finished). |
+
+## Embed in your host
+
+The current package requires Bun 1.4+.
 
 ```sh
-bun install --frozen-lockfile
-bunx playwright install chromium
+bun add @context-use/open-sync
+```
+
+1. Call `await createOpenSync()` with a data directory, your sources and destinations,
+   and your host's authorization functions.
+2. Route requests to `sync.fetch(request)` and set `publicUrl` to that route's full URL
+   (for example, `https://your-app.com/api/open-sync`). This also handles provider authorization callbacks.
+3. Call `sync.start()` when your server starts and `await sync.close()` when it shuts down.
+
+Use `sync.providers` to connect accounts. Create a destination with `sync.api.createDestination()`,
+then link a source to it with `sync.api.createInstallation()`. Supply their `config` values,
+a provider `connection` when needed, and `intervalMs` for the sync schedule. Pass the acting user's
+`actorId` and data owner's `ownerId` from your host's authentication.
+
+See the [sample host](apps/web/backend/src/main.ts),
+[configuration options](packages/sync/src/open-sync.ts), and
+[source and destination examples](examples/integrations/src).
+
+## Deploy on nibrun
+
+[![Deploy on nibrun](.github/assets/deploy-on-nibrun.svg)](https://app.nibrun.com/deploy?name=open-sync&binary=https%3A%2F%2Fgithub.com%2Fmassimoalbarello%2Fopen-sync%2Freleases%2Fdownload%2Fnibrun-latest%2Fopen-sync&port=3000&minimal)
+
+Use the button above to deploy the sample host on nibrun. Open your instance's URL,
+create an account, and connect your providers.
+
+To update an existing instance, complete the local setup below, then install the nibrun CLI and sign in:
+
+```sh
+curl -fsSL https://nibrun.com/install.sh | sh
+nib login
+bun run deploy --app YOUR_APP_SLUG
+```
+
+Replace `YOUR_APP_SLUG` with the slug from `nib apps list`. The command builds and deploys the update.
+
+## Run the sample app locally
+
+Clone this repository and install Bun 1.4 and Node 24, then:
+
+```sh
+bun install
 bun run dev
 ```
 
-Open http://localhost:5173 and register the instance owner with a passkey. Further registration is closed once the owner is created. Passkeys require localhost or HTTPS.
-
-```sh
-bun run dev:isolated:seeded
-bun run check:all
-bun run test
-bun run test:browser
-bun run check:package
-bun run build
-bun run test:binary
-```
-
-Isolated development uses disposable storage and real passkey registration.
-Browser screenshots are written to the ignored `artifacts/` directory.
-
-Engineering guidance starts in [AGENTS.md](AGENTS.md). The application lives in `apps/web`;
-shared primitives, build tools and browser test support live in `packages`.
-The host owns HTTP routing, user authentication, configuration and lifecycle.
-
-`@context-use/open-sync` in `packages/sync` accepts trusted definitions and destination handlers through
-`createOpenSync()`. The host mounts `fetch()`, supplies its authorization policy, and calls
-`start()` and `close()`. Open Sync completes provider authorization before redirecting to the host UI.
-The default app imports its GitHub definition from `@open-sync/examples` and delivers
-records to its own idempotent SQLite receiver. The independent package consumer in
-`packages/sync/test/package-consumer.ts` exercises embedding from an installed tarball.
-
-This first version delivers records only. Assets, snapshot deletion, dry runs,
-in-place definition upgrades and uploaded code execution are not implemented yet. Definitions
-and destinations are pinned to immutable versions; reprocessing resets the checkpoint but retains
-record hashes. Trusted functions must honor cancellation. User-uploaded code will need isolation
-and resource limits before it can be executed.
-
-Open Sync uses `@oomol-lab/open-connector@1.6.0` internally for provider authentication and requests.
-Connector storage is opaque, and hosts use Open Sync connection references. Reauthorizing an account preserves its connection reference and existing syncs.
+Open [localhost:5173](http://localhost:5173) and create an account.

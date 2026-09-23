@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="64" viewBox="0 0 720 64" role="img" aria-labelledby="title description">
+  <title id="title">Open Sync data flow</title>
+  <desc id="description">Any external API exchanges data with your source logic through polling, followed by the Open Sync engine, your delivery logic, and your destination.</desc>
+  <style>
+    text { fill: #24292f; font: 13px system-ui, sans-serif; text-anchor: middle; }
+    .node { fill: #f6f8fa; stroke: #8c959f; }
+    .engine { fill: #eaeef2; stroke: #57606a; }
+    .edge { fill: none; stroke: #57606a; stroke-width: 1.2; marker-end: url(#arrow); }
+    .arrow { fill: #57606a; }
+    .label { font-size: 11px; }
+    @media (prefers-color-scheme: dark) {
+      text { fill: #e6edf3; }
+      .node { fill: #161b22; stroke: #8b949e; }
+      .engine { fill: #21262d; stroke: #c9d1d9; }
+      .edge { stroke: #8b949e; }
+      .arrow { fill: #8b949e; }
+    }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path class="arrow" d="M0 0 10 5 0 10Z" />
+    </marker>
+  </defs>
+  <rect class="node" x="1" y="8" width="110" height="48" rx="5" />
+  <rect class="node" x="159" y="8" width="112" height="48" rx="5" />
+  <rect class="node engine" x="305" y="8" width="112" height="48" rx="5" />
+  <rect class="node" x="451" y="8" width="112" height="48" rx="5" />
+  <rect class="node" x="597" y="8" width="122" height="48" rx="5" />
+  <path class="edge" d="M113 32H157" marker-start="url(#arrow)" />
+  <path class="edge" d="M271 32H303" />
+  <path class="edge" d="M417 32H449" />
+  <path class="edge" d="M563 32H595" />
+  <text x="56" y="27">Any external</text>
+  <text x="56" y="44">API</text>
+  <text x="215" y="27">Your source</text>
+  <text x="215" y="44">logic</text>
+  <text x="361" y="27">Open Sync</text>
+  <text x="361" y="44">engine</text>
+  <text x="507" y="27">Your delivery</text>
+  <text x="507" y="44">logic</text>
+  <text x="658" y="27">Your</text>
+  <text x="658" y="44">destination</text>
+  <text class="label" x="135" y="21">poll</text>
+</svg>

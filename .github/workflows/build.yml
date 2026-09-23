@@ -3,6 +3,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -14,10 +15,16 @@ jobs:
       - uses: ./.github/actions/prepare
       - run: bun run build:linux
       - run: bun run test:binary
+      - name: Prepare nibrun download
+        run: |
+          mkdir -p release
+          cp apps/web/dist/app release/open-sync
+          cd release
+          sha256sum open-sync > open-sync.sha256
       - uses: actions/upload-artifact@v7
         with:
           name: nibrun-binary
-          path: apps/web/dist/app
+          path: release/
           if-no-files-found: error
   browser:
     name: browser:required
@@ -33,3 +40,39 @@ jobs:
           name: browser-evidence
           path: artifacts/
           if-no-files-found: ignore
+  publish-nibrun:
+    name: publish:nibrun
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: [build, browser]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: nibrun-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: nibrun-binary
+      - name: Publish rolling nibrun release
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ "$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq .object.sha)" != "$GITHUB_SHA" ]]; then
+            echo "A newer main commit exists; leaving the published binary unchanged."
+            exit 0
+          fi
+          sha256sum --check open-sync.sha256
+          notes="Built from ${GITHUB_SHA}. The Linux x86_64 binary includes the dashboard and migrations. These assets are replaced after the binary and browser checks pass on main."
+          if gh release view nibrun-latest >/dev/null 2>&1; then
+            gh release upload nibrun-latest open-sync open-sync.sha256 --clobber
+            gh api "repos/$GH_REPO/git/refs/tags/nibrun-latest" \
+              --method PATCH -f sha="$GITHUB_SHA" -F force=true
+            gh release edit nibrun-latest --prerelease --latest=false --notes "$notes"
+          else
+            gh release create nibrun-latest open-sync open-sync.sha256 \
+              --target "$GITHUB_SHA" --title "nibrun deployment" \
+              --prerelease --latest=false --notes "$notes"
+          fi
