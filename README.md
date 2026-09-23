@@ -59,6 +59,8 @@ See the [sample host](apps/web/backend/src/main.ts),
 
 ## Deploy on nibrun
 
+[![Deploy on nibrun](.github/assets/deploy-on-nibrun.svg)](https://app.nibrun.com/deploy?name=open-sync&binary=https%3A%2F%2Fgithub.com%2Fmassimoalbarello%2Fopen-sync%2Freleases%2Fdownload%2Fnibrun-latest%2Fopen-sync&port=3000&minimal)
+
 Use the button above to deploy the sample host on nibrun. Open your instance's URL,
 create an account, and connect your providers.
 
