@@ -4,89 +4,56 @@
   <img src=".github/assets/open-sync-logo.gif" alt="Open Sync's two arrows illuminated by moving warm light" width="640" height="360" />
 </div>
 
-Open Sync provides a headless Bun sync engine and a default web host with separate Providers,
-Syncs and Delivery queue sections. The host uses Elysia, Better Auth passkeys, React and TanStack Router/Query.
-
-[![Deploy on nibrun](.github/assets/deploy-on-nibrun.svg)](https://app.nibrun.com/deploy?name=open-sync&binary=https%3A%2F%2Fgithub.com%2Fmassimoalbarello%2Fopen-sync%2Freleases%2Fdownload%2Fnibrun-latest%2Fopen-sync&port=3000&minimal)
-
-## Run locally
-
-Requires Bun 1.4 and Node 24. Start locally with:
-
-```sh
-bun install --frozen-lockfile
-bunx playwright install chromium
-bun run dev
-```
-
-Open http://localhost:5173 and register the instance owner with a passkey. Further registration is closed once the owner is created. Passkeys require localhost or HTTPS.
-
-```sh
-bun run dev:isolated:seeded
-bun run check:all
-bun run test
-bun run test:browser
-bun run check:package
-bun run build
-bun run test:binary
-```
-
-Isolated development uses disposable storage and real passkey registration.
-Browser screenshots are written to the ignored `artifacts/` directory.
-
-Engineering guidance starts in [AGENTS.md](AGENTS.md). The application lives in `apps/web`;
-shared primitives, build tools and browser test support live in `packages`.
-The host owns HTTP routing, user authentication, configuration and lifecycle.
-
-`@context-use/open-sync` in `packages/sync` accepts trusted definitions and destination handlers through
-`createOpenSync()`. The host mounts `fetch()`, supplies its authorization policy, and calls
-`start()` and `close()`. Open Sync completes provider authorization before redirecting to the host UI.
-The default app imports its GitHub definition from `@open-sync/examples` and delivers
-records to its own idempotent SQLite receiver. The independent package consumer in
-`packages/sync/test/package-consumer.ts` exercises embedding from an installed tarball.
-
-This first version delivers records only. Assets, snapshot deletion, dry runs,
-in-place definition upgrades and uploaded code execution are not implemented yet. Definitions
-and destinations are pinned to immutable versions; reprocessing resets the checkpoint but retains
-record hashes. Trusted functions must honor cancellation. User-uploaded code will need isolation
-and resource limits before it can be executed.
-
-Open Sync uses `@oomol-lab/open-connector@1.6.0` internally for provider authentication and requests.
-Connector storage is opaque, and hosts use Open Sync connection references. Reauthorizing an account preserves its connection reference and existing syncs.
+Use the included dashboard or embed the headless engine in your own Bun app. Open Sync handles
+provider connections, incremental syncing, retries, and delivery of records and files.
 
 ## Deploy on nibrun
 
-Use the button above to create your own instance without building locally. It opens nibrun with
-the app name, port, and latest tested Linux binary already selected. Sign in to nibrun, deploy,
-then open your instance's HTTPS URL and register the first passkey to become its owner.
-Configure your providers from the dashboard after setup.
+[![Deploy on nibrun](.github/assets/deploy-on-nibrun.svg)](https://app.nibrun.com/deploy?name=open-sync&binary=https%3A%2F%2Fgithub.com%2Fmassimoalbarello%2Fopen-sync%2Freleases%2Fdownload%2Fnibrun-latest%2Fopen-sync&port=3000&minimal)
 
-The [rolling nibrun release](https://github.com/massimoalbarello/open-sync/releases/tag/nibrun-latest)
-contains the `open-sync` Linux x86_64 binary and its SHA-256 checksum. The build workflow refreshes
-it after the compiled-binary and browser checks pass on `main`; it is separate from npm package
-releases. The binary embeds the dashboard, provider definitions, and database migrations.
+Click the button, sign in to nibrun, and deploy. Open your instance's URL, create an account,
+and connect your providers. No local build or environment setup is needed.
+Your data lives in `/app/data` and survives restarts and updates.
 
-To build and deploy from a local checkout, install the nibrun CLI and sign in once:
+To update an existing instance, complete the local setup below, then install the nibrun CLI and sign in:
 
 ```sh
 curl -fsSL https://nibrun.com/install.sh | sh
 nib login
-bun run deploy --new open-sync
+bun run deploy --app YOUR_APP_SLUG
 ```
 
-The deploy command builds for Linux automatically. To update the same instance:
+Replace `YOUR_APP_SLUG` with the slug from `nib apps list`. The command builds and deploys the update.
+
+## Run locally
+
+Clone this repository and install Bun 1.4 and Node 24, then:
 
 ```sh
-nib apps list
-bun run deploy --app open-sync
+bun install --frozen-lockfile
+bun run dev
 ```
 
-Use an exact slug from `nib apps list` if multiple instances share that name. `--app` updates an
-existing instance and never silently creates another; `--new` creates a separate instance.
-To build without deploying, run `bun run build:linux`; the output is `apps/web/dist/app`.
+Open [localhost:5173](http://localhost:5173) and create an account.
 
-nibrun supplies `PORT` and `NIBRUN_HOSTNAME`, so no environment variables are required for first
-boot. Open Sync derives its public HTTPS origin from that hostname and keeps its databases,
-assets, provider credentials, and generated authentication secret under `/app/data`. This storage
-survives restarts and redeployments. For a custom domain, set `BASE_URL` to its HTTPS origin.
-Redeployments briefly stop the old instance; use `nib apps export` to back up its persistent data.
+## Use the headless engine
+
+Headless means the same sync engine, without the dashboard. It runs inside your Bun server;
+your app keeps its own UI, login, and user permissions.
+
+```sh
+bun add @context-use/open-sync
+```
+
+1. Call `await createOpenSync()` with a data directory, your source definitions and destination handlers,
+   and your app's authorization functions.
+2. Route requests to `sync.fetch(request)` and set `publicUrl` to that route's full URL
+   (for example, `https://your-app.com/api/open-sync`). This includes provider authorization callbacks.
+3. Call `sync.start()` when your server starts and `await sync.close()` when it shuts down.
+   Use `sync.providers` to manage connections and `sync.api` to manage syncs.
+
+See the [working host integration](apps/web/backend/src/main.ts),
+[configuration options](packages/sync/src/open-sync.ts), and
+[source and destination examples](examples/integrations/src).
+
+[MIT license](LICENSE).
