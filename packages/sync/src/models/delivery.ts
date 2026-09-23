@@ -55,6 +55,7 @@ export interface PendingDelivery {
   state: 'pending' | 'leased' | 'blocked';
   bytes: number;
   recordCount: number;
+  assetCount: number;
   attempt: number;
   nextAttemptAt: number;
   errorCode: string | null;
@@ -62,6 +63,5 @@ export interface PendingDelivery {
 
 export interface DeliveryPage {
   deliveries: PendingDelivery[];
-  hasMore: boolean;
-  pageSize: number;
+  nextCursor: number | null;
 }

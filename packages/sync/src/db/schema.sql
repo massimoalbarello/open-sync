@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS record_state (
   PRIMARY KEY(owner_id, sync_id, kind, id),
   FOREIGN KEY(owner_id, sync_id) REFERENCES syncs(owner_id, id)
 );
--- Bounded diagnostics only; execution leases and scheduling belong to syncs.
+-- Polling diagnostics only; execution leases and scheduling belong to syncs.
 CREATE TABLE IF NOT EXISTS sync_polls (
   id INTEGER PRIMARY KEY AUTOINCREMENT, owner_id TEXT NOT NULL, sync_id TEXT NOT NULL,
   started_at INTEGER NOT NULL, completed_at INTEGER,

@@ -17,6 +17,7 @@ export type SyncApi = Pick<
   | 'removeSync'
   | 'status'
   | 'deliveries'
+  | 'deliverable'
   | 'retryDelivery'
 >;
 export type ProviderApi = Pick<
@@ -39,6 +40,7 @@ export function syncApi(service: SyncManagement): SyncApi {
     removeSync: service.removeSync.bind(service),
     status: service.status.bind(service),
     deliveries: service.deliveries.bind(service),
+    deliverable: service.deliverable.bind(service),
     retryDelivery: service.retryDelivery.bind(service),
   };
 }

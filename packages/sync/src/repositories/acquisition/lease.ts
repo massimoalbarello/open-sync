@@ -62,15 +62,6 @@ export function claimAcquisition({
       );
       db.query(`UPDATE sync_polls SET state='running',error_code=NULL
         WHERE owner_id=? AND sync_id=? AND completed_at IS NULL`).run(scope.ownerId, row.id);
-      const recentPolls = 20;
-      db.query(`DELETE FROM sync_polls WHERE owner_id=? AND sync_id=? AND id NOT IN (
-        SELECT id FROM sync_polls WHERE owner_id=? AND sync_id=? ORDER BY id DESC LIMIT ?)`).run(
-        scope.ownerId,
-        row.id,
-        scope.ownerId,
-        row.id,
-        recentPolls,
-      );
       db.query(`UPDATE syncs SET status='running',error_code=NULL,generation=generation+1,expires_at=?
       WHERE owner_id=? AND id=?`).run(now + leaseMs, scope.ownerId, row.id);
       return {

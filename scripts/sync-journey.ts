@@ -11,15 +11,13 @@ import {
   createSync,
   drainDeliveries,
   type Journey,
-  readRecords,
+  readDeliverables,
   readSync,
   waitForSync,
 } from './browser-journey';
-import { granolaFixtureMeetingCount } from './example-provider-fixtures';
-import { assetsEmptyJourney, assetsJourney, previewsJourney } from './receiver-journey';
+import { githubFixtureRecordCount } from './example-provider-fixtures';
+import { inspectReceivedJourney, paginationJourney } from './receiver-journey';
 
-const successStatus = 200;
-const githubRecordCount = 100;
 const sources = [
   {
     service: 'gmail',
@@ -45,15 +43,15 @@ const sources = [
 ];
 
 export async function exampleSyncsJourney(input: Journey) {
-  await assetsEmptyJourney(input);
   for (const source of sources) {
     await connectSource({ ...input, source });
   }
+  await paginationJourney(input);
   await historySetupJourney(input);
   await destinationSetupJourney(input);
   await providerSetupJourney(input);
   console.log(
-    'Example journeys passed: Gmail OAuth, Slack OAuth, Granola OAuth/MCP, and local records.',
+    'Example journeys passed: Gmail OAuth, Slack OAuth, Granola OAuth/MCP, and whole deliverables.',
   );
 }
 
@@ -110,64 +108,9 @@ async function connectSource(input: {
   await page.goto(`${origin}/syncs/${syncId}`);
   await page.getByRole('heading', { name: `${source.name} → Local SQLite`, exact: true }).waitFor();
   await waitForSync({ ...input, id: syncId });
-  await drainDeliveries(input);
-  await verifyRecords({ ...input, syncId });
+  await drainDeliveries({ ...input, syncId });
+  await inspectReceivedJourney({ ...input, syncId, service: source.service, kind: source.kind });
   console.log(`${source.name}: OAuth and local delivery passed.`);
-}
-
-async function verifyRecords(input: {
-  page: Journey['page'];
-  origin: string;
-  source: (typeof sources)[number];
-  syncId: string;
-}) {
-  const { page, origin, source, syncId } = input;
-  await page.goto(`${origin}/records?syncId=${encodeURIComponent(syncId)}`);
-  await page
-    .getByRole('list', { name: 'Received records' })
-    .getByRole('listitem')
-    .first()
-    .waitFor({ timeout: 180_000 });
-  const records = await readRecords({ ...input, syncId });
-  assert.equal(records.records[0]!.kind, source.kind);
-  if (source.service === 'granola') {
-    assert.equal(records.records.length, granolaFixtureMeetingCount);
-    assert.equal(
-      new Set(records.records.map((record: { id: string }) => record.id)).size,
-      granolaFixtureMeetingCount,
-    );
-  }
-  const summary = page
-    .getByRole('list', { name: 'Received records' })
-    .locator(':scope > li')
-    .first();
-  await summary.getByText(records.records[0]!.preview!, { exact: true }).waitFor();
-  assert.equal(await summary.locator('time').count(), source.service === 'granola' ? 0 : 1);
-  if (source.service === 'gmail') {
-    const receivedAttachments = (
-      records.records[0]!.data.messages as { attachments: { name: string; file: string }[] }[]
-    )[0]!.attachments;
-    const attachments = receivedAttachments.slice(0, 2) as {
-      name: string;
-      file: string;
-    }[];
-    assert.equal(attachments.length, 2);
-    assert.notEqual(attachments[0]!.file, attachments[1]!.file);
-    await assetsJourney({ page, origin, syncId, attachments });
-    await previewsJourney({ page, origin, record: records.records[0]! });
-  }
-  if (source.service === 'slack') {
-    const attachment = (
-      records.records[0]!.data.messages as { attachments: { name: string; file: string }[] }[]
-    )[0]!.attachments[0]!;
-    assert.equal(attachment.name, 'private.bin');
-    assert.equal(typeof attachment.file, 'string');
-    const downloaded = await page.request.get(`${origin}/api/receiver/assets/${attachment.file}`);
-    assert.equal(downloaded.status(), successStatus);
-    assert.equal(await downloaded.text(), 'private Slack attachment');
-    assert.ok(!JSON.stringify(records).includes('files.slack.com'));
-  }
-  assert.ok(!JSON.stringify(records).includes('fixture-token'));
 }
 
 // A catalog fixture proves that rendering and submission depend on schemas, not destination names.
@@ -271,7 +214,7 @@ async function historySetupJourney({ page, origin }: Journey) {
 
 export async function syncLifecycleJourney(input: Journey & { syncId: string }) {
   const { page, origin, syncId } = input;
-  const before = await readRecords({ ...input, syncId });
+  const before = await readDeliverables({ ...input, syncId });
   await page.goto(`${origin}/syncs/${syncId}`);
   const queued = page.waitForResponse(`**/sync/syncs/${syncId}/resync`);
   await page.getByRole('button', { name: 'Resync', exact: true }).click();
@@ -281,17 +224,24 @@ export async function syncLifecycleJourney(input: Journey & { syncId: string }) 
     .getByRole('list', { name: 'Polling iterations' })
     .getByRole('listitem')
     .first()
-    .getByText(`${githubRecordCount} processed · ${githubRecordCount} queued`, {
+    .getByText(`${githubFixtureRecordCount} processed · ${githubFixtureRecordCount} queued`, {
       exact: true,
     })
     .waitFor();
   await capture({ page, name: 'resync-status' });
-  await drainDeliveries(input);
-  const replayed = await readRecords({ ...input, syncId });
-  assert.equal(replayed.records.length, before.records.length);
-  for (const record of replayed.records) {
-    const previous = before.records.find((entry) => entry.id === record.id)!;
+  await drainDeliveries({ ...input, syncId });
+  const replayed = await readDeliverables({ ...input, syncId });
+  assert.equal(replayed.length, 2 * before.length);
+  const original = before.flatMap((entry) => entry.deliverable.records);
+  const newlyReceived = replayed.filter(
+    (entry) => !before.some((previous) => previous.deliverable.id === entry.deliverable.id),
+  );
+  for (const record of newlyReceived.flatMap((entry) => entry.deliverable.records)) {
+    const previous = original.find((entry) => entry.id === record.id)!;
     assert.equal(record.revision, previous.revision + 1);
+    assert.equal(record.operation, 'upsert');
+    assert.equal(previous.operation, 'upsert');
+    assert.deepEqual(record, { ...previous, revision: record.revision });
   }
   await page.goto(`${origin}/syncs/${syncId}`);
   await page.getByRole('button', { name: 'Remove sync', exact: true }).click();
@@ -306,14 +256,13 @@ export async function syncLifecycleJourney(input: Journey & { syncId: string }) 
     (await page.request.get(`${origin}/api/open-sync/sync/syncs/${syncId}`)).status(),
     missingStatus,
   );
-  assert.deepEqual(await readRecords({ ...input, syncId }), replayed);
+  assert.deepEqual(await readDeliverables({ ...input, syncId }), replayed);
 }
 
 export async function githubSyncJourney(
   input: Journey & { app: { restartServer(): Promise<void> } },
 ) {
   const { page, origin, app } = input;
-  const drainTimeoutMs = 120_000;
   await page.goto(`${origin}/syncs/new?source=github.pull-requests`);
   await page.getByRole('button', { name: 'Create sync', exact: true }).click();
   await page
@@ -327,11 +276,6 @@ export async function githubSyncJourney(
   await page
     .getByText('Your sync is saved. Connect your account to start syncing.', { exact: true })
     .waitFor();
-  const settings = await page.request.patch(`${origin}/api/receiver/settings`, {
-    headers: { origin: origin },
-    data: { paused: true },
-  });
-  assert.ok(settings.ok());
   assert.equal(await page.getByRole('button', { name: 'API key', exact: true }).count(), 0);
   await page.goto(`${origin}/providers/github`);
   await page.getByRole('button', { name: 'API key', exact: true }).click();
@@ -377,42 +321,43 @@ export async function githubSyncJourney(
   const accountId = await githubOAuthSuccessJourney({ page, origin: origin });
   await page.goto(`${origin}/syncs/${syncId}`);
   await waitForSync({ ...input, id: syncId });
+  await page.getByRole('list', { name: 'Polling iterations' }).getByRole('listitem').waitFor();
   await capture({ page, name: 'sync-detail' });
-  await page.getByRole('link', { name: 'Queue', exact: true }).click();
-  await page
-    .getByText(`${githubRecordCount} records waiting · 0 deliveries blocked · Delivery paused`, {
-      exact: true,
-    })
-    .waitFor();
-  const deliveries = page.getByRole('list', { name: 'Pending deliveries' }).getByRole('listitem');
-  const dataPageSize = 50;
-  await deliveries.nth(dataPageSize - 1).waitFor();
-  assert.equal(await deliveries.count(), dataPageSize);
-  await deliveries.last().scrollIntoViewIfNeeded();
-  await deliveries.nth(githubRecordCount - 1).waitFor();
-  assert.equal(await deliveries.count(), githubRecordCount);
-  await capture({ page, name: 'queue' });
-  await page.getByRole('button', { name: 'Resume delivery', exact: true }).click();
-  await page
-    .getByText(`${githubRecordCount} records received`, { exact: true })
-    .waitFor({ timeout: 2 * drainTimeoutMs });
-  await page.getByText('Nothing waiting for delivery', { exact: true }).waitFor();
-  await page.getByRole('link', { name: 'Records', exact: true }).click();
-  const records = page.getByRole('list', { name: 'Received records' }).getByRole('listitem');
-  await records.nth(dataPageSize - 1).waitFor();
-  await records.first().getByText('PR 000', { exact: true }).waitFor();
-  assert.equal(await records.first().locator('time').count(), 2);
-  assert.equal(
-    await records.first().locator('time').first().getAttribute('datetime'),
-    '2020-01-01T00:00:00.000Z',
-  );
-  assert.equal(await records.count(), dataPageSize);
-  await records.last().scrollIntoViewIfNeeded();
-  await records.nth(githubRecordCount - 1).waitFor();
-  assert.equal(await records.count(), githubRecordCount);
-  await page.getByRole('link', { name: 'PR 000', exact: true }).click();
+  for (const name of ['Queue', 'Records', 'Assets']) {
+    assert.equal(await page.getByRole('link', { name, exact: true }).count(), 0);
+  }
+  await page.getByRole('link', { name: 'Pending deliverables', exact: true }).click();
+  const pending = page.getByRole('list', { name: 'Pending deliverables' }).getByRole('listitem');
+  const pageSize = 20;
+  await pending.nth(pageSize - 1).waitFor();
+  assert.equal(await pending.count(), pageSize);
+  await pending.last().scrollIntoViewIfNeeded();
+  await pending.nth(githubFixtureRecordCount - 1).waitFor();
+  assert.equal(await pending.count(), githubFixtureRecordCount);
+  await pending.filter({ hasText: 'browser fixture blocked' }).waitFor();
+  const blocked = pending.filter({ hasText: 'browser fixture blocked' });
+  await blocked.getByRole('link').click();
   await page.locator('pre').getByText('"title": "PR 000"', { exact: false }).waitFor();
-  await capture({ page, name: 'received-records' });
+  await capture({ page, name: 'pending-deliverable' });
+  await page.goto(`${origin}/syncs/${syncId}?view=pending`);
+  await pending.nth(pageSize - 1).waitFor();
+  await pending.last().scrollIntoViewIfNeeded();
+  await pending
+    .filter({ hasText: 'browser fixture blocked' })
+    .getByRole('button', { name: 'Retry', exact: true })
+    .click();
+  await drainDeliveries({ ...input, syncId });
+  await page.getByText('No pending deliverables.', { exact: true }).waitFor();
+  await page.getByRole('link', { name: 'Received deliverables', exact: true }).click();
+  const received = page.getByRole('list', { name: 'Received deliverables' }).getByRole('listitem');
+  await received.nth(pageSize - 1).waitFor();
+  assert.equal(await received.count(), pageSize);
+  await received.last().scrollIntoViewIfNeeded();
+  await received.nth(githubFixtureRecordCount - 1).waitFor();
+  assert.equal(await received.count(), githubFixtureRecordCount);
+  await received.first().getByRole('link').click();
+  await page.locator('pre').getByText('"kind": "pull-request"', { exact: false }).waitFor();
+  await capture({ page, name: 'received-deliverable' });
   const activated = await readSync({ ...input, id: syncId });
   await page.goto(`${origin}/providers/github`);
   await githubOAuthReconnectJourney({

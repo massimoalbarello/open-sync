@@ -5,6 +5,10 @@ import type { JsonObject } from '../models/json';
 import { syncErrorResponse } from './index';
 
 const identifier = t.String({ minLength: 1, maxLength: 1024 });
+const pageQuery = t.Object({
+  before: t.Optional(t.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
+});
+const deliveryParams = t.Object({ id: identifier, deliveryId: identifier });
 const config = t.Record(t.String(), t.Unknown());
 const syncBody = t.Object({
   definition: identifier,
@@ -60,8 +64,9 @@ export function createSyncController(input: {
     )
     .get(
       '/syncs/:id/polls',
-      ({ scope, params }) => input.api.polls({ ...scope, id: params.id }),
-      resourceParams,
+      ({ scope, params, query }) =>
+        input.api.polls({ ...scope, id: params.id, before: query.before }),
+      { ...resourceParams, query: pageQuery },
     )
     .post(
       '/syncs/:id/run',
@@ -89,18 +94,23 @@ export function createSyncController(input: {
     )
     .get('/status', ({ scope }) => input.api.status(scope))
     .get(
-      '/deliveries',
-      ({ scope, query }) => input.api.deliveries({ ...scope, offset: query.offset }),
-      {
-        query: t.Object({ offset: t.Optional(t.Integer({ minimum: 0, maximum: 1000000 })) }),
-      },
+      '/syncs/:id/deliverables',
+      ({ scope, params, query }) =>
+        input.api.deliveries({ ...scope, syncId: params.id, before: query.before }),
+      { ...resourceParams, query: pageQuery },
+    )
+    .get(
+      '/syncs/:id/deliverables/:deliveryId',
+      ({ scope, params }) =>
+        input.api.deliverable({ ...scope, syncId: params.id, id: params.deliveryId }),
+      { params: deliveryParams },
     )
     .post(
-      '/deliveries/:id/retry',
+      '/syncs/:id/deliverables/:deliveryId/retry',
       ({ scope, params }) => {
-        input.api.retryDelivery({ ...scope, id: params.id });
+        input.api.retryDelivery({ ...scope, syncId: params.id, id: params.deliveryId });
         return { queued: true };
       },
-      resourceParams,
+      { params: deliveryParams },
     );
 }

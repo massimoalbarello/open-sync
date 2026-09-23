@@ -7,7 +7,6 @@ import {
   sessionJourney,
 } from './authorization-journey';
 import { startIsolatedApp } from './isolated-app';
-import { receiverTimelineJourney } from './receiver-journey';
 import { exampleSyncsJourney, githubSyncJourney, syncLifecycleJourney } from './sync-journey';
 
 const interactionTimeoutMs = 30_000;
@@ -35,11 +34,10 @@ try {
   await configureGithub(input);
   const syncId = await githubSyncJourney(input);
   await exampleSyncsJourney(input);
-  await receiverTimelineJourney(input);
   await syncLifecycleJourney({ ...input, syncId });
   await sessionJourney(input);
   console.log(
-    'Browser journey passed: real passkeys, provider authorization, sync delivery, previews, resync and removal.',
+    'Browser journey passed: real passkeys, provider authorization, deliverable inspection, pagination, resync and removal.',
   );
 } catch (error) {
   console.error(error);

@@ -56,9 +56,7 @@ try {
     onProviderConnected: (input) => dashboard.connectWaiting(input),
     destinationTypes: {
       local: localDestination({
-        isPaused: (scope) => receiver.isPaused(scope),
         accept: (input) => receiver.accept(input),
-        acceptAsset: (input) => receiver.acceptAsset(input),
       }),
     },
     onEvent: (event) => console.log(JSON.stringify({ event: 'sync.status', ...event })),

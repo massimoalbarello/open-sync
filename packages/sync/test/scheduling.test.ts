@@ -247,7 +247,7 @@ test('a delivery that ignores abort cannot hold shutdown or acknowledge after it
   const engine = createSyncRuntime(options);
   try {
     const destination = { type: 'local', input: {} };
-    await engine.api.createSync({
+    const sync = await engine.api.createSync({
       ...alpha,
       definition: fixture.definition.id,
       config: { count: 1 },
@@ -255,14 +255,14 @@ test('a delivery that ignores abort cannot hold shutdown or acknowledge after it
     });
     await engine.tick();
     await engine.tick();
-    const before = engine.api.deliveries(alpha).deliveries[0]!;
+    const before = engine.api.deliveries({ ...alpha, syncId: sync.id }).deliveries[0]!;
     expect(before.errorCode).toBe('delivery_failed');
     await engine.close();
     late.resolve({ status: 'accepted' });
     await Bun.sleep(1);
     const reopened = createSyncRuntime(options);
     try {
-      expect(reopened.api.deliveries(alpha).deliveries[0]).toEqual(before);
+      expect(reopened.api.deliveries({ ...alpha, syncId: sync.id }).deliveries[0]).toEqual(before);
     } finally {
       await reopened.close();
     }

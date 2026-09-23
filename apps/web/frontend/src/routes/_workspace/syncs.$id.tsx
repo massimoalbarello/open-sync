@@ -13,17 +13,28 @@ import {
   syncDetailOptions,
   syncKeys,
 } from '../../queries/sync';
-import { PollStats } from './-syncs/poll-stats';
 import { SyncAccount } from './-syncs/sync-account';
+import { PendingDeliverables, PollHistory, ReceivedDeliverables } from './-syncs/sync-activity';
 
 const millisecondsPerMinute = 60_000;
 export const Route = createFileRoute('/_workspace/syncs/$id')({
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { view?: 'polls' | 'pending' | 'received' } => ({
+    view: search.view === 'pending' || search.view === 'received' ? search.view : 'polls',
+  }),
   component: SyncDetail,
 });
 function SyncDetail() {
   const { userId } = Route.useRouteContext();
   const { id } = Route.useParams();
   const navigate = Route.useNavigate();
+  const view = Route.useSearch().view ?? 'polls';
+  const Activity = {
+    polls: PollHistory,
+    pending: PendingDeliverables,
+    received: ReceivedDeliverables,
+  }[view];
   const [confirmRemoval, setConfirmRemoval] = useState(false);
   const query = useQuery(syncDetailOptions({ userId, id }));
   const catalog = useQuery(catalogOptions(userId));
@@ -94,8 +105,8 @@ function SyncDetail() {
           {confirmRemoval && (
             <div role="alert" className="space-y-3">
               <p>
-                Remove this sync and discard its queued deliveries? Records already delivered and
-                provider connections will remain.
+                Remove this sync and discard its queued deliveries? Deliverables already received
+                and provider connections will remain.
               </p>
               <div className="flex gap-2">
                 <Button
@@ -139,14 +150,34 @@ function SyncDetail() {
               <dt className="text-muted-foreground">Next scheduled run</dt>
               <dd>{nextRun(sync)}</dd>
             </dl>
-            <Link
-              to="/records"
-              search={{ syncId: sync.id }}
-              className="inline-block text-sm underline"
+            <nav
+              aria-label="Sync activity"
+              className="flex flex-wrap gap-x-6 gap-y-3 border-border border-b pb-3 text-sm"
             >
-              View records
-            </Link>
-            {query.data && <PollStats polls={query.data.polls} />}
+              {(
+                [
+                  { value: 'polls', label: 'Polling iterations' },
+                  { value: 'pending', label: 'Pending deliverables' },
+                  { value: 'received', label: 'Received deliverables' },
+                ] as const
+              ).map((item) => (
+                <Link
+                  key={item.value}
+                  to="/syncs/$id"
+                  params={{ id }}
+                  search={{ view: item.value }}
+                  aria-current={view === item.value ? 'page' : undefined}
+                  className={
+                    view === item.value
+                      ? 'font-medium underline underline-offset-4'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
+            <Activity userId={userId} id={id} />
           </div>
         </div>
       )}

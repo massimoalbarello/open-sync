@@ -70,53 +70,72 @@ test('mountable management routes require host authorization and preserve resour
   }
 });
 
-test('queue inspection pages a real backlog without exposing another owner or changing work', async () => {
+test('deliverable inspection is paginated, scoped to its sync, and preserves original bundles', async () => {
   const f = runtime({
     destination: {
       configSchema: { type: 'object' },
-      deliver: () => Promise.resolve({ status: 'retry', retryAfterMs: 0 }),
+      deliver: () => Promise.resolve({ status: 'rejected', code: 'held' }),
     },
   });
-  const count = 51;
+  const count = 21;
+  const pageSize = 20;
   try {
-    const destination = { type: 'local', input: {} };
-    await f.engine.api.createSync({
+    const sync = await f.engine.api.createSync({
       ...alpha,
       definition: fixture.definition.id,
-      destination,
+      destination: { type: 'local', input: {} },
       config: { count },
     });
     for (let step = 0; step < count; step++) {
       await f.engine.tick();
     }
+    const otherSync = await f.engine.api.createSync({
+      ...alpha,
+      definition: fixture.definition.id,
+      destination: { type: 'local', input: {} },
+      config: { count: 1 },
+      enabled: false,
+    });
     const app = createSyncController({
       api: f.engine.api,
       authorize: (request) => (request.headers.get('test-owner') === 'beta' ? beta : alpha),
     });
-    const first = await app.handle(new Request('http://localhost/sync/deliveries'));
+    const url = `http://localhost/sync/syncs/${sync.id}/deliverables`;
+    const first = await app.handle(new Request(url));
     const firstPage = (await first.json()) as ReturnType<typeof f.engine.api.deliveries>;
-    expect(firstPage.deliveries).toHaveLength(firstPage.pageSize);
-    expect(firstPage.hasMore).toBe(true);
-    const second = await app.handle(
-      new Request(`http://localhost/sync/deliveries?offset=${firstPage.pageSize}`),
-    );
+    expect(firstPage.deliveries).toHaveLength(pageSize);
+    const second = await app.handle(new Request(`${url}?before=${firstPage.nextCursor}`));
     const secondPage = (await second.json()) as typeof firstPage;
     expect(secondPage.deliveries).toHaveLength(1);
-    expect(secondPage.hasMore).toBe(false);
+    expect(secondPage.nextCursor).toBeNull();
     expect(
-      new Set([...firstPage.deliveries, ...secondPage.deliveries].map((item) => item.id)).size,
+      new Set([...firstPage.deliveries, ...secondPage.deliveries].map(({ id }) => id)).size,
     ).toBe(count);
-    const other = await app.handle(
-      new Request('http://localhost/sync/deliveries', { headers: { 'test-owner': 'beta' } }),
-    );
-    expect(await other.json()).toEqual({
-      deliveries: [],
-      hasMore: false,
-      pageSize: firstPage.pageSize,
+    const blocked = secondPage.deliveries[0]!;
+    const detail = await app.handle(new Request(`${url}/${blocked.id}`));
+    expect(await detail.json()).toMatchObject({
+      id: blocked.id,
+      syncId: sync.id,
+      records: [{ id: '0', data: { value: 0 }, revision: 1 }],
+      assets: [],
     });
-    const invalid = await app.handle(new Request('http://localhost/sync/deliveries?offset=-1'));
-    expect(invalid.status).toBe(validation);
-    expect(() => f.engine.api.deliveries({ ...alpha, offset: -1 })).toThrow();
+    expect((await app.handle(new Request(url, { headers: { 'test-owner': 'beta' } }))).status).toBe(
+      notFound,
+    );
+    for (const suffix of ['', '/retry']) {
+      const denied = await app.handle(
+        new Request(
+          `http://localhost/sync/syncs/${otherSync.id}/deliverables/${blocked.id}${suffix}`,
+          { method: suffix ? 'POST' : 'GET' },
+        ),
+      );
+      expect(denied.status).toBe(notFound);
+    }
+    expect((await app.handle(new Request(`${url}?before=0`))).status).toBe(validation);
+    expect(() => f.engine.api.deliveries({ ...alpha, syncId: sync.id, before: 0 })).toThrow();
+    expect(
+      (await app.handle(new Request(`${url}/${blocked.id}/retry`, { method: 'POST' }))).ok,
+    ).toBe(true);
     expect(f.engine.api.status(alpha).queue.pendingDeliveries).toBe(count);
   } finally {
     await f.close();

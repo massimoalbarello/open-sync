@@ -1,26 +1,13 @@
-CREATE TABLE host_settings (
-  owner_id TEXT PRIMARY KEY,
-  paused INTEGER NOT NULL DEFAULT 0
-);
-CREATE TABLE host_receipts (
-  owner_id TEXT NOT NULL,
-  delivery_id TEXT NOT NULL,
-  body_hash TEXT NOT NULL,
-  PRIMARY KEY(owner_id, delivery_id)
-);
-CREATE TABLE host_records (
+CREATE TABLE host_deliverables (
+  sequence INTEGER PRIMARY KEY AUTOINCREMENT,
   owner_id TEXT NOT NULL,
   sync_id TEXT NOT NULL,
-  kind TEXT NOT NULL,
-  record_id TEXT NOT NULL,
-  revision INTEGER NOT NULL,
-  deleted INTEGER NOT NULL,
-  data TEXT,
-  content TEXT,
-  preview TEXT,
-  created_at TEXT,
-  updated_at TEXT,
-  PRIMARY KEY(owner_id, sync_id, kind, record_id)
+  id TEXT NOT NULL,
+  body TEXT NOT NULL,
+  body_hash TEXT NOT NULL,
+  files TEXT NOT NULL,
+  received_at INTEGER NOT NULL,
+  UNIQUE(owner_id, id)
 );
 
-CREATE INDEX host_records_updated_at ON host_records(owner_id, updated_at DESC, sync_id, kind, record_id) WHERE deleted=0;
+CREATE INDEX host_deliverables_sync ON host_deliverables(owner_id, sync_id, sequence DESC);

@@ -1,13 +1,10 @@
-const privateFileMode = 0o600;
-
 import { createHash } from 'node:crypto';
 import { mkdir, open, opendir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import { canonicalJson } from '@context-use/open-sync/json';
+import type { DeliveryAsset } from '@context-use/open-sync/assets';
 import type { SQL } from 'bun';
-import type { ReceiverRepository } from './contract';
 
-/** Runs before uploads start. Only generated files absent from durable receipts are removed. */
+/** Runs before deliveries start. Only generated files absent from accepted deliverables are removed. */
 export async function recoverAssetFiles(input: { db: SQL; directory: string }) {
   const directory = await opendir(input.directory).catch((error: NodeJS.ErrnoException) => {
     if (error.code !== 'ENOENT') {
@@ -21,39 +18,28 @@ export async function recoverAssetFiles(input: { db: SQL; directory: string }) {
     if (!file.isFile() || !/^[0-9a-f-]{36}$/.test(file.name)) {
       continue;
     }
-    const [stored] = await input.db`SELECT 1 FROM host_assets WHERE file_id=${file.name} LIMIT 1`;
+    const [stored] =
+      await input.db`SELECT 1 FROM host_deliverables,json_each(host_deliverables.files) file
+      WHERE file.value=${file.name} LIMIT 1`;
     if (!stored) {
       await unlink(join(input.directory, file.name));
     }
   }
 }
 
-export async function acceptAsset(
-  input: Parameters<ReceiverRepository['acceptAsset']>[0] & { db: SQL; directory: string },
-) {
-  const { db, asset } = input;
-  if ('unavailable' in asset) {
-    throw new Error('Asset has no content');
-  }
-  const hash = canonicalJson({
-    id: asset.id,
-    version: asset.version,
-    size: asset.size,
-    sha256: asset.sha256,
-  }).sha256;
-  const existing = await findAsset(input);
-  if (existing) {
-    if (existing.content_hash !== hash) {
-      throw new Error('Asset identity reused with different content');
-    }
-    await updateMetadata({ db, asset, ownerId: input.ownerId, id: existing.id });
-    return existing.id;
-  }
+const privateFileMode = 0o600;
+
+export async function copyAsset(input: {
+  asset: Extract<DeliveryAsset, { size: number }>;
+  directory: string;
+  signal: AbortSignal;
+  open(): Promise<ReadableStream<Uint8Array>>;
+}) {
   const fileId = crypto.randomUUID();
   await mkdir(input.directory, { recursive: true, mode: 0o700 });
   const path = join(input.directory, fileId);
   const file = await open(path, 'wx', privateFileMode);
-  let keep = false;
+  let complete = false;
   try {
     const digest = createHash('sha256');
     let size = 0;
@@ -63,7 +49,7 @@ export async function acceptAsset(
     for await (const chunk of body) {
       input.signal.throwIfAborted();
       size += chunk.byteLength;
-      if (size > asset.size) {
+      if (size > input.asset.size) {
         throw new Error('Asset size mismatch');
       }
       digest.update(chunk);
@@ -72,7 +58,7 @@ export async function acceptAsset(
         offset += (await file.write(chunk.subarray(offset))).bytesWritten;
       }
     }
-    if (size !== asset.size || digest.digest('hex') !== asset.sha256) {
+    if (size !== input.asset.size || digest.digest('hex') !== input.asset.sha256) {
       throw new Error('Asset content mismatch');
     }
     await file.sync();
@@ -83,41 +69,12 @@ export async function acceptAsset(
       await folder.close();
     }
     input.signal.throwIfAborted();
-    const id = `asset_${crypto.randomUUID()}`;
-    const result = await db.begin(async (tx) => {
-      await tx`INSERT INTO host_assets(owner_id,id,sync_id,asset_id,asset_version,content_hash,file_id,name,media_type,size,created_at,updated_at)
-        VALUES (${input.ownerId},${id},${input.syncId},${asset.id},${asset.version},${hash},${fileId},${asset.name},${asset.mediaType},${asset.size},${asset.createdAt ?? null},${asset.updatedAt ?? null}) ON CONFLICT DO NOTHING`;
-      const [row] = await tx<
-        { id: string; file_id: string; content_hash: string }[]
-      >`SELECT id,file_id,content_hash FROM host_assets WHERE owner_id=${input.ownerId} AND sync_id=${input.syncId} AND asset_id=${asset.id} AND asset_version=${asset.version}`;
-      if (!row || row.content_hash !== hash) {
-        throw new Error('Asset identity conflict');
-      }
-      return row;
-    });
-    keep = result.file_id === fileId;
-    return result.id;
+    complete = true;
+    return fileId;
   } finally {
     await file.close();
-    if (!keep) {
+    if (!complete) {
       await unlink(path);
     }
   }
-}
-async function findAsset(input: Parameters<ReceiverRepository['acceptAsset']>[0] & { db: SQL }) {
-  const [row] = await input.db<
-    { id: string; content_hash: string }[]
-  >`SELECT id,content_hash FROM host_assets WHERE owner_id=${input.ownerId} AND sync_id=${input.syncId} AND asset_id=${input.asset.id} AND asset_version=${input.asset.version}`;
-  return row;
-}
-
-function updateMetadata(input: {
-  db: SQL;
-  asset: import('@context-use/open-sync/assets').DeliveryAsset;
-  ownerId: string;
-  id: string;
-}) {
-  const { db, asset } = input;
-  return db`UPDATE host_assets SET name=${asset.name},media_type=${asset.mediaType},created_at=${asset.createdAt ?? null},updated_at=${asset.updatedAt ?? null}
-    WHERE owner_id=${input.ownerId} AND id=${input.id}`;
 }

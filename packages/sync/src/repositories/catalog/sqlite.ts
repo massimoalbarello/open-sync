@@ -46,16 +46,19 @@ export class SqliteCatalog implements CatalogRepository {
       .all(scope.ownerId)
       .map(({ id }) => this.sync({ ...scope, id }));
   }
-  polls(input: Resource): SyncPoll[] {
+  polls(input: Resource & { before?: number }) {
     this.sync(input);
-    return this.db
+    const pageSize = 20;
+    const rows = this.db
       .query<
         SyncPoll,
-        [string, string]
+        [string, string, number, number]
       >(`SELECT id,started_at AS startedAt,completed_at AS completedAt,
         state,error_code AS errorCode,records_processed AS recordsProcessed,records_queued AS recordsQueued
-        FROM sync_polls WHERE owner_id=? AND sync_id=? ORDER BY id DESC`)
-      .all(input.ownerId, input.id);
+        FROM sync_polls WHERE owner_id=? AND sync_id=? AND id<? ORDER BY id DESC LIMIT ?`)
+      .all(input.ownerId, input.id, input.before ?? Number.MAX_SAFE_INTEGER, pageSize + 1);
+    const polls = rows.slice(0, pageSize);
+    return { polls, nextCursor: rows.length > pageSize ? polls.at(-1)!.id : null };
   }
   connectSync(input: Resource & { connection: ConnectionRef }) {
     return this.db

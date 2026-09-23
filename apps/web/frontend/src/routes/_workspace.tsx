@@ -2,7 +2,7 @@ import { Button } from '@repo/ui/button';
 import { cn } from '@repo/ui/class-names';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, Link, Outlet, redirect, useNavigate } from '@tanstack/react-router';
-import { Database, Files, ListChecks, LogOut, Menu, Plug, RefreshCw } from 'lucide-react';
+import { LogOut, Menu, Plug, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { OpenSyncLogo } from '../components/brand/open-sync-logo';
 import { sessionOptions, signOut } from '../queries/session';
@@ -21,9 +21,6 @@ export const Route = createFileRoute('/_workspace')({
 const sections = [
   { to: '/providers', label: 'Providers', icon: Plug },
   { to: '/syncs', label: 'Syncs', icon: RefreshCw },
-  { to: '/records', label: 'Records', icon: Database },
-  { to: '/assets', label: 'Assets', icon: Files },
-  { to: '/delivery', label: 'Queue', icon: ListChecks },
 ] as const;
 
 function Workspace() {

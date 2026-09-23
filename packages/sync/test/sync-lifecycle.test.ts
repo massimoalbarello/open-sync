@@ -92,14 +92,14 @@ test('resync replays all pages and assets across capacity, retry, pause and rest
     await engine.tick();
     await engine.tick();
     expect(engine.api.sync(scope).status).toBe('waiting_for_capacity');
-    const queued = engine.api.deliveries(alpha).deliveries[0]!;
+    const queued = engine.api.deliveries({ ...alpha, syncId: sync.id }).deliveries[0]!;
     expect(queued.state).toBe('blocked');
     await engine.api.setEnabled({ ...scope, enabled: false });
     await engine.close();
     engine = createSyncRuntime(options);
     await engine.tick();
     reject = false;
-    engine.api.retryDelivery({ ...alpha, id: queued.id });
+    engine.api.retryDelivery({ ...alpha, syncId: sync.id, id: queued.id });
     await engine.tick();
     transientFailure = true;
     await engine.api.setEnabled({ ...scope, enabled: true });
@@ -120,8 +120,8 @@ test('resync replays all pages and assets across capacity, retry, pause and rest
       ['1', 2],
     ]);
     expect(new Set(received.map(({ id }) => id)).size).toBe(initialTicks);
-    expect(engine.api.polls(scope)).toHaveLength(2);
-    expect(engine.api.polls(scope)[0]).toMatchObject({
+    expect(engine.api.polls(scope).polls).toHaveLength(2);
+    expect(engine.api.polls(scope).polls[0]).toMatchObject({
       state: 'succeeded',
       recordsProcessed: 2,
       recordsQueued: 2,
@@ -131,7 +131,7 @@ test('resync replays all pages and assets across capacity, retry, pause and rest
     await engine.tick();
     await engine.tick();
     expect(received).toHaveLength(initialTicks);
-    expect(engine.api.polls(scope)[0]).toMatchObject({
+    expect(engine.api.polls(scope).polls[0]).toMatchObject({
       state: 'succeeded',
       recordsProcessed: 2,
       recordsQueued: 0,
@@ -164,9 +164,9 @@ test('resync fences old captures, keeps pending FIFO and replays explicit tombst
       delay: 0,
     });
     const stale = f.acquisition.claim(leaseMs)!;
-    const [poll] = f.catalog.polls(scope);
+    const [poll] = f.catalog.polls(scope).polls;
     f.catalog.resync({ ...scope, checkpoint: 0 });
-    expect(f.catalog.polls(scope)).toEqual([
+    expect(f.catalog.polls(scope).polls).toEqual([
       {
         ...poll!,
         state: 'interrupted',
@@ -379,7 +379,7 @@ test('removal aborts acquisition and delivery, retains failed cleanup through re
     lateDestination.resolve({ status: 'accepted' });
     await Bun.sleep(0);
     expect(engine.api.syncs(alpha)).toEqual([]);
-    expect(engine.api.deliveries(alpha).deliveries).toEqual([]);
+    expect(engine.api.status(alpha).queue.pendingDeliveries).toBe(0);
     await engine.close().catch(() => undefined);
     deletion.mockRestore();
     deletion = undefined;

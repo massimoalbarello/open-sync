@@ -394,12 +394,12 @@ export async function sessionJourney({ page, origin }: Journey) {
   await page.setViewportSize({ width: 390, height: 844 });
   try {
     await page.getByRole('button', { name: 'Toggle navigation' }).click();
-    await page.getByRole('link', { name: 'Queue', exact: true }).click();
+    await page.getByRole('link', { name: 'Syncs', exact: true }).click();
     assert.equal(
       await page.getByRole('button', { name: 'Toggle navigation' }).getAttribute('aria-expanded'),
       'false',
     );
-    await capture({ page, name: 'queue-mobile' });
+    await capture({ page, name: 'syncs-mobile' });
   } finally {
     await page.setViewportSize({ width: 1280, height: 720 });
   }
@@ -408,12 +408,12 @@ export async function sessionJourney({ page, origin }: Journey) {
   const unauthorized = 401;
   for (const path of [
     '/api/open-sync/sync/syncs',
-    '/api/receiver/assets',
+    '/api/receiver/syncs/missing/deliverables',
     '/api/open-sync/providers/catalog',
   ]) {
     assert.equal((await page.request.get(`${origin}${path}`)).status(), unauthorized);
   }
-  await page.goto(`${origin}/records`);
+  await page.goto(`${origin}/syncs`);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.getByRole('heading', { name: 'Syncs', exact: true }).waitFor();
 }

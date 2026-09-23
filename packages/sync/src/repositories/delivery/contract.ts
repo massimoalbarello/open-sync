@@ -13,6 +13,7 @@ export interface DeliveryRepository {
   claim(leaseMs: number): DeliveryLease | undefined;
   complete(input: { lease: DeliveryLease; result: DeliveryResult; delay: number }): void;
   status(scope: Scope): QueueStatus;
-  pending(input: Scope & { offset: number }): DeliveryPage;
+  pending(input: Scope & { syncId: string; before?: number }): DeliveryPage;
+  deliverable(input: Resource & { syncId: string }): Omit<Deliverable, 'openAsset'>;
   retry(input: Resource): void;
 }

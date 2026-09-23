@@ -20,14 +20,14 @@ test('public registration metadata excludes execution state and duplicate source
   }
 });
 
-test('poll stats keep only the latest 20 iterations per sync, including empty polls', () => {
+test('poll stats paginate without losing older iterations when new polls arrive', () => {
   const f = repositories();
   const scope = { ...alpha, id: f.sync.id };
   const iterations = 22;
-  const retained = 20;
+  const pageSize = 20;
   const leaseMs = 60_000;
   try {
-    expect(f.catalog.polls(scope)).toEqual([]);
+    expect(f.catalog.polls(scope)).toEqual({ polls: [], nextCursor: null });
     const other = f.catalog.createSync({
       ...alpha,
       definition: fixture.definition.id,
@@ -44,8 +44,9 @@ test('poll stats keep only the latest 20 iterations per sync, including empty po
         page: { ...page, complete: true, records: i === iterations - 1 ? [] : page.records },
       });
     }
-    const polls = f.catalog.polls(scope);
-    expect(polls).toHaveLength(retained);
+    const first = f.catalog.polls(scope);
+    const polls = first.polls;
+    expect(polls).toHaveLength(pageSize);
     expect(polls[0]).toMatchObject({ state: 'succeeded', recordsProcessed: 0, recordsQueued: 0 });
     expect(polls[1]).toMatchObject({ state: 'succeeded', recordsProcessed: 1, recordsQueued: 0 });
     expect(polls.every(({ completedAt }) => completedAt !== null)).toBe(true);
@@ -55,8 +56,18 @@ test('poll stats keep only the latest 20 iterations per sync, including empty po
       definition: fixture.definition,
       page: { ...page, complete: true },
     });
-    expect(f.catalog.polls({ ...alpha, id: other.id })).toHaveLength(1);
-    expect(f.catalog.polls(scope)).toEqual(polls);
+    expect(f.catalog.polls({ ...alpha, id: other.id }).polls).toHaveLength(1);
+    f.catalog.runNow(scope);
+    f.acquisition.commit({
+      lease: f.acquisition.claim(leaseMs)!,
+      definition: fixture.definition,
+      page: { ...page, complete: true },
+    });
+    const older = f.catalog.polls({ ...scope, before: first.nextCursor! });
+    expect(older.polls).toHaveLength(iterations - pageSize);
+    expect(older.nextCursor).toBeNull();
+    expect(new Set([...polls, ...older.polls].map(({ id }) => id)).size).toBe(iterations);
+    expect(older.polls.at(-1)).toMatchObject({ recordsProcessed: 1, recordsQueued: 1 });
   } finally {
     f.close();
   }

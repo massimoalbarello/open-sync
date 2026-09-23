@@ -15,12 +15,27 @@ export async function readSync({ page, origin, id }: Journey & { id: string }) {
   return (await response.json()) as ReturnType<SyncApi['sync']>;
 }
 
-export async function readRecords({ page, origin, syncId }: Journey & { syncId: string }) {
-  const response = await page.request.get(
-    `${origin}/api/receiver/records?syncId=${encodeURIComponent(syncId)}`,
-  );
-  assert.ok(response.ok(), await response.text());
-  return (await response.json()) as Awaited<ReturnType<ReceiverService['records']>>;
+export async function readDeliverables({ page, origin, syncId }: Journey & { syncId: string }) {
+  const deliverables: NonNullable<Awaited<ReturnType<ReceiverService['deliverable']>>>[] = [];
+  let before: number | null = null;
+  do {
+    const url = new URL(`/api/receiver/syncs/${syncId}/deliverables`, origin);
+    if (before !== null) {
+      url.searchParams.set('before', String(before));
+    }
+    const response = await page.request.get(url.href);
+    assert.ok(response.ok(), await response.text());
+    const result = (await response.json()) as Awaited<ReturnType<ReceiverService['deliverables']>>;
+    for (const entry of result.deliverables) {
+      const detail = await page.request.get(
+        `${origin}/api/receiver/syncs/${syncId}/deliverables/${entry.id}`,
+      );
+      assert.ok(detail.ok(), await detail.text());
+      deliverables.push(await detail.json());
+    }
+    before = result.nextCursor;
+  } while (before !== null);
+  return deliverables;
 }
 
 export async function waitForSync(input: Journey & { id: string }) {
@@ -37,12 +52,22 @@ export async function waitForSync(input: Journey & { id: string }) {
   }
 }
 
-export async function drainDeliveries({ page, origin }: Journey) {
-  await page.goto(`${origin}/delivery`);
+export async function drainDeliveries({ page, origin, syncId }: Journey & { syncId: string }) {
   const timeoutMs = 120_000;
-  await page
-    .getByText('Nothing waiting for delivery', { exact: true })
-    .waitFor({ timeout: timeoutMs });
+  const intervalMs = 100;
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const response = await page.request.get(
+      `${origin}/api/open-sync/sync/syncs/${syncId}/deliverables`,
+    );
+    assert.ok(response.ok(), await response.text());
+    const result = (await response.json()) as ReturnType<SyncApi['deliveries']>;
+    if (result.deliveries.length === 0) {
+      return;
+    }
+    assert.ok(Date.now() < deadline, JSON.stringify(result));
+    await Bun.sleep(intervalMs);
+  }
 }
 
 export async function createSync({ page, origin, source }: Journey & { source: string }) {

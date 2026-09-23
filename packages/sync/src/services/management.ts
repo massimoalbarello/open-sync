@@ -101,9 +101,10 @@ export class SyncManagement {
     this.guard(input);
     return summarizeSync(this.input.catalog.sync(input));
   }
-  /** Latest 20 polling iterations, newest first, including the current scan. */
-  polls(input: Resource) {
+  /** Polling iterations, newest first, including the current scan. */
+  polls(input: Resource & { before?: number }) {
     this.guard(input);
+    validateCursor(input.before);
     return this.input.catalog.polls(input);
   }
   async connectSync(input: Resource & { connection: ConnectionRef }) {
@@ -164,15 +165,24 @@ export class SyncManagement {
     this.guard(scope);
     return { queue: this.input.deliveries.status(scope), limits: { ...this.input.limits } };
   }
-  deliveries(input: Scope & { offset?: number }) {
+  deliveries(input: Scope & { syncId: string; before?: number }) {
     this.guard(input);
-    const offset = input.offset ?? 0;
-    positive(offset + 1);
-    return this.input.deliveries.pending({ ...input, offset });
+    validateCursor(input.before);
+    this.input.catalog.sync({ ...input, id: input.syncId });
+    return this.input.deliveries.pending(input);
   }
-  retryDelivery(input: Resource): void {
+  deliverable(input: Resource & { syncId: string }) {
     this.guard(input);
+    return this.input.deliveries.deliverable(input);
+  }
+  retryDelivery(input: Resource & { syncId: string }): void {
+    this.deliverable(input);
     this.input.deliveries.retry(input);
     this.input.worker.wake();
+  }
+}
+function validateCursor(before?: number): void {
+  if (before !== undefined && (!Number.isSafeInteger(before) || before < 1)) {
+    fail('invalid_input');
   }
 }

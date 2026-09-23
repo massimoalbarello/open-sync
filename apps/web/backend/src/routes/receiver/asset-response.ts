@@ -8,12 +8,11 @@ const success = 200;
 export function assetResponse(input: {
   asset: NonNullable<Awaited<ReturnType<ReceiverService['asset']>>>;
   range: string | null;
-  inline: boolean;
 }) {
   const { asset } = input;
   const headers = new Headers({
     'content-type': asset.mediaType,
-    'content-disposition': `${input.inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(asset.name)}`,
+    'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(asset.name)}`,
     'x-content-type-options': 'nosniff',
     'content-security-policy': "default-src 'none'; sandbox",
     'cache-control': 'private, no-store',

@@ -8,10 +8,6 @@ import { createSyncRuntime } from '@context-use/open-sync/engine';
 import type { JsonObject } from '@context-use/open-sync/json';
 import { localDestination } from '@open-sync/examples/destinations/local';
 import { githubPullRequests } from '@open-sync/examples/syncs/github';
-import { SQL } from 'bun';
-import { runMigrations } from '#backend/db/migrate.ts';
-import { SqliteReceiver } from '#backend/repositories/receiver/sqlite.ts';
-import { ReceiverService } from '#backend/services/receiver/service.ts';
 
 export const owner = { actorId: 'alice', ownerId: 'alice' };
 export interface GraphRequest {
@@ -37,16 +33,12 @@ export function pull(id: string) {
 }
 export async function fixture(config: JsonObject = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'github-sync-test-'));
-  const db = new SQL({ adapter: 'sqlite', filename: join(dir, 'host.db') });
-  await runMigrations({ db });
-  const receiver = new ReceiverService(
-    await SqliteReceiver.open({ db, assetDirectory: join(dir, 'assets') }),
-  );
   const delivered: Deliverable[] = [];
   const destinationType = localDestination({
-    isPaused: (scope) => receiver.isPaused(scope),
-    accept: (input) => receiver.accept(input),
-    acceptAsset: (input) => receiver.acceptAsset(input),
+    accept: ({ deliverable }) => {
+      delivered.push(deliverable);
+      return Promise.resolve();
+    },
   });
   const requests: GraphRequest[] = [];
   const pulls = [pull('a'), pull('b'), pull('c')];
@@ -109,18 +101,7 @@ export async function fixture(config: JsonObject = {}) {
     databasePath: join(dir, 'sync.db'),
     definitions: [githubPullRequests],
     connector: gateway,
-    destinationTypes: {
-      local: {
-        ...destinationType,
-        async deliver(input: Parameters<typeof destinationType.deliver>[0]) {
-          const result = await destinationType.deliver(input);
-          if (result.status === 'accepted') {
-            delivered.push(input.deliverable);
-          }
-          return result;
-        },
-      },
-    },
+    destinationTypes: { local: destinationType },
   };
   let engine = createSyncRuntime(options);
   const destination = { type: 'local', input: {} };
@@ -151,7 +132,6 @@ export async function fixture(config: JsonObject = {}) {
     get engine() {
       return engine;
     },
-    receiver,
     delivered,
     requests,
     provider,
@@ -163,7 +143,6 @@ export async function fixture(config: JsonObject = {}) {
     },
     async close() {
       await engine.close();
-      await db.close();
       await rm(dir, { recursive: true, force: true });
     },
   };
