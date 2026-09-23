@@ -3,6 +3,10 @@
 Open Sync provides a headless Bun sync engine and a default web host with separate Providers,
 Syncs and Delivery queue sections. The host uses Elysia, Better Auth passkeys, React and TanStack Router/Query.
 
+[![Deploy on nibrun](.github/assets/deploy-on-nibrun.svg)](https://app.nibrun.com/deploy?name=open-sync&binary=https%3A%2F%2Fgithub.com%2Fmassimoalbarello%2Fopen-sync%2Freleases%2Fdownload%2Fnibrun-latest%2Fopen-sync&port=3000&minimal)
+
+## Run locally
+
 Requires Bun 1.4 and Node 24. Start locally with:
 
 ```sh
@@ -45,3 +49,40 @@ and resource limits before it can be executed.
 
 Open Sync uses `@oomol-lab/open-connector@1.6.0` internally for provider authentication and requests.
 Connector storage is opaque, and hosts use Open Sync connection references. Reauthorizing an account preserves its connection reference and existing syncs.
+
+## Deploy on nibrun
+
+Use the button above to create your own instance without building locally. It opens nibrun with
+the app name, port, and latest tested Linux binary already selected. Sign in to nibrun, deploy,
+then open your instance's HTTPS URL and register the first passkey to become its owner.
+Configure your providers from the dashboard after setup.
+
+The [rolling nibrun release](https://github.com/massimoalbarello/open-sync/releases/tag/nibrun-latest)
+contains the `open-sync` Linux x86_64 binary and its SHA-256 checksum. The build workflow refreshes
+it after the compiled-binary and browser checks pass on `main`; it is separate from npm package
+releases. The binary embeds the dashboard, provider definitions, and database migrations.
+
+To build and deploy from a local checkout, install the nibrun CLI and sign in once:
+
+```sh
+curl -fsSL https://nibrun.com/install.sh | sh
+nib login
+bun run deploy --new open-sync
+```
+
+The deploy command builds for Linux automatically. To update the same instance:
+
+```sh
+nib apps list
+bun run deploy --app open-sync
+```
+
+Use an exact slug from `nib apps list` if multiple instances share that name. `--app` updates an
+existing instance and never silently creates another; `--new` creates a separate instance.
+To build without deploying, run `bun run build:linux`; the output is `apps/web/dist/app`.
+
+nibrun supplies `PORT` and `NIBRUN_HOSTNAME`, so no environment variables are required for first
+boot. Open Sync derives its public HTTPS origin from that hostname and keeps its databases,
+assets, provider credentials, and generated authentication secret under `/app/data`. This storage
+survives restarts and redeployments. For a custom domain, set `BASE_URL` to its HTTPS origin.
+Redeployments briefly stop the old instance; use `nib apps export` to back up its persistent data.
