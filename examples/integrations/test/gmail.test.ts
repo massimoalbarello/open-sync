@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import { SourceHttpError } from '@context-use/open-sync/definition';
 import type { JsonObject } from '@context-use/open-sync/json';
 import { gmailThreads } from '../src/syncs/gmail/definition';
 import { fixture, unused } from './fixture';
@@ -171,19 +172,18 @@ test.each(['available', 'oversized'])(
   'Gmail preserves attachment identities and continues after an %s download',
   async (mode) => {
     const tooLarge = 413;
-    const success = 200;
     const downloads: string[] = [];
     const f = await fixture({
       registration: gmailThreads,
       provider: {
         post: unused,
-        get: ({ path }) => {
-          downloads.push(path);
-          return Promise.resolve({
-            status: mode === 'oversized' ? tooLarge : success,
-            headers: {},
-            body: { data: Buffer.from('external').toString('base64url') },
-          });
+        get: unused,
+        download: ({ id, input }) => {
+          expect(id).toBe('gmail.download_attachment');
+          downloads.push(String(input.attachmentId));
+          return mode === 'oversized'
+            ? Promise.reject(new SourceHttpError({ status: tooLarge }))
+            : Promise.resolve(new Blob(['external']).stream());
         },
         action: ({ id }) =>
           Promise.resolve<JsonObject>(
@@ -222,7 +222,7 @@ test.each(['available', 'oversized'])(
     });
     try {
       await f.finish();
-      expect(downloads).toEqual(['/users/me/messages/m1/attachments/attachment2']);
+      expect(downloads).toEqual(['attachment2']);
       const record = f.records[0]!;
       expect(record.operation).toBe('upsert');
       if (record.operation !== 'upsert') {

@@ -1,8 +1,7 @@
 import { type AssetRef, assetPlaceholder } from '@context-use/open-sync/assets';
-import { SourceHttpError, type SyncContext } from '@context-use/open-sync/definition';
+import type { SyncContext } from '@context-use/open-sync/definition';
 import { z } from 'zod';
 
-const successStatus = 200;
 interface Part {
   partId?: string;
   filename?: string;
@@ -34,27 +33,34 @@ export async function gmailAttachments(input: {
       if (!partId) {
         throw new Error('Gmail attachment has no stable part identity');
       }
+      const data = part.body?.data;
+      const attachmentId = part.body?.attachmentId;
+      const mediaType = part.mimeType ?? 'application/octet-stream';
       const key = `attachment_${Buffer.from(`${input.messageId}:${partId}`).toString('base64url')}`;
       refs[key] = await input.context.assets.capture({
         id: `${input.messageId}:${partId}`,
         version: '1',
         name: part.filename,
-        mediaType: part.mimeType ?? 'application/octet-stream',
-        async read() {
-          let data = part.body?.data;
-          if (data === undefined && part.body?.attachmentId) {
-            const response = await input.context.provider.get({
-              path: `/users/me/messages/${encodeURIComponent(input.messageId)}/attachments/${encodeURIComponent(part.body.attachmentId)}`,
-            });
-            if (response.status !== successStatus) {
-              throw new SourceHttpError(response);
+        mediaType,
+        read() {
+          if (data === undefined && attachmentId) {
+            if (!input.context.provider.download) {
+              throw new Error('Provider does not support file downloads');
             }
-            data = z.object({ data: z.string() }).parse(response.body).data;
+            return input.context.provider.download({
+              id: 'gmail.download_attachment',
+              input: {
+                messageId: input.messageId,
+                attachmentId,
+                fileName: part.filename!,
+                mimeType: mediaType,
+              },
+            });
           }
           if (data === undefined || !/^[A-Za-z0-9_=-]*$/.test(data)) {
             throw new Error('Invalid Gmail attachment content');
           }
-          return new Blob([Buffer.from(data, 'base64url')]).stream();
+          return Promise.resolve(new Blob([Buffer.from(data, 'base64url')]).stream());
         },
       });
       attachments.push({ name: part.filename, file: assetPlaceholder(key) });

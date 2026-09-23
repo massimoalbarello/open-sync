@@ -1,10 +1,10 @@
 import { expect, test } from 'bun:test';
+import { SourceHttpError } from '@context-use/open-sync/definition';
 import type { JsonObject } from '@context-use/open-sync/json';
 import { gmailThreads } from '../src/syncs/gmail/definition';
 import { fixture, owner, unused } from './fixture';
 
 test('Gmail retries a whole thread after a later attachment fails without committing partial output', async () => {
-  const success = 200;
   const unavailable = 503;
   let fail = true;
   const requests: JsonObject[] = [];
@@ -29,13 +29,14 @@ test('Gmail retries a whole thread after a later attachment fails without commit
     registration: gmailThreads,
     provider: {
       post: unused,
-      get: ({ path }) => {
-        downloads.push(path);
-        return Promise.resolve({
-          status: fail && path.endsWith('/second') ? unavailable : success,
-          headers: {},
-          body: { data: Buffer.from(path).toString('base64url') },
-        });
+      get: unused,
+      download: ({ id, input }) => {
+        expect(id).toBe('gmail.download_attachment');
+        const attachmentId = String(input.attachmentId);
+        downloads.push(attachmentId);
+        return fail && attachmentId === 'second'
+          ? Promise.reject(new SourceHttpError({ status: unavailable }))
+          : Promise.resolve(new Blob([attachmentId]).stream());
       },
       action: ({ id, input }) => {
         if (id === 'gmail.get_profile') {
@@ -49,10 +50,7 @@ test('Gmail retries a whole thread after a later attachment fails without commit
   try {
     const initial = f.saved.checkpoint;
     await f.engine.tick();
-    expect(downloads).toEqual([
-      '/users/me/messages/first/attachments/first',
-      '/users/me/messages/second/attachments/second',
-    ]);
+    expect(downloads).toEqual(['first', 'second']);
     expect(f.saved).toMatchObject({
       status: 'source_http_503',
       checkpoint: initial,
