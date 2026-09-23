@@ -91,15 +91,7 @@ test('destination setup validates both sides of preparation, persists only prepa
       const json = JSON.stringify(response);
       expect(json).not.toContain(secret);
       expect(json).not.toContain('reference');
-      for (const field of [
-        'checkpoint',
-        'checkpointRevision',
-        'bindingEpoch',
-        'destinationId',
-        'sourceId',
-        'ownerId',
-        'config',
-      ]) {
+      for (const field of ['checkpoint', 'destination', 'ownerId', 'config']) {
         expect(json).not.toContain(`"${field}"`);
       }
     }

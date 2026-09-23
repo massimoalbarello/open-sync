@@ -4,7 +4,7 @@ import { createSyncController } from '../src/http/controller';
 import { createSyncRuntime } from '../src/runtime';
 import { alpha, beta, configure, fixture, runtime } from './support';
 
-test('catalog exposes serializable metadata, and polling history survives restart with owner isolation', async () => {
+test('catalog exposes serializable metadata, and run history survives restart with owner isolation', async () => {
   const f = runtime();
   try {
     const sync = await configure(f.engine);
@@ -22,27 +22,27 @@ test('catalog exposes serializable metadata, and polling history survives restar
     for (let step = 0; step < stepCount; step++) {
       await f.engine.tick();
     }
-    const history = f.engine.api.polls(resource);
-    expect(history.polls).toMatchObject([
-      { state: 'succeeded', recordsProcessed: 3, recordsChanged: 3, attemptCount: 3 },
+    const history = f.engine.api.runs(resource);
+    expect(history.runs).toMatchObject([
+      { state: 'succeeded', recordsProcessed: 3, recordsQueued: 3 },
     ]);
     expect(history.hasMore).toBe(false);
-    expect(history.polls[0]!.completedAt).not.toBeNull();
-    expect(() => f.engine.api.polls({ ...beta, id: sync.id })).toThrow('not found');
+    expect(history.runs[0]!.completedAt).not.toBeNull();
+    expect(() => f.engine.api.runs({ ...beta, id: sync.id })).toThrow('not found');
     await f.engine.close();
     const restarted = createSyncRuntime(f.options);
     try {
-      expect(restarted.api.polls(resource)).toEqual(history);
+      expect(restarted.api.runs(resource)).toEqual(history);
       const app = createSyncController({ api: restarted.api, authorize: () => alpha });
       const invalid = await app.handle(
-        new Request(`http://localhost/sync/syncs/${sync.id}/polls?offset=-1`),
+        new Request(`http://localhost/sync/syncs/${sync.id}/runs?offset=-1`),
       );
       const validationStatus = 422;
       expect(invalid.status).toBe(validationStatus);
-      restarted.api.queueRun(resource);
+      restarted.api.runNow(resource);
       await restarted.tick();
-      expect(restarted.api.polls(resource).polls).toHaveLength(2);
-      expect(restarted.api.polls({ ...resource, offset: 1 }).polls).toHaveLength(1);
+      expect(restarted.api.runs(resource).runs).toHaveLength(2);
+      expect(restarted.api.runs({ ...resource, offset: 1 }).runs).toHaveLength(1);
     } finally {
       await restarted.close();
     }
@@ -76,8 +76,10 @@ test('source registration rejects duplicate names without persisting a manifest 
         'definitions',
         'deliveries',
         'destinationTypes',
-        'polls',
-        'queueRun',
+        'runs',
+        'runNow',
+        'resync',
+        'removeSync',
         'retryDelivery',
         'setEnabled',
         'status',

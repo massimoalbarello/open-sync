@@ -25,21 +25,33 @@ export async function setEnabled(input: { id: string; enabled: boolean }) {
     throw new Error('Could not update this sync.');
   }
 }
-export async function runSync(input: { id: string; backfill: boolean }) {
-  const result = await syncApi.sync.syncs({ id: input.id }).run.post({ backfill: input.backfill });
+export async function runSync(input: { id: string }) {
+  const result = await syncApi.sync.syncs({ id: input.id }).run.post();
   if (result.error) {
     throw new Error('Could not queue this sync.');
   }
 }
+export async function resync(input: { id: string }) {
+  const result = await syncApi.sync.syncs(input).resync.post();
+  if (result.error) {
+    throw new Error('Could not resync.');
+  }
+}
+export async function removeSync(input: { id: string }) {
+  const result = await syncApi.sync.syncs(input).delete();
+  if (result.error) {
+    throw new Error('Could not remove this sync.');
+  }
+}
 export function syncDetailOptions(input: { userId: string; id: string; offset: number }) {
   return queryOptions({
-    queryKey: [...syncKeys.owner(input.userId), input.id, 'polls', input.offset],
+    queryKey: [...syncKeys.owner(input.userId), input.id, 'runs', input.offset],
     refetchInterval: refreshMs,
     queryFn: async () => {
       const resource = syncApi.sync.syncs({ id: input.id });
       const [sync, history, connections] = await Promise.all([
         resource.get(),
-        resource.polls.get({ query: { offset: input.offset } }),
+        resource.runs.get({ query: { offset: input.offset } }),
         syncApi.providers.connections.get(),
       ]);
       if (sync.error || history.error || connections.error) {

@@ -1,13 +1,12 @@
 import type { SyncDefinition, SyncStep } from '../../models/definition';
 import type { Scope } from '../../models/identity';
-import type { Sync } from '../../models/sync';
+import type { RunState, Sync } from '../../models/sync';
 
 export interface RunLease extends Scope {
   id: string;
   sync: Sync;
-  workerId: string;
   generation: number;
-  checkpointRevision: number;
+  force: boolean;
   failureCount: number;
 }
 export interface AcquisitionRepository {
@@ -18,7 +17,8 @@ export interface AcquisitionRepository {
   commit(input: { lease: RunLease; page: SyncStep; definition: SyncDefinition }): void;
   finish(input: {
     lease: RunLease;
-    state: string;
+    state: RunState;
+    errorCode?: string;
     delay: number;
     failureCount?: number;
     pause?: boolean;

@@ -7,9 +7,9 @@ export function assertDelivery(input: { db: Database; lease: DeliveryLease }): v
   if (
     !db
       .query(
-        "SELECT 1 FROM deliveries WHERE owner_id=? AND id=? AND state='leased' AND worker_id=? AND generation=? AND expires_at>?",
+        "SELECT 1 FROM deliveries WHERE owner_id=? AND id=? AND state='leased' AND generation=? AND expires_at>?",
       )
-      .get(lease.ownerId, lease.delivery.id, lease.workerId, lease.generation, Date.now())
+      .get(lease.ownerId, lease.delivery.id, lease.generation, Date.now())
   ) {
     fail('lease_lost');
   }

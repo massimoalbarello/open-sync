@@ -10,12 +10,11 @@ export interface Sync {
   config: JsonObject;
   destination: { type: string; config: JsonObject };
   enabled: boolean;
-  bindingEpoch: number;
   checkpoint: JsonValue;
-  checkpointRevision: number;
   intervalMs: number;
   nextDueAt: number;
-  status: string;
+  status: SyncStatus;
+  errorCode: string | null;
 }
 export interface CreateSync extends Scope {
   definition: string;
@@ -26,24 +25,26 @@ export interface CreateSync extends Scope {
   enabled?: boolean;
 }
 
-export interface SyncAttempt {
-  id: string;
-  state: string;
-  startedAt: number;
-  completedAt: number | null;
-  recordsProcessed: number;
-  recordsChanged: number;
-}
+export type SyncStatus =
+  | 'ready'
+  | 'running'
+  | 'retrying'
+  | 'waiting_for_capacity'
+  | 'disabled'
+  | 'succeeded'
+  | 'interrupted';
+export type RunState = Exclude<SyncStatus, 'disabled'> | 'paused' | 'cancelled';
+export type RunMode = 'incremental' | 'resync';
 
-export interface SyncPoll {
+export interface SyncRun {
   id: string;
-  state: string;
+  mode: RunMode;
+  state: RunState;
+  errorCode: string | null;
   startedAt: number;
   completedAt: number | null;
   recordsProcessed: number;
-  recordsChanged: number;
-  attemptCount: number;
-  attempts: SyncAttempt[];
+  recordsQueued: number;
 }
 
 /** Host-visible status; configuration, checkpoints and execution fencing remain private. */
@@ -55,7 +56,8 @@ export interface SyncSummary {
   enabled: boolean;
   intervalMs: number;
   nextDueAt: number;
-  status: string;
+  status: SyncStatus;
+  errorCode: string | null;
 }
 export function summarizeSync(sync: Sync): SyncSummary {
   return {
@@ -67,5 +69,6 @@ export function summarizeSync(sync: Sync): SyncSummary {
     intervalMs: sync.intervalMs,
     nextDueAt: sync.nextDueAt,
     status: sync.status,
+    errorCode: sync.errorCode,
   };
 }

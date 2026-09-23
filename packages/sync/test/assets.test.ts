@@ -79,7 +79,7 @@ async function harness(input: {
       }
     },
     async poll() {
-      engine.api.queueRun(scope);
+      engine.api.runNow(scope);
       await engine.tick();
       await engine.tick();
     },
@@ -335,7 +335,7 @@ test('conflicting descriptors within one step fail atomically', async () => {
   try {
     await f.engine.tick();
     expect(f.saved.checkpoint).toBe(0);
-    expect(f.saved.status).toBe('asset_version_conflict');
+    expect(f.saved.errorCode).toBe('asset_version_conflict');
     expect(f.ledger().count).toBe(0);
   } finally {
     await f.close();
@@ -371,7 +371,7 @@ test('partial reads fail the whole step on every retry, never becoming an unavai
   try {
     const failures = 4;
     for (let i = 0; i < failures; i++) {
-      f.engine.api.queueRun(f.scope);
+      f.engine.api.runNow(f.scope);
       await f.engine.tick();
       expect(f.saved.checkpoint).toBe(0);
       expect(f.engine.api.status(alpha).queue.pendingRecords).toBe(0);
@@ -445,7 +445,7 @@ test('stale acquisition generations cannot retain or queue old staged assets', (
       maxSyncBytes: defaultLimits.maxSyncAssetBytes,
     });
     const id = assets.stage({ lease, asset: metadata, unavailable: 'not_exposed' });
-    f.db.query('UPDATE runs SET generation=generation+1 WHERE id=?').run(lease.id);
+    f.db.query('UPDATE sync_runs SET generation=generation+1 WHERE id=?').run(lease.id);
     expect(assets.garbage()).toEqual([id]);
     expect(() => assets.reserve({ lease, id, bytes: 1 })).toThrow('lease lost');
     const next = { ...lease, generation: lease.generation + 1 };

@@ -72,7 +72,19 @@ export class AcquisitionService {
         ...(pause ? { paused: true } : { retryAfterMs: delay }),
       },
     });
-    this.finish({ lease, state: code, delay, failureCount, pause });
+    this.finish({
+      lease,
+      state:
+        code === 'waiting_for_capacity'
+          ? 'waiting_for_capacity'
+          : signal.aborted && code !== 'timed_out'
+            ? 'interrupted'
+            : 'retrying',
+      errorCode: code === 'waiting_for_capacity' ? undefined : code,
+      delay,
+      failureCount,
+      pause,
+    });
   }
   private async consume(input: { lease: RunLease; signal: AbortSignal }): Promise<void> {
     const { repository, registry } = this.input;
@@ -113,19 +125,11 @@ export class AcquisitionService {
     repository.commit({ lease, page, definition: entry.definition });
   }
 
-  private finish(input: {
-    lease: RunLease;
-    state: string;
-    delay: number;
-    failureCount?: number;
-    pause?: boolean;
-  }): void {
+  private finish(input: Parameters<AcquisitionRepository['finish']>[0]): void {
     try {
       this.input.repository.finish(input);
     } catch (error) {
-      if (
-        !(error instanceof SyncError && ['lease_lost', 'checkpoint_conflict'].includes(error.code))
-      ) {
+      if (!(error instanceof SyncError && error.code === 'lease_lost')) {
         throw error;
       }
     }

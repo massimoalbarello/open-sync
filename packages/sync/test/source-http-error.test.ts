@@ -44,7 +44,8 @@ test.each(
     expect(savedSync({ path: files.path, scope: { ...alpha, id: sync.id } })).toMatchObject({
       enabled: true,
       checkpoint: 0,
-      status: `source_http_${status}`,
+      status: 'retrying',
+      errorCode: `source_http_${status}`,
       nextDueAt: now + retryMs,
     });
     expect(events[0]?.fields).toEqual({
@@ -102,9 +103,10 @@ test.each(
     expect(savedSync({ path: files.path, scope: scope })).toMatchObject({
       enabled: false,
       checkpoint: 1,
-      status: `source_http_${status}`,
+      status: 'disabled',
+      errorCode: `source_http_${status}`,
     });
-    expect(engine.api.polls(scope).polls[0]?.state).toBe('paused');
+    expect(engine.api.runs(scope).runs[0]?.state).toBe('paused');
     await engine.close();
     engine = createSyncRuntime(options);
     await engine.tick();
@@ -171,7 +173,8 @@ test.each([rateLimited, forbidden, unavailable])(
         expect(savedSync({ path: files.path, scope: scope })).toMatchObject({
           enabled: status !== forbidden,
           checkpoint: 1,
-          status: `source_http_${status}`,
+          status: status === forbidden ? 'disabled' : 'retrying',
+          errorCode: `source_http_${status}`,
           nextDueAt: now + delay,
         });
         expect(events.at(-1)?.fields).toEqual({

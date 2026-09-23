@@ -44,11 +44,11 @@ export class SyncManagement {
     this.guard(scope);
     return this.input.registry.destinationTypes();
   }
-  polls(input: Resource & { offset?: number }) {
+  runs(input: Resource & { offset?: number }) {
     this.guard(input);
     const offset = input.offset ?? 0;
     positive(offset + 1);
-    return this.input.catalog.polls({ ...input, offset });
+    return this.input.catalog.runs({ ...input, offset });
   }
   private async prepareDestination(input: Scope & { destination: CreateSync['destination'] }) {
     const scope = { actorId: input.actorId, ownerId: input.ownerId };
@@ -131,6 +131,9 @@ export class SyncManagement {
   async setEnabled(input: Resource & { enabled: boolean }) {
     this.guard(input);
     const sync = this.input.catalog.sync(input);
+    if (sync.enabled === input.enabled) {
+      return summarizeSync(sync);
+    }
     if (input.enabled && !sync.connection) {
       const { definition } = this.input.registry.definition(sync.definition);
       if (definition.provider) {
@@ -138,18 +141,25 @@ export class SyncManagement {
       }
     }
     const result = this.input.catalog.setEnabled(input);
-    await this.input.worker.cancel(input);
+    await this.input.worker.cancelAcquisition(input);
     return summarizeSync(result);
   }
-  queueRun(input: Resource & { backfill?: boolean }): void {
+  runNow(input: Resource): void {
+    this.guard(input);
+    this.input.catalog.runNow(input);
+    this.input.worker.wake();
+  }
+  async resync(input: Resource): Promise<void> {
     this.guard(input);
     const sync = this.input.catalog.sync(input);
     const { definition } = this.input.registry.definition(sync.definition);
-    this.input.catalog.queue({
-      ...input,
-      checkpoint: input.backfill ? definition.initialCheckpoint : undefined,
-    });
-    this.input.worker.wake();
+    this.input.catalog.resync({ ...input, checkpoint: definition.initialCheckpoint });
+    await this.input.worker.cancelAcquisition(input);
+  }
+  async removeSync(input: Resource): Promise<void> {
+    this.guard(input);
+    this.input.catalog.removeSync(input);
+    await this.input.worker.cancelSync(input);
   }
   status(scope: Scope) {
     this.guard(scope);

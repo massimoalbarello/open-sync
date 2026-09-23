@@ -189,11 +189,12 @@ test('a step larger than its budget preserves pending assets and resumes after c
     const resource = { ...alpha, id: sync.id };
     const waits = 4;
     for (let i = 0; i < waits; i++) {
-      engine.api.queueRun(resource);
+      engine.api.runNow(resource);
       await engine.tick();
       expect(savedSync({ path: files.path, scope: resource })).toMatchObject({
         checkpoint: 0,
-        status: 'step_exceeds_asset_capacity',
+        status: 'retrying',
+        errorCode: 'step_exceeds_asset_capacity',
       });
     }
     await engine.close();
@@ -201,7 +202,7 @@ test('a step larger than its budget preserves pending assets and resumes after c
     expect(db.query('SELECT COUNT(*) AS count FROM delivery_assets').get()).toEqual({ count: 0 });
     db.close();
     engine = createSyncRuntime(options);
-    engine.api.queueRun(resource);
+    engine.api.runNow(resource);
     await engine.tick();
     expect(savedSync({ path: files.path, scope: resource })).toMatchObject({
       checkpoint: 1,

@@ -26,7 +26,7 @@ export class SqliteAcquisition implements AcquisitionRepository {
     return (
       this.input.db
         .query<{ due: number | null }, []>(`
-      SELECT MIN(COALESCE((SELECT expires_at FROM runs r WHERE r.owner_id=i.owner_id
+      SELECT MIN(COALESCE((SELECT expires_at FROM sync_runs r WHERE r.owner_id=i.owner_id
       AND r.sync_id=i.id AND r.state='running'), i.next_due_at)) AS due
       FROM syncs i WHERE enabled=1`)
         .get()?.due ?? undefined
@@ -48,37 +48,24 @@ export class SqliteAcquisition implements AcquisitionRepository {
       }
       const { records, assets } = changedRecords({ db, lease: input.lease, sync, page });
       enqueue({ db, sync, records, limits, assets, lease: input.lease });
-      db.query(
-        'UPDATE syncs SET checkpoint=?,checkpoint_revision=checkpoint_revision+1 WHERE owner_id=? AND id=?',
-      ).run(canonicalJson(page.checkpoint).json, sync.ownerId, sync.id);
-      db.query(
-        `UPDATE runs SET records_processed=records_processed+?,records_changed=records_changed+? WHERE owner_id=? AND id=?`,
-      ).run(page.records.length, records.length, input.lease.ownerId, input.lease.id);
-      db.query(`UPDATE polls SET records_processed=records_processed+?,records_changed=records_changed+?
-        WHERE owner_id=? AND id=(SELECT poll_id FROM runs WHERE owner_id=? AND id=?)`).run(
-        page.records.length,
-        records.length,
-        input.lease.ownerId,
-        input.lease.ownerId,
-        input.lease.id,
+      db.query('UPDATE syncs SET checkpoint=? WHERE owner_id=? AND id=?').run(
+        canonicalJson(page.checkpoint).json,
+        sync.ownerId,
+        sync.id,
       );
+      db.query(
+        `UPDATE sync_runs SET records_processed=records_processed+?,records_queued=records_queued+? WHERE owner_id=? AND id=?`,
+      ).run(page.records.length, records.length, input.lease.ownerId, input.lease.id);
       finishRun({
         db,
         lease: input.lease,
-        state: page.complete ? 'succeeded' : 'yielded',
+        state: page.complete ? 'succeeded' : 'ready',
         delay: page.complete ? sync.intervalMs : 0,
         failureCount: page.complete ? 0 : undefined,
       });
     }).immediate();
-    input.lease.checkpointRevision++;
   }
-  finish(input: {
-    lease: RunLease;
-    state: string;
-    delay: number;
-    failureCount?: number;
-    pause?: boolean;
-  }): void {
+  finish(input: Parameters<AcquisitionRepository['finish']>[0]): void {
     this.input.db
       .transaction(() => {
         assertRun({ db: this.input.db, lease: input.lease });
@@ -102,7 +89,13 @@ function changedRecords(input: {
       lease: input.lease,
       refs: record.operation === 'upsert' ? Object.values(record.assetRefs ?? {}) : [],
     });
-    const changed = writeRecord({ db: input.db, sync: input.sync, record, assets: referenced });
+    const changed = writeRecord({
+      db: input.db,
+      sync: input.sync,
+      record,
+      assets: referenced,
+      force: input.lease.force,
+    });
     if (changed) {
       records.push(changed);
       for (const asset of referenced) {

@@ -72,7 +72,7 @@ test('pausing a destination holds assets and records without uploading either', 
       },
     });
     const destination = { type: 'local', input: {} };
-    await runtime.api.createSync({
+    const sync = await runtime.api.createSync({
       ...owner,
       definition: source.definition.id,
       config: {},
@@ -120,6 +120,12 @@ test('pausing a destination holds assets and records without uploading either', 
     const asset = await receiver.asset({ ...owner, id: record.assets[0]!.id });
     expect(await new Response(asset!.open()).text()).toBe('attachment');
     expect(runtime.api.status(owner).queue.pendingDeliveries).toBe(0);
+    await runtime.api.removeSync({ ...owner, id: sync.id });
+    expect(runtime.api.syncs(owner)).toEqual([]);
+    expect((await receiver.records({ ...owner, offset: 0 })).records[0]).toEqual(record);
+    expect(
+      await new Response((await receiver.asset({ ...owner, id: listed.id }))!.open()).text(),
+    ).toBe('attachment');
   } finally {
     await runtime?.close();
     await db.close();
@@ -201,7 +207,7 @@ test('local destination owns repeated uploads, unavailable recovery, and descrip
     expect(uploads).toBe(0);
     available = true;
     loseAck = true;
-    runtime.api.queueRun(scope);
+    runtime.api.runNow(scope);
     await runtime.tick();
     await runtime.tick();
     const queued = runtime.api.deliveries(owner).deliveries[0]!;
@@ -215,7 +221,7 @@ test('local destination owns repeated uploads, unavailable recovery, and descrip
     expect(before.revision).toBe(2);
     expect(before.assets).toHaveLength(1);
     name = 'renamed.txt';
-    runtime.api.queueRun(scope);
+    runtime.api.runNow(scope);
     await runtime.tick();
     await runtime.tick();
     const after = (await receiver.records({ ...owner, offset: 0 })).records[0]!;

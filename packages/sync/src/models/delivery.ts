@@ -52,7 +52,7 @@ export interface QueueStatus {
 export interface PendingDelivery {
   id: string;
   syncId: string;
-  state: string;
+  state: 'pending' | 'leased' | 'blocked';
   bytes: number;
   recordCount: number;
   attempt: number;

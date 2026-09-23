@@ -197,7 +197,7 @@ test('Slack backfills historical threads across pages and restarts, preserves pr
   try {
     const initial = f.saved.checkpoint;
     await f.engine.tick(); // The second reply page expires; the whole step remains uncommitted.
-    expect(f.saved.status).toBe('execution_failed');
+    expect(f.saved.errorCode).toBe('execution_failed');
     expect(f.records).toHaveLength(0);
     expect(f.saved.checkpoint).toEqual(initial);
     expect(f.engine.api.status(owner).queue.pendingRecords).toBe(0);
@@ -205,7 +205,7 @@ test('Slack backfills historical threads across pages and restarts, preserves pr
     denied = true;
     f.queue();
     await f.engine.tick();
-    expect(f.saved.status).toBe('source_http_403');
+    expect(f.saved.errorCode).toBe('source_http_403');
     expect(f.saved.enabled).toBe(false);
     expect(f.saved.checkpoint).toEqual(initial);
     denied = false;
@@ -327,7 +327,7 @@ test.each(['missing-root', 'foreign-reply', 'missing-cursor', 'repeated-cursor']
     try {
       const committed = f.saved.checkpoint;
       await f.engine.tick();
-      expect(f.saved.status).toBe('execution_failed');
+      expect(f.saved.errorCode).toBe('execution_failed');
       expect(f.saved.checkpoint).toEqual(committed);
       expect(f.records).toHaveLength(0);
     } finally {
