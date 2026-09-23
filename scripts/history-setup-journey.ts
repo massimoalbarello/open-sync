@@ -44,16 +44,16 @@ export async function historySetupJourney(input: { page: Page; origin: string })
   assert.deepEqual((await submitted).postDataJSON().config, { history: 'Last 3 months' });
   await page.waitForURL(/\/syncs\/sync_/);
   const syncId = new URL(page.url()).pathname.split('/').at(-1)!;
-  await page.getByRole('link', { name: 'Polling history', exact: true }).click();
+  await page.getByRole('link', { name: 'Run history', exact: true }).click();
   await page.getByRole('cell', { name: 'Completed', exact: true }).waitFor();
   const sync = await (
     await page.request.get(`${origin}/api/open-sync/sync/syncs/${syncId}`)
   ).json();
   assert.equal(Object.hasOwn(sync, 'config'), false);
-  const polls = await (
-    await page.request.get(`${origin}/api/open-sync/sync/syncs/${syncId}/polls`)
+  const history = await (
+    await page.request.get(`${origin}/api/open-sync/sync/syncs/${syncId}/runs`)
   ).json();
-  assert.equal(polls.polls[0].recordsProcessed, 0);
+  assert.equal(history.runs[0].recordsProcessed, 0);
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto(`${origin}/syncs/new?source=granola.meetings`);
   await page.getByLabel('Source', { exact: true }).waitFor();

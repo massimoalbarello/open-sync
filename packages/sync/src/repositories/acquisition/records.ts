@@ -10,23 +10,31 @@ export function writeRecord(input: {
   sync: Sync;
   record: SyncRecord;
   assets: DeliveryAsset[];
+  force: boolean;
 }): DeliveredRecord | undefined {
   const { db, sync, record } = input;
   const previous = db
     .query<{ hash: string; revision: number; deleted: number }, [string, string, string, string]>(
-      'SELECT hash,revision,deleted FROM records WHERE owner_id=? AND sync_id=? AND kind=? AND id=?',
+      'SELECT hash,revision,deleted FROM record_state WHERE owner_id=? AND sync_id=? AND kind=? AND id=?',
     )
     .get(sync.ownerId, sync.id, record.kind, record.id);
-  if (record.operation === 'delete' && (!previous || previous.deleted === 1)) {
+  if (!input.force && record.operation === 'delete' && (!previous || previous.deleted === 1)) {
     return;
   }
   const contentHash =
-    record.operation === 'upsert' ? hashRecord({ record, assets: input.assets }) : previous!.hash;
-  if (record.operation === 'upsert' && previous?.deleted === 0 && previous.hash === contentHash) {
+    record.operation === 'upsert'
+      ? hashRecord({ record, assets: input.assets })
+      : (previous?.hash ?? '');
+  if (
+    !input.force &&
+    record.operation === 'upsert' &&
+    previous?.deleted === 0 &&
+    previous.hash === contentHash
+  ) {
     return;
   }
   const revision = (previous?.revision ?? 0) + 1;
-  db.query(`INSERT INTO records VALUES (?,?,?,?,?,?,?) ON CONFLICT(owner_id,sync_id,kind,id)
+  db.query(`INSERT INTO record_state VALUES (?,?,?,?,?,?,?) ON CONFLICT(owner_id,sync_id,kind,id)
     DO UPDATE SET hash=excluded.hash,revision=excluded.revision,deleted=excluded.deleted`).run(
     sync.ownerId,
     sync.id,

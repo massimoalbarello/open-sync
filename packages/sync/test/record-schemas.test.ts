@@ -55,18 +55,19 @@ test('each record kind uses its own schema and an invalid kind leaves the whole 
     await f.engine.tick();
     expect(savedSync({ path: f.files.path, scope: resource })).toMatchObject({
       checkpoint: 0,
-      status: 'invalid_page',
+      status: 'retrying',
+      errorCode: 'invalid_page',
     });
     expect(received).toHaveLength(0);
     invalid = false;
-    f.engine.api.queueRun(resource);
+    f.engine.api.runNow(resource);
     await f.engine.tick();
     await f.engine.tick();
     expect(received[0]!.records).toMatchObject([
       { kind: 'item', data: { value: 1 } },
       { kind: 'profile', data: { active: true } },
     ]);
-    f.engine.api.queueRun(resource);
+    f.engine.api.runNow(resource);
     await f.engine.tick();
     expect(received).toHaveLength(1);
   } finally {

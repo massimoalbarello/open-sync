@@ -130,7 +130,7 @@ test('an uncooperative step times out, releases its slot, and cannot commit a la
         engine.api.sync({ ...alpha, id: other.id }).status === 'succeeded' &&
         engine.api.status(alpha).queue.pendingRecords === 0,
     );
-    expect(engine.api.sync({ ...alpha, id: first.id }).status).toBe('timed_out');
+    expect(engine.api.sync({ ...alpha, id: first.id }).errorCode).toBe('timed_out');
     late.resolve(page);
     await Bun.sleep(1);
     expect(savedSync({ path: files.path, scope: { ...alpha, id: first.id } }).checkpoint).toBe(0);

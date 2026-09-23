@@ -98,7 +98,7 @@ export async function providerSetupJourney(input: {
   await page.getByRole('button', { name: 'Create sync', exact: true }).click();
   await page.waitForURL(/\/syncs\/sync_/);
   const id = new URL(page.url()).pathname.split('/').at(-1)!;
-  await page.getByRole('link', { name: 'Polling history', exact: true }).click();
+  await page.getByRole('link', { name: 'Run history', exact: true }).click();
   await page.getByRole('cell', { name: 'Completed', exact: true }).first().waitFor();
   await page.getByRole('link', { name: 'Overview', exact: true }).click();
   await page

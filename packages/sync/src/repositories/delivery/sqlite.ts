@@ -37,13 +37,12 @@ export class SqliteDeliveries implements DeliveryRepository {
         if (!row) {
           return;
         }
-        const workerId = crypto.randomUUID();
         const scope = workerScope(String(row.owner_id));
         this.db
           .query(
-            "UPDATE deliveries SET state='leased',worker_id=?,generation=generation+1,attempt=attempt+1,expires_at=? WHERE owner_id=? AND id=?",
+            "UPDATE deliveries SET state='leased',generation=generation+1,attempt=attempt+1,expires_at=? WHERE owner_id=? AND id=?",
           )
-          .run(workerId, Date.now() + leaseMs, scope.ownerId, row.id!);
+          .run(Date.now() + leaseMs, scope.ownerId, row.id!);
         return {
           ...scope,
           delivery: JSON.parse(String(row.body)),
@@ -51,7 +50,6 @@ export class SqliteDeliveries implements DeliveryRepository {
             db: this.db,
             scope: { ...scope, id: String(row.sync_id) },
           }).destination,
-          workerId,
           generation: Number(row.generation) + 1,
           attempt: Number(row.attempt) + 1,
         };
@@ -76,7 +74,7 @@ export class SqliteDeliveries implements DeliveryRepository {
         } else {
           this.db
             .query(
-              'UPDATE deliveries SET state=?,due_at=?,worker_id=NULL,expires_at=NULL,error_code=? WHERE owner_id=? AND id=?',
+              'UPDATE deliveries SET state=?,due_at=?,expires_at=NULL,error_code=? WHERE owner_id=? AND id=?',
             )
             .run(
               result.status === 'rejected' ? 'blocked' : 'pending',
@@ -103,7 +101,7 @@ export class SqliteDeliveries implements DeliveryRepository {
   retry(input: Resource): void {
     const updated = this.db
       .query(
-        "UPDATE deliveries SET state='pending',due_at=?,generation=generation+1,worker_id=NULL,expires_at=NULL,error_code=NULL WHERE owner_id=? AND id=? AND (state!='leased' OR expires_at<=?)",
+        "UPDATE deliveries SET state='pending',due_at=?,generation=generation+1,expires_at=NULL,error_code=NULL WHERE owner_id=? AND id=? AND (state!='leased' OR expires_at<=?)",
       )
       .run(Date.now(), input.ownerId, input.id, Date.now());
     if (!updated.changes) {

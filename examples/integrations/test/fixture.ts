@@ -50,14 +50,13 @@ export async function fixture(input: {
       const db = new Database(options.databasePath, { readonly: true });
       try {
         const row = db
-          .query<{ checkpoint: string; checkpoint_revision: number }, string[]>(
-            'SELECT checkpoint, checkpoint_revision FROM syncs WHERE owner_id=? AND id=?',
+          .query<{ checkpoint: string }, string[]>(
+            'SELECT checkpoint FROM syncs WHERE owner_id=? AND id=?',
           )
           .get(owner.ownerId, sync.id)!;
         return {
           ...engine.api.sync({ ...owner, id: sync.id }),
           checkpoint: JSON.parse(row.checkpoint),
-          checkpointRevision: row.checkpoint_revision,
         };
       } finally {
         db.close();
@@ -67,13 +66,13 @@ export async function fixture(input: {
       return deliveries.flatMap((delivery) => delivery.records);
     },
     queue() {
-      engine.api.queueRun(resource);
+      engine.api.runNow(resource);
     },
     async finish() {
       const maxTicks = 30;
       for (let tick = 0; tick < maxTicks; tick++) {
         await engine.tick();
-        if (engine.api.sync(resource).status === 'execution_failed') {
+        if (engine.api.sync(resource).errorCode === 'execution_failed') {
           throw new Error('Example acquisition failed');
         }
         if (

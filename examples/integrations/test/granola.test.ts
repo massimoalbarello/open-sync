@@ -36,7 +36,7 @@ test('Granola completes one unpaginated listing in one step and preserves notes 
   });
   try {
     await f.engine.tick();
-    expect(f.saved).toMatchObject({ status: 'succeeded', checkpoint: {}, checkpointRevision: 1 });
+    expect(f.saved).toMatchObject({ status: 'succeeded', checkpoint: {} });
     expect(listings).toBe(1);
     expect(requested.map((batch) => batch.length)).toEqual([10, 10, finalChunkSize]);
     expect(requested.flat()).toEqual(ids);
@@ -111,9 +111,9 @@ test.each(['transient', 'missing', 'duplicate', 'foreign'] as const)(
       await f.engine.tick();
       expect(requested.map((batch) => batch.length)).toEqual([10, 10]);
       expect(f.saved).toMatchObject({
-        status: 'execution_failed',
+        status: 'retrying',
+        errorCode: 'execution_failed',
         checkpoint: {},
-        checkpointRevision: 0,
       });
       expect(f.engine.api.status(owner).queue.pendingRecords).toBe(0);
       expect(f.records).toHaveLength(0);
@@ -123,7 +123,7 @@ test.each(['transient', 'missing', 'duplicate', 'foreign'] as const)(
       await f.finish();
       expect(listings).toBe(2);
       expect(requested.slice(2).flat()).toEqual(ids);
-      expect(f.saved).toMatchObject({ status: 'succeeded', checkpoint: {}, checkpointRevision: 1 });
+      expect(f.saved).toMatchObject({ status: 'succeeded', checkpoint: {} });
       expect(f.records.map((record) => record.id)).toEqual(ids);
       expect(f.deliveries).toHaveLength(1);
     } finally {

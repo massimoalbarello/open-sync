@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite';
 import { fail } from '../models/error';
 import type { Resource } from '../models/identity';
-import type { Sync } from '../models/sync';
+import type { Sync, SyncStatus } from '../models/sync';
 
 export type Row = Record<string, string | number | null>;
 export function readSync(input: { db: Database; scope: Resource }): Sync {
@@ -22,11 +22,10 @@ export function readSync(input: { db: Database; scope: Resource }): Sync {
       config: JSON.parse(String(row.destination_config)),
     },
     enabled: row.enabled === 1,
-    bindingEpoch: Number(row.binding_epoch),
     checkpoint: JSON.parse(String(row.checkpoint)),
-    checkpointRevision: Number(row.checkpoint_revision),
     intervalMs: Number(row.interval_ms),
     nextDueAt: Number(row.next_due_at),
-    status: String(row.status),
+    status: row.status as SyncStatus,
+    errorCode: row.error_code === null ? null : String(row.error_code),
   };
 }

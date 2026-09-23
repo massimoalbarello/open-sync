@@ -59,9 +59,9 @@ export function createSyncController(input: {
       { ...resourceParams, body: t.Object({ enabled: t.Boolean() }) },
     )
     .get(
-      '/syncs/:id/polls',
+      '/syncs/:id/runs',
       ({ scope, params, query }) =>
-        input.api.polls({ ...scope, id: params.id, offset: query.offset }),
+        input.api.runs({ ...scope, id: params.id, offset: query.offset }),
       {
         ...resourceParams,
         query: t.Object({ offset: t.Optional(t.Integer({ minimum: 0, maximum: 1000000 })) }),
@@ -69,11 +69,27 @@ export function createSyncController(input: {
     )
     .post(
       '/syncs/:id/run',
-      ({ scope, params, body }) => {
-        input.api.queueRun({ ...scope, id: params.id, backfill: body.backfill });
+      ({ scope, params }) => {
+        input.api.runNow({ ...scope, id: params.id });
         return { queued: true };
       },
-      { ...resourceParams, body: t.Object({ backfill: t.Optional(t.Boolean()) }) },
+      resourceParams,
+    )
+    .post(
+      '/syncs/:id/resync',
+      async ({ scope, params }) => {
+        await input.api.resync({ ...scope, id: params.id });
+        return { queued: true };
+      },
+      resourceParams,
+    )
+    .delete(
+      '/syncs/:id',
+      async ({ scope, params }) => {
+        await input.api.removeSync({ ...scope, id: params.id });
+        return { removed: true };
+      },
+      resourceParams,
     )
     .get('/status', ({ scope }) => input.api.status(scope))
     .get(

@@ -5,7 +5,6 @@ import type { Sync } from '../../models/sync';
 export interface DeliveryLease extends Scope {
   delivery: Omit<Deliverable, 'openAsset'>;
   destination: Sync['destination'];
-  workerId: string;
   generation: number;
   attempt: number;
 }

@@ -114,7 +114,7 @@ test('Gmail resumes thread discovery, includes older context, and updates whole 
     account = 'someone-else@example.com';
     f.queue();
     await f.engine.tick();
-    expect(f.saved.status).toBe('execution_failed');
+    expect(f.saved.errorCode).toBe('execution_failed');
     expect(f.saved.checkpoint).toMatchObject({ account: 'alice@example.com' });
   } finally {
     await f.close();
@@ -152,7 +152,7 @@ test('Gmail never commits an empty or mismatched thread or advances a repeated c
       mode = value;
       f.queue();
       await f.engine.tick();
-      expect(f.saved.status).toBe('execution_failed');
+      expect(f.saved.errorCode).toBe('execution_failed');
       expect(f.saved.checkpoint).toEqual(gmailThreads.definition.initialCheckpoint);
       expect(f.records).toHaveLength(0);
     }
@@ -161,7 +161,7 @@ test('Gmail never commits an empty or mismatched thread or advances a repeated c
     await f.engine.tick();
     const committed = f.saved.checkpoint;
     await f.engine.tick();
-    expect(f.saved.status).toBe('execution_failed');
+    expect(f.saved.errorCode).toBe('execution_failed');
     expect(f.saved.checkpoint).toEqual(committed);
   } finally {
     await f.close();
@@ -224,7 +224,7 @@ test.each(['available', 'oversized'])(
       if (mode === 'oversized') {
         await f.engine.tick();
         expect(f.saved.checkpoint).toEqual(gmailThreads.definition.initialCheckpoint);
-        expect(f.saved.status).toBe('source_http_413');
+        expect(f.saved.errorCode).toBe('source_http_413');
         expect(f.records).toEqual([]);
         expect(downloads).toEqual(['attachment2']);
         return;

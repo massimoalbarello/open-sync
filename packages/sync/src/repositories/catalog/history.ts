@@ -1,47 +1,13 @@
 import type { Database } from 'bun:sqlite';
 import type { Resource } from '../../models/identity';
-import type { SyncAttempt, SyncPoll } from '../../models/sync';
+import type { SyncRun } from '../../models/sync';
 
-const pageSize = 50;
-interface AttemptRow {
-  id: string;
-  state: string;
-  started_at: number;
-  completed_at: number | null;
-  records_processed: number;
-  records_changed: number;
-}
-function attempt(row: AttemptRow): SyncAttempt {
-  return {
-    id: row.id,
-    state: row.state,
-    startedAt: row.started_at,
-    completedAt: row.completed_at,
-    recordsProcessed: row.records_processed,
-    recordsChanged: row.records_changed,
-  };
-}
-interface PollRow extends AttemptRow {
-  attempt_count: number;
-}
-export function readPolls(input: { db: Database; scope: Resource & { offset: number } }) {
-  const { db, scope } = input;
+export function readRuns({ db, scope }: { db: Database; scope: Resource & { offset: number } }) {
+  const pageSize = 50;
   const rows = db
-    .query<PollRow, [string, string, number, number]>(`
-    SELECT * FROM polls WHERE owner_id=? AND sync_id=?
-    ORDER BY started_at DESC,rowid DESC LIMIT ? OFFSET ?
-  `)
+    .query<SyncRun, [string, string, number, number]>(`SELECT id,mode,state,error_code AS errorCode,
+    started_at AS startedAt,completed_at AS completedAt,records_processed AS recordsProcessed,records_queued AS recordsQueued
+    FROM sync_runs WHERE owner_id=? AND sync_id=? ORDER BY started_at DESC,rowid DESC LIMIT ? OFFSET ?`)
     .all(scope.ownerId, scope.id, pageSize + 1, scope.offset);
-  const polls: SyncPoll[] = rows.slice(0, pageSize).map((row) => ({
-    ...attempt(row),
-    attemptCount: row.attempt_count,
-    attempts: db
-      .query<AttemptRow, [string, string, string, number]>(
-        `SELECT * FROM runs WHERE owner_id=? AND sync_id=? AND poll_id=?
-       ORDER BY started_at DESC,rowid DESC LIMIT ?`,
-      )
-      .all(scope.ownerId, scope.id, row.id, pageSize)
-      .map(attempt),
-  }));
-  return { polls, hasMore: rows.length > pageSize, pageSize };
+  return { runs: rows.slice(0, pageSize), hasMore: rows.length > pageSize, pageSize };
 }

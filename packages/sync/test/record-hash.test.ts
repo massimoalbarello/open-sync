@@ -28,7 +28,7 @@ test('every record uses one hash shape, including opaque data resembling the old
   try {
     const sync = await configure(f.engine);
     const run = async () => {
-      f.engine.api.queueRun({ ...alpha, id: sync.id });
+      f.engine.api.runNow({ ...alpha, id: sync.id });
       await f.engine.tick();
       await f.engine.tick();
     };
@@ -88,7 +88,7 @@ test('an asset content identity change redelivers its otherwise unchanged record
   try {
     const sync = await configure(f.engine);
     const run = async () => {
-      f.engine.api.queueRun({ ...alpha, id: sync.id });
+      f.engine.api.runNow({ ...alpha, id: sync.id });
       await f.engine.tick();
       await f.engine.tick();
     };

@@ -52,9 +52,9 @@ test('Gmail retries a whole thread after a later attachment fails without commit
     await f.engine.tick();
     expect(downloads).toEqual(['first', 'second']);
     expect(f.saved).toMatchObject({
-      status: 'source_http_503',
+      status: 'retrying',
+      errorCode: 'source_http_503',
       checkpoint: initial,
-      checkpointRevision: 0,
     });
     expect(f.engine.api.status(owner).queue.pendingRecords).toBe(0);
     expect(f.records).toHaveLength(0);
@@ -65,7 +65,6 @@ test('Gmail retries a whole thread after a later attachment fails without commit
     await f.finish();
     expect(requests).toHaveLength(2);
     expect(requests.every((request) => request.pageToken === undefined)).toBe(true);
-    expect(f.saved.checkpointRevision).toBe(1);
     expect(f.saved.checkpoint).toEqual({
       account: 'alice@example.com',
       query: null,

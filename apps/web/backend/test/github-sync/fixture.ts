@@ -136,14 +136,13 @@ export async function fixture(config: JsonObject = {}) {
       const db = new Database(options.databasePath, { readonly: true });
       try {
         const row = db
-          .query<{ checkpoint: string; checkpoint_revision: number }, string[]>(
-            'SELECT checkpoint, checkpoint_revision FROM syncs WHERE owner_id=? AND id=?',
+          .query<{ checkpoint: string }, string[]>(
+            'SELECT checkpoint FROM syncs WHERE owner_id=? AND id=?',
           )
           .get(owner.ownerId, sync.id)!;
         return {
           ...engine.api.sync({ ...owner, id: sync.id }),
           checkpoint: JSON.parse(row.checkpoint),
-          checkpointRevision: row.checkpoint_revision,
         };
       } finally {
         db.close();

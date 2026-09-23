@@ -12,6 +12,7 @@ import { startIsolatedApp } from './isolated-app';
 import { ownerRegistrationJourney } from './owner-registration-journey';
 import { receiverTimelineJourney } from './receiver-timeline-journey';
 import { sourceMetadataJourney } from './source-metadata-journey';
+import { syncLifecycleJourney } from './sync-lifecycle-journey';
 
 const fixtureRecordCount = 100;
 const drainTimeoutMs = 120_000;
@@ -190,7 +191,7 @@ try {
   assert.equal(refreshedKeySync.id, originalKeySync.id);
   await githubOAuthSuccessJourney({ page, origin: app.origin });
   await page.goto(`${app.origin}/syncs/${syncId}`);
-  await page.getByRole('link', { name: 'Polling history', exact: true }).click();
+  await page.getByRole('link', { name: 'Run history', exact: true }).click();
   await page
     .getByRole('cell', { name: 'Completed', exact: true })
     .first()
@@ -203,24 +204,18 @@ try {
     fullPage: true,
     animations: 'disabled',
   });
-  await page.getByRole('link', { name: 'Polling history', exact: true }).click();
+  await page.getByRole('link', { name: 'Run history', exact: true }).click();
   await page.getByRole('cell', { name: 'Completed', exact: true }).waitFor();
   await page.getByRole('columnheader', { name: 'Records processed', exact: true }).waitFor();
   assert.equal(await page.getByRole('columnheader', { name: 'Pages', exact: true }).count(), 0);
-  await page.getByText(`${fixtureRecordCount} attempts`, { exact: true }).click();
-  await page
-    .getByText(/Continuing from checkpoint/)
-    .first()
-    .waitFor();
-  const polls = await (
-    await page.request.get(`${app.origin}/api/open-sync/sync/syncs/${syncId}/polls`)
+  const history = await (
+    await page.request.get(`${app.origin}/api/open-sync/sync/syncs/${syncId}/runs`)
   ).json();
-  assert.equal(polls.polls.length, 1);
-  assert.equal(polls.polls[0].recordsProcessed, fixtureRecordCount);
-  assert.equal(polls.polls[0].recordsChanged, fixtureRecordCount);
-  assert.equal(polls.polls[0].attempts[0].recordsProcessed, 1);
+  assert.equal(history.runs.length, 1);
+  assert.equal(history.runs[0].recordsProcessed, fixtureRecordCount);
+  assert.equal(history.runs[0].recordsQueued, fixtureRecordCount);
   await page.screenshot({
-    path: 'artifacts/polling-history.png',
+    path: 'artifacts/run-history.png',
     fullPage: true,
     animations: 'disabled',
   });
@@ -293,7 +288,7 @@ try {
   assert.ok(activated.connection);
   // Complete the initial backfill before deliberately revoking this account's first token.
   await page.goto(`${app.origin}/syncs/${oauthSync.id}`);
-  await page.getByRole('link', { name: 'Polling history', exact: true }).click();
+  await page.getByRole('link', { name: 'Run history', exact: true }).click();
   await page
     .getByRole('cell', { name: 'Completed', exact: true })
     .first()
@@ -316,20 +311,20 @@ try {
   const expectedConnections = 3;
   assert.equal(accounts.connections.length, expectedConnections);
   await page.goto(`${app.origin}/syncs/${oauthSync.id}`);
-  await page.getByRole('link', { name: 'Polling history', exact: true }).click();
+  await page.getByRole('link', { name: 'Run history', exact: true }).click();
   await page
     .getByRole('cell', { name: 'Completed', exact: true })
     .first()
     .waitFor({ timeout: 2 * drainTimeoutMs });
   const beforeRun = await (
-    await page.request.get(`${app.origin}/api/open-sync/sync/syncs/${oauthSync.id}/polls`)
+    await page.request.get(`${app.origin}/api/open-sync/sync/syncs/${oauthSync.id}/runs`)
   ).json();
   const nextRun = page.waitForResponse(async (response) => {
-    if (!response.url().includes(`/sync/syncs/${oauthSync.id}/polls`) || !response.ok()) {
+    if (!response.url().includes(`/sync/syncs/${oauthSync.id}/runs`) || !response.ok()) {
       return false;
     }
     const history = await response.json();
-    return history.polls[0]?.state === 'succeeded' && history.polls[0].id !== beforeRun.polls[0].id;
+    return history.runs[0]?.state === 'succeeded' && history.runs[0].id !== beforeRun.runs[0].id;
   });
   await page.getByRole('button', { name: 'Run now', exact: true }).click();
   await nextRun;
@@ -422,6 +417,7 @@ try {
   await exampleSyncsJourney({ page, origin: app.origin });
   await sourceMetadataJourney({ page, origin: app.origin });
   await receiverTimelineJourney({ page, origin: app.origin });
+  await syncLifecycleJourney({ page, origin: app.origin, syncId, recordCount: fixtureRecordCount });
   console.log(
     'Browser journey passed: paginated catalogs, provider setup, deferred authorization, GitHub syncs, infinite records and queue, responsive layout and real passkeys.',
   );

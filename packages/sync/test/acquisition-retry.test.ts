@@ -32,7 +32,8 @@ test.each(['paused', 'interrupted', 'timed_out', 'waiting_for_capacity'])(
     const prior = f.acquisition.claim(defaultTiming.leaseMs)!;
     f.acquisition.finish({
       lease: prior,
-      state: 'connector_request_failed',
+      state: 'retrying',
+      errorCode: 'connector_request_failed',
       delay: 0,
       failureCount: previousFailures,
     });
@@ -130,7 +131,8 @@ test('source failures back off durably despite partial progress and pruned histo
       await engine.tick();
       expect(savedSync({ path: files.path, scope: scope })).toMatchObject({
         checkpoint: 1,
-        status: 'execution_failed',
+        status: 'retrying',
+        errorCode: 'execution_failed',
         nextDueAt: now + delay,
       });
       expect(events.at(-1)?.fields?.retryAfterMs).toBe(delay);
@@ -147,7 +149,7 @@ test('source failures back off durably despite partial progress and pruned histo
     }
     expect(events.at(-1)?.fields?.failureCount).toBe(delays.length);
     expect(JSON.stringify(events)).not.toContain('private upstream payload');
-    expect(engine.api.polls(scope).polls[0]?.recordsChanged).toBe(1);
+    expect(engine.api.runs(scope).runs[0]?.recordsQueued).toBe(1);
 
     // A different owner starts at the base delay, even while the first source is backed off.
     const destination = { type: 'local', input: {} };
@@ -164,11 +166,11 @@ test('source failures back off durably despite partial progress and pruned histo
     await engine.api.setEnabled({ ...beta, id: other.id, enabled: false });
 
     failing = false;
-    engine.api.queueRun(scope);
+    engine.api.runNow(scope);
     await engine.tick();
     expect(engine.api.sync(scope).status).toBe('succeeded');
     failing = true;
-    engine.api.queueRun(scope);
+    engine.api.runNow(scope);
     await engine.tick();
     expect(engine.api.sync(scope).nextDueAt).toBe(now + retryMs);
     expect(events.at(-1)?.fields?.failureCount).toBe(1);
@@ -237,7 +239,7 @@ test.each(['records', 'assets'])(
       failing = false;
       await engine.tick();
       expect(savedSync({ path: files.path, scope: scope })).toMatchObject({
-        status: 'yielded',
+        status: 'ready',
         nextDueAt: now,
       });
       await engine.close();

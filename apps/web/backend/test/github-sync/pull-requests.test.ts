@@ -58,7 +58,7 @@ test('GitHub resumes committed pages after restart, then polls only updates sinc
     await f.restart();
     f.provider.respond = reply;
     f.requests.length = 0;
-    f.engine.api.queueRun(resource);
+    f.engine.api.runNow(resource);
     await f.engine.tick();
     await f.engine.tick();
     await f.engine.tick();
@@ -89,7 +89,7 @@ test('GitHub resumes committed pages after restart, then polls only updates sinc
     // An unchanged next poll stops at the timestamp boundary without hydrating old PRs.
     const before = f.delivered.length;
     f.requests.length = 0;
-    f.engine.api.queueRun(resource);
+    f.engine.api.runNow(resource);
     await f.engine.tick();
     await f.engine.tick();
     const discovery = f.requests.filter((request) => request.query.includes(discover));
@@ -102,7 +102,7 @@ test('GitHub resumes committed pages after restart, then polls only updates sinc
     f.pulls[0]!.body = 'Edited years later';
     f.pulls[0]!.updatedAt = new Date().toISOString();
     f.requests.length = 0;
-    f.engine.api.queueRun(resource);
+    f.engine.api.runNow(resource);
     await f.engine.tick();
     await f.engine.tick();
     expect(
@@ -116,7 +116,7 @@ test('GitHub resumes committed pages after restart, then polls only updates sinc
 
     // Safety overlap may re-read a recent PR; the engine still emits no duplicate change.
     const afterEdit = f.delivered.length;
-    f.engine.api.queueRun(resource);
+    f.engine.api.runNow(resource);
     await f.engine.tick();
     await f.engine.tick();
     expect(f.delivered).toHaveLength(afterEdit);
@@ -145,19 +145,21 @@ test('partial results, repeated cursors and changed accounts cannot advance GitH
     const committed = f.savedState().checkpoint;
     f.provider.respond = (input) =>
       reply(input.query.includes(discover) ? { ...input, variables: { after: null } } : input);
-    f.engine.api.queueRun(resource);
+    f.engine.api.runNow(resource);
     await f.engine.tick();
     expect(f.savedState()).toMatchObject({
       checkpoint: committed,
-      status: 'execution_failed',
+      status: 'retrying',
+      errorCode: 'execution_failed',
     });
     f.provider.respond = reply;
     f.provider.accountId = 'different-account';
-    f.engine.api.queueRun(resource);
+    f.engine.api.runNow(resource);
     await f.engine.tick();
     expect(f.savedState()).toMatchObject({
       checkpoint: committed,
-      status: 'execution_failed',
+      status: 'retrying',
+      errorCode: 'execution_failed',
     });
     expect((await f.receiver.status(owner)).records).toBe(2);
   } finally {
@@ -185,11 +187,12 @@ test('cursor recovery preserves account and cycle identity after a committed pag
     f.provider.respond = reply;
     f.provider.accountId = 'different-account';
     const checkpoint = f.savedState().checkpoint;
-    f.engine.api.queueRun(resource);
+    f.engine.api.runNow(resource);
     await f.engine.tick();
     expect(f.savedState()).toMatchObject({
       checkpoint,
-      status: 'execution_failed',
+      status: 'retrying',
+      errorCode: 'execution_failed',
     });
   } finally {
     await f.close();
@@ -218,7 +221,7 @@ test('an interrupted incremental poll retains its watermark and resumes the next
       }
       return reply(input);
     };
-    f.engine.api.queueRun(resource);
+    f.engine.api.runNow(resource);
     await f.engine.tick();
     await f.engine.tick();
     const partial = f.savedState().checkpoint as { cycleStartedAt: string };
@@ -226,7 +229,7 @@ test('an interrupted incremental poll retains its watermark and resumes the next
     await f.restart();
     f.provider.respond = reply;
     f.requests.length = 0;
-    f.engine.api.queueRun(resource);
+    f.engine.api.runNow(resource);
     await f.engine.tick();
     await f.engine.tick();
     expect(
@@ -264,14 +267,13 @@ test('GitHub commits no partial page when a later record fails, then retries the
     await f.engine.tick();
     expect(f.savedState()).toMatchObject({
       checkpoint,
-      checkpointRevision: 0,
     });
     expect(f.engine.api.status(owner).queue.pendingRecords).toBe(0);
     expect((await f.receiver.status(owner)).records).toBe(0);
     await f.restart();
     f.provider.respond = respond;
     f.requests.length = 0;
-    f.engine.api.queueRun(resource);
+    f.engine.api.runNow(resource);
     await f.engine.tick();
     const saved = f.savedState();
     expect(saved.checkpoint).toMatchObject({ cursor: 'cursor-b' });
@@ -280,7 +282,6 @@ test('GitHub commits no partial page when a later record fails, then retries the
         (value) => value === null || typeof value !== 'object',
       ),
     ).toBe(true);
-    expect(saved.checkpointRevision).toBe(1);
     expect(f.engine.api.status(owner).queue.pendingRecords).toBe(2);
     await f.engine.tick();
     await f.engine.tick();

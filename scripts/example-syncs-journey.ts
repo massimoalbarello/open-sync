@@ -126,7 +126,7 @@ async function connectSource(input: {
   await page.getByText('Connected', { exact: true }).waitFor();
   await page.goto(`${origin}/syncs/${syncId}`);
   await page.getByRole('heading', { name: `${source.name} → Local SQLite`, exact: true }).waitFor();
-  await page.getByRole('link', { name: 'Polling history', exact: true }).click();
+  await page.getByRole('link', { name: 'Run history', exact: true }).click();
   if (source.service === 'gmail') {
     await failedAssetJourney({ page, origin, syncId });
   }
@@ -134,14 +134,14 @@ async function connectSource(input: {
     await sourceRetryJourney({ page, origin, syncId });
   }
   if (source.service === 'granola') {
-    await page.getByRole('cell', { name: 'Retrying', exact: true }).waitFor();
+    await page.getByRole('cell', { name: /Retrying/ }).waitFor();
     const incomplete = await (
       await page.request.get(`${origin}/api/open-sync/sync/syncs/${syncId}`)
     ).json();
     const history = await (
-      await page.request.get(`${origin}/api/open-sync/sync/syncs/${syncId}/polls`)
+      await page.request.get(`${origin}/api/open-sync/sync/syncs/${syncId}/runs`)
     ).json();
-    assert.equal(history.polls[0].recordsProcessed, 0);
+    assert.equal(history.runs[0].recordsProcessed, 0);
     const received = await (
       await page.request.get(
         `${origin}/api/receiver/records?offset=0&syncId=${encodeURIComponent(incomplete.id)}`,
@@ -150,7 +150,7 @@ async function connectSource(input: {
     assert.equal(received.records.length, 0);
     await page.getByRole('link', { name: 'Overview', exact: true }).click();
     await page.getByRole('button', { name: 'Run now', exact: true }).click();
-    await page.getByRole('link', { name: 'Polling history', exact: true }).click();
+    await page.getByRole('link', { name: 'Run history', exact: true }).click();
   }
   await page.getByRole('cell', { name: 'Completed', exact: true }).first().waitFor();
   await page.getByRole('link', { name: 'Overview', exact: true }).click();
@@ -285,13 +285,14 @@ async function verifyRecords(input: {
 
 async function failedAssetJourney(input: { page: Page; origin: string; syncId: string }) {
   const { page, origin, syncId } = input;
-  await page.getByRole('cell', { name: 'Paused', exact: true }).waitFor();
+  await page.getByRole('cell', { name: /Paused/ }).waitFor();
   const syncPath = `${origin}/api/open-sync/sync/syncs/${syncId}`;
   const sync = await (await page.request.get(syncPath)).json();
   assert.equal(sync.enabled, false);
-  assert.equal(sync.status, 'connector_request_failed');
-  const history = await (await page.request.get(`${syncPath}/polls`)).json();
-  assert.equal(history.polls[0].recordsProcessed, 0);
+  assert.equal(sync.status, 'disabled');
+  assert.equal(sync.errorCode, 'connector_request_failed');
+  const history = await (await page.request.get(`${syncPath}/runs`)).json();
+  assert.equal(history.runs[0].recordsProcessed, 0);
   for (const section of ['records', 'assets']) {
     const received = await (
       await page.request.get(

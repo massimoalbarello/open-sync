@@ -14,7 +14,7 @@ import {
   storage,
 } from './support';
 
-test('a poll spans source steps and restart, counts records, and retains owner isolation', async () => {
+test('a run spans source steps and restart, counts records, and retains owner isolation', async () => {
   const files = storage();
   let now = Date.now();
   const clock = spyOn(Date, 'now').mockImplementation(() => now);
@@ -32,15 +32,13 @@ test('a poll spans source steps and restart, counts records, and retains owner i
     const other = await configure(engine);
     now++;
     await engine.tick();
-    const first = engine.api.polls(resource).polls[0]!;
+    const first = engine.api.runs(resource).runs[0]!;
     expect(first).toMatchObject({
-      state: 'syncing',
+      state: 'ready',
       recordsProcessed: 1,
-      recordsChanged: 1,
-      attemptCount: 1,
+      recordsQueued: 1,
       completedAt: null,
     });
-    expect(first.attempts[0]?.state).toBe('yielded');
     await engine.close();
     engine = createSyncRuntime(options);
     // The already-due second sync gets a turn before the first continues.
@@ -51,39 +49,33 @@ test('a poll spans source steps and restart, counts records, and retains owner i
       now++;
       await engine.tick();
     }
-    const completed = engine.api.polls(resource).polls[0]!;
+    const completed = engine.api.runs(resource).runs[0]!;
     expect(completed).toMatchObject({
       id: first.id,
       state: 'succeeded',
       recordsProcessed: 3,
-      recordsChanged: 3,
-      attemptCount: 3,
+      recordsQueued: 3,
     });
     expect(completed.completedAt).not.toBeNull();
-    expect(completed.attempts.map((attempt) => attempt.state)).toEqual([
-      'succeeded',
-      'yielded',
-      'yielded',
-    ]);
-    expect(() => engine.api.polls({ ...beta, id: sync.id })).toThrow('not found');
-    engine.api.queueRun({ ...resource, backfill: true });
+    expect(() => engine.api.runs({ ...beta, id: sync.id })).toThrow('not found');
+    await engine.api.resync(resource);
     const recordCount = 3;
     for (let i = 0; i < recordCount; i++) {
       now++;
       await engine.tick();
     }
-    expect(engine.api.polls(resource).polls[0]).toMatchObject({
+    expect(engine.api.runs(resource).runs[0]).toMatchObject({
       recordsProcessed: 3,
-      recordsChanged: 0,
+      recordsQueued: 3,
       state: 'succeeded',
     });
-    expect(engine.api.polls(resource).polls).toHaveLength(2);
-    expect(engine.api.polls({ ...resource, offset: 1 }).polls).toHaveLength(1);
+    expect(engine.api.runs(resource).runs).toHaveLength(2);
+    expect(engine.api.runs({ ...resource, offset: 1 }).runs).toHaveLength(1);
     const app = createSyncController({ api: engine.api, authorize: () => alpha });
-    const response = await app.handle(new Request(`http://localhost/sync/syncs/${sync.id}/polls`));
+    const response = await app.handle(new Request(`http://localhost/sync/syncs/${sync.id}/runs`));
     const ok = 200;
     expect(response.status).toBe(ok);
-    expect((await response.json()).polls[0].recordsProcessed).toBe(recordCount);
+    expect((await response.json()).runs[0].recordsProcessed).toBe(recordCount);
   } finally {
     await engine.close();
     clock.mockRestore();
@@ -120,8 +112,8 @@ test('each call commits one step and returns control to the scheduler', async ()
     await engine.tick();
     expect(cleaned).toBe(true);
     expect(savedSync({ path: files.path, scope: { ...alpha, id: sync.id } }).checkpoint).toBe(1);
-    expect(engine.api.polls({ ...alpha, id: sync.id }).polls[0]?.attempts[0]).toMatchObject({
-      state: 'yielded',
+    expect(engine.api.runs({ ...alpha, id: sync.id }).runs[0]).toMatchObject({
+      state: 'ready',
       recordsProcessed: 1,
     });
     expect(engine.api.sync({ ...alpha, id: sync.id }).nextDueAt).toBeLessThanOrEqual(Date.now());
@@ -131,7 +123,7 @@ test('each call commits one step and returns control to the scheduler', async ()
   }
 });
 
-test('a stalled attempt times out; pausing preserves its poll and reprocessing closes it', async () => {
+test('a stalled attempt times out; pausing preserves its run and resync closes it', async () => {
   const files = storage();
   const registration: SyncRegistration = {
     ...fixture,
@@ -161,19 +153,20 @@ test('a stalled attempt times out; pausing preserves its poll and reprocessing c
     // Commit the page before testing the stalled attempt, independent of filesystem latency.
     await engine.tick();
     await engine.tick();
-    const timedOut = engine.api.polls(scope).polls[0]!;
+    const timedOut = engine.api.runs(scope).runs[0]!;
     expect(timedOut).toMatchObject({ state: 'retrying', recordsProcessed: 1 });
-    expect(timedOut.attempts[0]?.state).toBe('timed_out');
+    expect(timedOut.errorCode).toBe('timed_out');
     await engine.api.setEnabled({ ...scope, enabled: false });
-    expect(engine.api.polls(scope).polls[0]).toMatchObject({
+    expect(engine.api.runs(scope).runs[0]).toMatchObject({
       id: timedOut.id,
       state: 'paused',
       completedAt: null,
     });
     await engine.api.setEnabled({ ...scope, enabled: true });
-    engine.api.queueRun({ ...scope, backfill: true });
-    expect(engine.api.polls(scope).polls[0]).toMatchObject({ state: 'cancelled' });
-    expect(engine.api.polls(scope).polls[0]?.completedAt).not.toBeNull();
+    await engine.api.resync(scope);
+    expect(engine.api.runs(scope).runs[0]).toMatchObject({ state: 'ready', mode: 'resync' });
+    expect(engine.api.runs(scope).runs[1]).toMatchObject({ id: timedOut.id, state: 'cancelled' });
+    expect(engine.api.runs(scope).runs[1]?.completedAt).not.toBeNull();
   } finally {
     await engine.close();
     files.close();
@@ -188,7 +181,7 @@ test.each([false, true])(
       const leaseMs = 60_000;
       const lease = f.acquisition.claim(leaseMs)!;
       f.db.exec(
-        "CREATE TRIGGER fail_finish BEFORE UPDATE OF state ON runs BEGIN SELECT RAISE(ABORT,'injected'); END",
+        "CREATE TRIGGER fail_finish BEFORE UPDATE OF state ON sync_runs BEGIN SELECT RAISE(ABORT,'injected'); END",
       );
       expect(() =>
         f.acquisition.commit({
@@ -197,9 +190,9 @@ test.each([false, true])(
           definition: fixture.definition,
         }),
       ).toThrow('injected');
-      expect(f.catalog.polls({ ...alpha, id: f.sync.id, offset: 0 }).polls[0]).toMatchObject({
+      expect(f.catalog.runs({ ...alpha, id: f.sync.id, offset: 0 }).runs[0]).toMatchObject({
         recordsProcessed: 0,
-        recordsChanged: 0,
+        recordsQueued: 0,
         completedAt: null,
       });
       expect(f.catalog.sync({ ...alpha, id: f.sync.id }).checkpoint).toBe(0);
@@ -221,13 +214,12 @@ test('empty completion batches do not inflate record totals', () => {
       page: { ...page, records: [], complete: true },
       definition: fixture.definition,
     });
-    const history = f.catalog.polls({ ...alpha, id: f.sync.id, offset: 0 });
-    expect(history.polls[0]).toMatchObject({
+    const history = f.catalog.runs({ ...alpha, id: f.sync.id, offset: 0 });
+    expect(history.runs[0]).toMatchObject({
       state: 'succeeded',
       recordsProcessed: 1,
-      recordsChanged: 1,
+      recordsQueued: 1,
     });
-    expect(history.polls[0]?.attempts[0]).toMatchObject({ recordsProcessed: 0, recordsChanged: 0 });
   } finally {
     f.close();
   }

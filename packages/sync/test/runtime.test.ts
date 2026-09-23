@@ -34,9 +34,6 @@ test('local delivery drains independently and unblocks bounded acquisition', asy
     expect(received).toHaveLength(count);
     expect(f.engine.api.status(alpha).queue.pendingRecords).toBe(0);
     expect(f.engine.api.sync({ ...alpha, id: sync.id }).status).toBe('succeeded');
-    f.engine.api.queueRun({ ...alpha, id: sync.id, backfill: true });
-    await f.engine.tick();
-    expect(received).toHaveLength(count);
   } finally {
     await f.close();
   }
@@ -61,11 +58,11 @@ test('committed pages survive step failure and restart resumes from their checkp
     await f.engine.tick();
     await f.engine.tick();
     expect(savedSync({ path: f.files.path, scope: { ...alpha, id: sync.id } }).checkpoint).toBe(1);
-    expect(f.engine.api.sync({ ...alpha, id: sync.id }).status).toBe('execution_failed');
+    expect(f.engine.api.sync({ ...alpha, id: sync.id }).errorCode).toBe('execution_failed');
     await f.engine.close();
     const resumed = createSyncRuntime({ ...f.options, definitions: [fixture] });
     try {
-      resumed.api.queueRun({ ...alpha, id: sync.id });
+      resumed.api.runNow({ ...alpha, id: sync.id });
       await resumed.tick();
       await resumed.tick();
       expect(savedSync({ path: f.files.path, scope: { ...alpha, id: sync.id } }).checkpoint).toBe(
@@ -100,7 +97,7 @@ test('an invalid page cannot advance a valid earlier checkpoint', async () => {
     await f.engine.tick();
     const result = f.engine.api.sync({ ...alpha, id: sync.id });
     expect(savedSync({ path: f.files.path, scope: { ...alpha, id: sync.id } }).checkpoint).toBe(1);
-    expect(result.status).toBe('invalid_page');
+    expect(result.errorCode).toBe('invalid_page');
   } finally {
     await f.close();
   }
@@ -122,7 +119,7 @@ test('host manifests can change on restart and missing named sources fail closed
     const absent = createSyncRuntime({ ...f.options, definitions: [] });
     try {
       await absent.tick();
-      expect(absent.api.sync({ ...alpha, id: sync.id }).status).toBe('definition_unavailable');
+      expect(absent.api.sync({ ...alpha, id: sync.id }).errorCode).toBe('definition_unavailable');
       expect(savedSync({ path: f.files.path, scope: { ...alpha, id: sync.id } }).checkpoint).toBe(
         0,
       );
@@ -213,7 +210,7 @@ test('shutdown aborts trusted execution, cancels the step, and leaves a resumabl
         }).checkpoint,
       ).toBe(1);
       const sync = restarted.api.syncs(alpha)[0]!;
-      expect(restarted.api.polls({ ...alpha, id: sync.id }).polls[0]).toMatchObject({
+      expect(restarted.api.runs({ ...alpha, id: sync.id }).runs[0]).toMatchObject({
         state: 'interrupted',
         recordsProcessed: 1,
       });

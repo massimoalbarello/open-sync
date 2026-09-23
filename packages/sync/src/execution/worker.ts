@@ -8,14 +8,21 @@ import type { Logger } from './diagnostics';
 export interface WorkerControl {
   ensureOpen(): void;
   wake(): void;
-  cancel(input: Resource): Promise<void>;
+  cancelAcquisition(input: Resource): Promise<void>;
+  cancelSync(input: Resource): Promise<void>;
 }
 export class Worker implements WorkerControl {
   readonly #lifetime = new AbortController();
   #timer?: ReturnType<typeof setTimeout>;
   #started = false;
-  readonly #acquisitions = new Map<string, { abort: AbortController; task: Promise<void> }>();
-  readonly #deliveries = new Set<Promise<void>>();
+  readonly #acquisitions = new Map<
+    Promise<void>,
+    { ownerId: string; syncId: string; abort: AbortController }
+  >();
+  readonly #deliveries = new Map<
+    Promise<void>,
+    { ownerId: string; syncId: string; abort: AbortController }
+  >();
   #cleaning?: Promise<void>;
   #cleanupRequested = false;
   #capacityReleased = false;
@@ -70,10 +77,9 @@ export class Worker implements WorkerControl {
   tick(): Promise<void> {
     this.ensureOpen();
     this.dispatch();
-    return Promise.all([
-      ...[...this.#acquisitions.values()].map(({ task }) => task),
-      ...this.#deliveries,
-    ]).then(() => this.cleanup());
+    return Promise.all([...this.#acquisitions.keys(), ...this.#deliveries.keys()]).then(() =>
+      this.cleanup(),
+    );
   }
   private dispatch(): void {
     this.ensureOpen();
@@ -83,24 +89,24 @@ export class Worker implements WorkerControl {
       if (!lease) {
         break;
       }
-      const key = resourceKey({ ...lease, id: lease.sync.id });
       const abort = new AbortController();
       const task = acquisition
         .execute({ lease, signal: this.signal(abort.signal) })
         .catch(() => this.input.log({ code: 'acquisition_failed' }))
         .finally(() => {
-          this.#acquisitions.delete(key);
+          this.#acquisitions.delete(task);
           this.completed();
         });
-      this.#acquisitions.set(key, { abort, task });
+      this.#acquisitions.set(task, { ownerId: lease.ownerId, syncId: lease.sync.id, abort });
     }
     while (this.#deliveries.size < timing.deliveryConcurrency) {
       const lease = delivery.claim();
       if (!lease) {
         break;
       }
+      const abort = new AbortController();
       const task = delivery
-        .execute({ lease, signal: this.signal() })
+        .execute({ lease, signal: this.signal(abort.signal) })
         .then((accepted) => {
           this.#capacityReleased ||= accepted;
         })
@@ -109,7 +115,7 @@ export class Worker implements WorkerControl {
           this.#deliveries.delete(task);
           this.completed();
         });
-      this.#deliveries.add(task);
+      this.#deliveries.set(task, { ownerId: lease.ownerId, syncId: lease.delivery.syncId, abort });
     }
     const due = [
       this.#acquisitions.size < timing.sourceConcurrency ? acquisition.nextDue() : undefined,
@@ -164,11 +170,34 @@ export class Worker implements WorkerControl {
       ...(extra ? [extra] : []),
     ]);
   }
-  async cancel(input: Resource): Promise<void> {
-    const active = this.#acquisitions.get(resourceKey(input));
-    active?.abort.abort('paused');
-    await active?.task;
-    this.wake();
+  async cancelAcquisition(input: Resource): Promise<void> {
+    await this.cancelTasks({ scope: input, tasks: this.#acquisitions });
+    this.completed();
+  }
+  async cancelSync(input: Resource): Promise<void> {
+    await Promise.all([
+      this.cancelTasks({ scope: input, tasks: this.#acquisitions }),
+      this.cancelTasks({ scope: input, tasks: this.#deliveries }),
+    ]);
+    this.#capacityReleased = true;
+    this.completed();
+    await this.cleanup().catch(() => this.input.log({ code: 'cleanup_failed' }));
+  }
+  private async cancelTasks({
+    scope,
+    tasks,
+  }: {
+    scope: Resource;
+    tasks: Map<Promise<void>, { ownerId: string; syncId: string; abort: AbortController }>;
+  }): Promise<void> {
+    const cancelled = [];
+    for (const [task, entry] of tasks) {
+      if (entry.ownerId === scope.ownerId && entry.syncId === scope.id) {
+        entry.abort.abort('interrupted');
+        cancelled.push(task);
+      }
+    }
+    await Promise.all(cancelled);
   }
   close(): Promise<void> {
     this.#closing ??= this.stop();
@@ -178,13 +207,7 @@ export class Worker implements WorkerControl {
     clearTimeout(this.#timer);
     clearTimeout(this.#cleanupTimer);
     this.#lifetime.abort('interrupted');
-    await Promise.allSettled([
-      ...[...this.#acquisitions.values()].map(({ task }) => task),
-      ...this.#deliveries,
-    ]);
+    await Promise.allSettled([...this.#acquisitions.keys(), ...this.#deliveries.keys()]);
     await this.cleanup();
   }
-}
-function resourceKey(input: Resource): string {
-  return JSON.stringify([input.ownerId, input.id]);
 }

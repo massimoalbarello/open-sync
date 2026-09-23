@@ -12,7 +12,7 @@ import { assetBytes } from './capacity';
 import type { AssetRepository } from './contract';
 
 const retained = `EXISTS (SELECT 1 FROM deliveries d WHERE d.owner_id=a.owner_id AND d.id=a.delivery_id)
-  OR EXISTS (SELECT 1 FROM runs r WHERE r.owner_id=a.owner_id AND r.id=a.run_id
+  OR EXISTS (SELECT 1 FROM sync_runs r WHERE r.owner_id=a.owner_id AND r.id=a.run_id
     AND r.generation=a.generation AND r.state='running' AND r.expires_at>?)`;
 
 export class SqliteAssets implements AssetRepository {

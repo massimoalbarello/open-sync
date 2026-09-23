@@ -3,11 +3,12 @@ import type { ConnectionRef } from '../../models/definition';
 import { fail } from '../../models/error';
 import type { Resource, Scope } from '../../models/identity';
 import { canonicalJson, type JsonObject, type JsonValue } from '../../models/json';
-import { defaultTiming } from '../../models/limits';
 import type { CreateSync } from '../../models/sync';
 import { readSync } from '../rows';
 import type { CatalogRepository } from './contract';
-import { readPolls } from './history';
+import { readRuns } from './history';
+
+const defaultIntervalMs = 60_000;
 
 export class SqliteCatalog implements CatalogRepository {
   constructor(private readonly db: Database) {}
@@ -31,7 +32,7 @@ export class SqliteCatalog implements CatalogRepository {
         canonicalJson(input.destination.config).json,
         Number(input.enabled ?? true),
         canonicalJson(input.initialCheckpoint).json,
-        input.intervalMs ?? defaultTiming.leaseMs,
+        input.intervalMs ?? defaultIntervalMs,
         Date.now(),
         input.enabled === false ? 'disabled' : 'ready',
       );
@@ -46,9 +47,9 @@ export class SqliteCatalog implements CatalogRepository {
       .all(scope.ownerId)
       .map(({ id }) => this.sync({ ...scope, id }));
   }
-  polls(input: Resource & { offset: number }) {
+  runs(input: Resource & { offset: number }) {
     this.sync(input);
-    return readPolls({ db: this.db, scope: input });
+    return readRuns({ db: this.db, scope: input });
   }
   connectSync(input: Resource & { connection: ConnectionRef }) {
     return this.db
@@ -59,7 +60,7 @@ export class SqliteCatalog implements CatalogRepository {
         }
         this.db
           .query(`UPDATE syncs SET connection=?,enabled=1,
-        binding_epoch=binding_epoch+1,status='ready',next_due_at=? WHERE owner_id=? AND id=?`)
+        status='ready',error_code=NULL,next_due_at=? WHERE owner_id=? AND id=?`)
           .run(canonicalJson(input.connection).json, Date.now(), input.ownerId, input.id);
         return this.sync(input);
       })
@@ -68,10 +69,13 @@ export class SqliteCatalog implements CatalogRepository {
   setEnabled(input: Resource & { enabled: boolean }) {
     return this.db
       .transaction(() => {
-        this.sync(input);
+        const sync = this.sync(input);
+        if (sync.enabled === input.enabled) {
+          return sync;
+        }
         this.db
           .query(
-            'UPDATE syncs SET enabled=?,binding_epoch=binding_epoch+1,status=?,next_due_at=? WHERE owner_id=? AND id=?',
+            `UPDATE syncs SET enabled=?,status=?,error_code=NULL,next_due_at=? WHERE owner_id=? AND id=?`,
           )
           .run(
             Number(input.enabled),
@@ -81,18 +85,14 @@ export class SqliteCatalog implements CatalogRepository {
             input.id,
           );
         this.db
-          .query(
-            "UPDATE runs SET state='paused',completed_at=? WHERE owner_id=? AND sync_id=? AND state='running'",
-          )
-          .run(Date.now(), input.ownerId, input.id);
-        this.db
-          .query('UPDATE polls SET state=? WHERE owner_id=? AND sync_id=? AND completed_at IS NULL')
-          .run(input.enabled ? 'syncing' : 'paused', input.ownerId, input.id);
+          .query(`UPDATE sync_runs SET state=?,generation=generation+1,expires_at=NULL,error_code=NULL
+        WHERE owner_id=? AND sync_id=? AND completed_at IS NULL`)
+          .run(input.enabled ? 'ready' : 'paused', input.ownerId, input.id);
         return this.sync(input);
       })
       .immediate();
   }
-  queue(input: Resource & { checkpoint?: JsonValue }): void {
+  runNow(input: Resource): void {
     this.db
       .transaction(() => {
         if (!this.sync(input).enabled) {
@@ -100,26 +100,59 @@ export class SqliteCatalog implements CatalogRepository {
         }
         if (
           this.db
-            .query("SELECT 1 FROM runs WHERE owner_id=? AND sync_id=? AND state='running'")
-            .get(input.ownerId, input.id)
+            .query(
+              `SELECT 1 FROM sync_runs WHERE owner_id=? AND sync_id=? AND state='running' AND expires_at>?`,
+            )
+            .get(input.ownerId, input.id, Date.now())
         ) {
           fail('busy');
         }
-        if (input.checkpoint !== undefined) {
-          this.db
-            .query(
-              "UPDATE polls SET state='cancelled',completed_at=? WHERE owner_id=? AND sync_id=? AND completed_at IS NULL",
-            )
-            .run(Date.now(), input.ownerId, input.id);
-          this.db
-            .query(
-              'UPDATE syncs SET checkpoint=?,checkpoint_revision=checkpoint_revision+1 WHERE owner_id=? AND id=?',
-            )
-            .run(canonicalJson(input.checkpoint).json, input.ownerId, input.id);
+        this.db
+          .query(`UPDATE syncs SET next_due_at=? WHERE owner_id=? AND id=?`)
+          .run(Date.now(), input.ownerId, input.id);
+      })
+      .immediate();
+  }
+  resync(input: Resource & { checkpoint: JsonValue }): void {
+    this.db
+      .transaction(() => {
+        if (!this.sync(input).enabled) {
+          fail('disabled');
         }
         this.db
-          .query("UPDATE syncs SET next_due_at=?,status='ready' WHERE owner_id=? AND id=?")
+          .query(`UPDATE sync_runs SET state='cancelled',completed_at=?,expires_at=NULL
+        WHERE owner_id=? AND sync_id=? AND completed_at IS NULL`)
           .run(Date.now(), input.ownerId, input.id);
+        this.db
+          .query(
+            `UPDATE syncs SET checkpoint=?,status='ready',error_code=NULL,next_due_at=? WHERE owner_id=? AND id=?`,
+          )
+          .run(canonicalJson(input.checkpoint).json, Date.now(), input.ownerId, input.id);
+        this.db
+          .query(
+            `INSERT INTO sync_runs(owner_id,id,sync_id,mode,state,started_at) VALUES (?,?,?,'resync','ready',?)`,
+          )
+          .run(input.ownerId, `run_${crypto.randomUUID()}`, input.id, Date.now());
+      })
+      .immediate();
+  }
+  removeSync(input: Resource): void {
+    this.db
+      .transaction(() => {
+        this.sync(input);
+        this.db
+          .query('DELETE FROM deliveries WHERE owner_id=? AND sync_id=?')
+          .run(input.ownerId, input.id);
+        this.db
+          .query('DELETE FROM record_state WHERE owner_id=? AND sync_id=?')
+          .run(input.ownerId, input.id);
+        this.db
+          .query('DELETE FROM sync_runs WHERE owner_id=? AND sync_id=?')
+          .run(input.ownerId, input.id);
+        this.db.query('DELETE FROM syncs WHERE owner_id=? AND id=?').run(input.ownerId, input.id);
+        this.db
+          .query(`UPDATE syncs SET next_due_at=? WHERE enabled=1 AND status='waiting_for_capacity'`)
+          .run(Date.now());
       })
       .immediate();
   }
