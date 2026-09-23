@@ -2,11 +2,17 @@
   <h1><img src="apps/web/frontend/src/assets/open-sync.svg" alt="" width="32" height="32" align="absmiddle" /> Open Sync</h1>
   <p><em>Data sync from any source to any destination.</em></p>
   <img src=".github/assets/open-sync-logo.gif" alt="Open Sync's two arrows illuminated by moving warm light" width="640" height="360" />
+
+[![Deploy on nibrun](.github/assets/deploy-on-nibrun.svg)](https://app.nibrun.com/deploy?name=open-sync&binary=https%3A%2F%2Fgithub.com%2Fmassimoalbarello%2Fopen-sync%2Freleases%2Fdownload%2Fnibrun-latest%2Fopen-sync&port=3000&minimal)
+
 </div>
 
-Open Sync is a headless sync engine for Bun, designed to run inside your own host application.
-Your host supplies the UI and user authentication; Open Sync handles provider connections,
-sync progress, retries, and delivery of records and assets.
+Open Sync is a headless sync engine that handles checkpointing, queuing, and retries. You define
+how sources read data and how destinations deliver it, so the same engine can fit different
+providers, storage systems, and workflows.
+
+Embed it as a dependency and call it directly from your host's business logic. The engine runs
+in the same process; your application keeps its own UI and authentication.
 
 This repository also includes a default host implementation as a sample app: a dashboard with
 sources for GitHub pull requests, Gmail and Slack threads, and Granola meetings.
@@ -15,15 +21,15 @@ sources for GitHub pull requests, Gmail and Slack threads, and Granola meetings.
 
 ```mermaid
 flowchart LR
-    S[Source] --> B["Deliverable<br/>records + assets"]
-    B --> Q["Open Sync<br/>saved queue"]
-    Q -->|Delivery| D[Destination]
+    S[Your source] --> B["Deliverable<br/>records + assets"]
+    B --> Q["Open Sync<br/>checkpoints + queue"]
+    Q -->|Delivery| D[Your destination]
     D -. retry .-> Q
 ```
 
 | Concept | What it is | How to configure it |
 | --- | --- | --- |
-| **Source** | Code that reads data from a provider. | Register it in `definitions`; declare inputs in `configSchema` and read data in `step()`. |
+| **Source** | Code that reads data from any system. | Register it in `definitions`; declare inputs in `configSchema` and read data in `step()`. |
 | **Record** | A structured item, such as an email thread. | Set `operation` (`upsert` or `delete`), `kind`, and a stable `id`. Upserts include `data` matching the source's `kinds` schema. |
 | **Asset** | Binary content, such as an attachment or image. | Capture it with `assets.capture()` and include its reference in a record's `assetRefs` or the deliverable's `assets`. |
 | **Deliverable** | A batch of records and optional assets produced by a source. | Return it from `step()` alongside a `checkpoint` (where to resume) and `complete` (whether this poll finished). |
@@ -34,6 +40,8 @@ A destination must handle retries safely and return `{ status: 'accepted' }` onl
 the whole delivery.
 
 ## Embed in your host
+
+The current package requires Bun 1.4+.
 
 ```sh
 bun add @context-use/open-sync
@@ -50,16 +58,14 @@ then link a source to it with `sync.api.createInstallation()`. Supply their `con
 a provider `connection` when needed, and `intervalMs` for the sync schedule. Pass the acting user's
 `actorId` and data owner's `ownerId` from your host's authentication.
 
-See the [host integration](apps/web/backend/src/main.ts),
+See the [sample host](apps/web/backend/src/main.ts),
 [configuration options](packages/sync/src/open-sync.ts), and
 [source and destination examples](examples/integrations/src).
 
 ## Deploy on nibrun
 
-[![Deploy on nibrun](.github/assets/deploy-on-nibrun.svg)](https://app.nibrun.com/deploy?name=open-sync&binary=https%3A%2F%2Fgithub.com%2Fmassimoalbarello%2Fopen-sync%2Freleases%2Fdownload%2Fnibrun-latest%2Fopen-sync&port=3000&minimal)
-
-Click the button, sign in to nibrun, and deploy. Open your instance's URL, create an account,
-and connect your providers.
+Use the button above to deploy the sample host on nibrun. Open your instance's URL,
+create an account, and connect your providers.
 
 To update an existing instance, complete the local setup below, then install the nibrun CLI and sign in:
 
