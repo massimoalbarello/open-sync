@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
+import { wgslVitePlugin } from '@vgpu/wgsl/loader-vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
@@ -22,6 +23,7 @@ export default defineConfig({
     },
   },
   plugins: [
+    wgslVitePlugin(),
     viteStaticCopy({
       targets: ['cmaps', 'standard_fonts', 'wasm'].map((directory) => ({
         src: join(pdfjsDirectory, directory, '*'),

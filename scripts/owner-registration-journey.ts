@@ -7,7 +7,7 @@ import type { startIsolatedApp } from './isolated-app';
 type Page = Awaited<ReturnType<typeof virtualPasskeyBrowser>>['page'];
 type App = Awaited<ReturnType<typeof startIsolatedApp>>;
 const verificationPath = '**/api/auth/passkey/verify-registration';
-const createButton = 'Create account with a passkey';
+const createButton = 'Create account';
 const forbiddenStatus = 403;
 
 export async function ownerRegistrationJourney(input: { page: Page; app: App }) {
@@ -112,7 +112,7 @@ async function delayedRegistration(input: { page: Page; origin: string }) {
     await input.page.getByRole('heading', { name: 'Syncs', exact: true }).waitFor();
     release.resolve();
     assert.equal((await response).status(), forbiddenStatus);
-    await other.page.getByRole('button', { name: 'Sign in with a passkey' }).waitFor();
+    await other.page.getByRole('button', { name: 'Sign in' }).waitFor();
     assert.equal(await other.page.getByRole('button', { name: createButton }).count(), 0);
   } finally {
     release.resolve();
