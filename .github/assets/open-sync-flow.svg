@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1088" height="164" viewBox="0 0 1088 164" role="img" aria-labelledby="title description">
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="164" viewBox="0 0 1240 164" role="img" aria-labelledby="title description">
   <title id="title">Open Sync data flow</title>
-  <desc id="description">Your source logic polls any external API, passes data through the Open Sync engine, and your delivery logic sends it to your destination.</desc>
+  <desc id="description">Your source logic polls any external API and produces a deliverable containing records and assets. The Open Sync engine passes it to your delivery logic, which sends it to your destination.</desc>
   <style>
     text { fill: #24292f; font: 18px system-ui, sans-serif; text-anchor: middle; }
     .node { fill: #f6f8fa; stroke: #8c959f; stroke-width: 1.5; }
@@ -21,22 +21,24 @@
   </defs>
   <rect class="node" x="6" y="44" width="168" height="84" />
   <rect class="node" x="242" y="44" width="168" height="84" />
-  <rect class="node" x="466" y="44" width="168" height="84" />
-  <rect class="node" x="690" y="44" width="168" height="84" />
-  <rect class="node" x="914" y="44" width="168" height="84" />
+  <rect class="node" x="618" y="44" width="168" height="84" />
+  <rect class="node" x="842" y="44" width="168" height="84" />
+  <rect class="node" x="1066" y="44" width="168" height="84" />
   <path class="edge" d="M176 86H240" marker-start="url(#arrow)" />
-  <path class="edge" d="M410 86H464" />
-  <path class="edge" d="M634 86H688" />
-  <path class="edge" d="M858 86H912" />
+  <path class="edge" d="M410 86H616" />
+  <path class="edge" d="M786 86H840" />
+  <path class="edge" d="M1010 86H1064" />
   <text x="90" y="78">Any external</text>
   <text x="90" y="104">API</text>
   <text x="326" y="78">Your source</text>
   <text x="326" y="104">logic</text>
-  <text x="550" y="78">Open Sync</text>
-  <text x="550" y="104">engine</text>
-  <text x="774" y="78">Your delivery</text>
-  <text x="774" y="104">logic</text>
-  <text x="998" y="78">Your</text>
-  <text x="998" y="104">destination</text>
+  <text x="702" y="78">Open Sync</text>
+  <text x="702" y="104">engine</text>
+  <text x="926" y="78">Your delivery</text>
+  <text x="926" y="104">logic</text>
+  <text x="1150" y="78">Your</text>
+  <text x="1150" y="104">destination</text>
   <text class="label" x="208" y="70">poll</text>
+  <text class="label" x="514" y="46">Deliverable</text>
+  <text class="label" x="514" y="68">records + assets</text>
 </svg>

@@ -20,14 +20,15 @@ sources for GitHub pull requests, Gmail and Slack threads, and Granola meetings.
 
 ## How it works
 
-![Your source logic polls any external API, passes data through the Open Sync engine, and your delivery logic sends it to your destination.](.github/assets/open-sync-flow.svg)
+![Your source logic polls any external API and produces a deliverable of records and assets. The Open Sync engine passes it to your delivery logic, which sends it to your destination.](.github/assets/open-sync-flow.svg)
 
 | Concept | What it is | How to configure it |
 | --- | --- | --- |
-| **Source** | Code that reads data from any system. | Register it in `definitions`; declare inputs in `configSchema` and read data in `step()`. |
+| **Source** | Code that reads data and produces records and assets as a deliverable. | Register it in `definitions`; declare inputs in `configSchema` and read data in `step()`. |
 | **Record** | A structured item, such as an email thread. | Set `operation` (`upsert` or `delete`), `kind`, and a stable `id`. Upserts include `data` matching the source's `kinds` schema. |
 | **Asset** | Binary content, such as an attachment or image. | Capture it with `assets.capture()` and include its reference in a record's `assetRefs` or the deliverable's `assets`. |
 | **Deliverable** | A batch of records and optional assets produced by a source. | Return it from `step()` alongside a `checkpoint` (where to resume) and `complete` (whether this poll finished). |
+| **Engine** | Coordinates polling, saves checkpoints, queues deliveries, and retries failed work. | Set up `createOpenSync()` with your `definitions`, `destinationTypes`, and `dataDirectory`. Your host controls its `start()` and `close()` lifecycle. |
 | **Delivery** | A queued message sent to a destination, with an ID that stays the same on retries. | Open Sync creates it automatically; your delivery logic receives it in `deliver()`. |
 | **Destination** | Where your delivery logic stores or forwards the data. | Register its delivery handler in `destinationTypes` with a `configSchema` and `deliver()`. Set `acceptsAssets: true` to receive assets. |
 
