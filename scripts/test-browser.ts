@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { virtualPasskeyBrowser } from '@repo/browser-testing/browser';
+import { brandFallbackJourney } from './brand-fallback-journey';
 import { exampleSyncsJourney } from './example-syncs-journey';
 import {
   githubOAuthJourney,
@@ -35,6 +36,7 @@ try {
   const { page } = browser;
   page.setDefaultTimeout(interactionTimeoutMs);
   await mkdir('artifacts', { recursive: true });
+  await brandFallbackJourney({ origin: app.origin });
   await ownerRegistrationJourney({ page, app });
   const requests: string[] = [];
   page.on('request', (request) => requests.push(request.url()));
@@ -364,7 +366,7 @@ try {
   await page.screenshot({ path: 'artifacts/queue-mobile.png', animations: 'disabled' });
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
-  await page.getByRole('button', { name: 'Sign in with a passkey' }).waitFor();
+  await page.getByRole('button', { name: 'Sign in' }).waitFor();
   const unauthorized = 401;
   assert.equal(
     (
@@ -416,9 +418,9 @@ try {
     '/delivery',
   ]) {
     await page.goto(`${app.origin}${section}`);
-    await page.getByRole('button', { name: 'Sign in with a passkey' }).waitFor();
+    await page.getByRole('button', { name: 'Sign in' }).waitFor();
   }
-  await page.getByRole('button', { name: 'Sign in with a passkey' }).click();
+  await page.getByRole('button', { name: 'Sign in' }).click();
   await page.getByRole('heading', { name: 'Syncs', exact: true }).waitFor();
   // Both additional GitHub installations can still be delivering their backfills.
   await page.getByRole('link', { name: 'Queue', exact: true }).click();

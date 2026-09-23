@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="currentColor">
+  <title>Open Sync</title>
+  <style>@media (prefers-color-scheme: dark) { :root { color: #fff; } }</style>
+  <path d="M5.333 10.5H18L14 6.5H20L28 14.5H4Z"/>
+  <path d="M5.333 10.5H18L14 6.5H20L28 14.5H4Z" transform="rotate(180 16 16)"/>
+</svg>
