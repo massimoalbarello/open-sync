@@ -5,15 +5,14 @@
 </div>
 
 Use the included dashboard or embed the headless engine in your own Bun app. Open Sync handles
-provider connections, incremental syncing, retries, and delivery of records and files.
+provider connections, incremental syncing, retries, and delivery of records and assets.
 
 ## Deploy on nibrun
 
 [![Deploy on nibrun](.github/assets/deploy-on-nibrun.svg)](https://app.nibrun.com/deploy?name=open-sync&binary=https%3A%2F%2Fgithub.com%2Fmassimoalbarello%2Fopen-sync%2Freleases%2Fdownload%2Fnibrun-latest%2Fopen-sync&port=3000&minimal)
 
 Click the button, sign in to nibrun, and deploy. Open your instance's URL, create an account,
-and connect your providers. No local build or environment setup is needed.
-Your data lives in `/app/data` and survives restarts and updates.
+and connect your providers.
 
 To update an existing instance, complete the local setup below, then install the nibrun CLI and sign in:
 
