@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 let granolaRegistrationAttempts = 0;
 let granolaListingAttempts = 0;
 let slackReplyAttempts = 0;
+let gmailOversizedAttempts = 0;
 export const granolaFixtureMeetingCount = 23;
 const granolaMeetingIds = [...Array(granolaFixtureMeetingCount).keys()].map(
   (index) => `meeting-${index + 1}`,
@@ -69,8 +70,7 @@ function gmailResponse(request: Request) {
     });
   }
   if (url.pathname.endsWith('/messages/email-1/attachments/oversized-attachment')) {
-    const tooLarge = 104_857_601;
-    return attachmentResponse(tooLarge);
+    return oversizedAttachment();
   }
   if (url.pathname.endsWith('/messages/email-1/attachments/large-attachment')) {
     const size = 18_874_373;
@@ -440,4 +440,16 @@ function attachmentResponse(size: number) {
     }),
     { headers: { 'content-type': 'application/json' } },
   );
+}
+
+function oversizedAttachment() {
+  if (++gmailOversizedAttempts === 1) {
+    const tooLarge = 104_857_601;
+    return attachmentResponse(tooLarge);
+  }
+  const recovered = 'recovered attachment';
+  return Response.json({
+    size: Buffer.byteLength(recovered),
+    data: Buffer.from(recovered).toString('base64url'),
+  });
 }

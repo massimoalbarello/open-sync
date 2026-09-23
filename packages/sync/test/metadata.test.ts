@@ -14,9 +14,8 @@ test.each([false, true])(
     const f = repositories();
     try {
       let revision = 0;
-      let previousHash: string | undefined;
       const content = { format: 'markdown' as const, body: '# Note' };
-      const original = { ...page.deliverable.records[0]!, ...(withContent ? { content } : {}) };
+      const original = { ...page.records[0]!, ...(withContent ? { content } : {}) };
       for (const metadata of [
         {},
         { preview: 'First preview' },
@@ -25,17 +24,15 @@ test.each([false, true])(
         { preview: 'Changed preview', createdAt, updatedAt },
         {},
       ]) {
-        const output = { ...page, deliverable: { records: [{ ...original, ...metadata }] } };
+        const output = { ...page, records: [{ ...original, ...metadata }] };
         f.acquisition.commit({
           lease: f.acquisition.claim(leaseMs)!,
           page: output,
           definition: fixture.definition,
         });
         const delivery = f.deliveries.claim(leaseMs)!;
-        const record = delivery.delivery.deliverable.records[0]!;
+        const record = delivery.delivery.records[0]!;
         expect(record).toMatchObject({ ...metadata, revision: ++revision });
-        expect(record.contentHash).not.toBe(previousHash);
-        previousHash = record.contentHash;
         f.deliveries.complete({ lease: delivery, result: { status: 'accepted' }, delay: 0 });
         // UTC normalization happens before hashing, including timezone and whitespace differences.
         const equivalent = {
@@ -46,7 +43,7 @@ test.each([false, true])(
         };
         f.acquisition.commit({
           lease: f.acquisition.claim(leaseMs)!,
-          page: { ...page, deliverable: { records: [equivalent] } },
+          page: { ...page, records: [equivalent] },
           definition: fixture.definition,
         });
         expect(f.deliveries.status(alpha).pendingRecords).toBe(0);
@@ -60,15 +57,15 @@ test.each([false, true])(
 test('preview normalization keeps a bounded single line without splitting Unicode characters', () => {
   const maxCharacters = 200;
   const record = {
-    ...page.deliverable.records[0]!,
+    ...page.records[0]!,
     preview: ` \n${'🙂'.repeat(maxCharacters + 1)}\n`,
   };
   const prepared = preparePage({
-    page: { ...page, deliverable: { records: [record] } },
+    page: { ...page, records: [record] },
     definition: fixture.definition,
     limits: defaultLimits,
   });
-  expect(prepared.deliverable.records[0]).toHaveProperty('preview', '🙂'.repeat(maxCharacters));
+  expect(prepared.records[0]).toHaveProperty('preview', '🙂'.repeat(maxCharacters));
   expect(record.preview).toContain('\n');
 });
 
@@ -85,13 +82,13 @@ test.each([
   const f = repositories();
   try {
     const lease = f.acquisition.claim(leaseMs)!;
-    const invalid = { ...page.deliverable.records[0]!, ...metadata } as unknown as SyncRecord;
+    const invalid = { ...page.records[0]!, ...metadata } as unknown as SyncRecord;
     expect(() =>
       f.acquisition.commit({
         lease,
         page: {
           ...page,
-          deliverable: { records: [{ ...page.deliverable.records[0]!, id: 'valid' }, invalid] },
+          records: [{ ...page.records[0]!, id: 'valid' }, invalid],
         },
         definition: fixture.definition,
       }),

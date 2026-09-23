@@ -1,7 +1,7 @@
 import { createReadStream } from 'node:fs';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
-import type { DeliveredRecord, Delivery } from '@context-use/open-sync/delivery';
+import type { Deliverable, DeliveredRecord } from '@context-use/open-sync/delivery';
 import { canonicalJson } from '@context-use/open-sync/json';
 import type { RecordContent } from '@context-use/open-sync/record';
 import type { SQL, TransactionSQL } from 'bun';
@@ -100,7 +100,9 @@ export class SqliteReceiver implements ReceiverRepository {
       .db`INSERT INTO host_settings(owner_id,paused) VALUES (${input.ownerId},${Number(input.paused)})
       ON CONFLICT(owner_id) DO UPDATE SET paused=excluded.paused`;
   }
-  async accept(input: ReceiverScope & { delivery: Delivery }): Promise<boolean> {
+  async accept(
+    input: ReceiverScope & { delivery: Omit<Deliverable, 'openAsset'> },
+  ): Promise<boolean> {
     if (input.ownerId !== input.delivery.ownerId) {
       throw new Error('Receiver owner mismatch');
     }
@@ -113,11 +115,11 @@ export class SqliteReceiver implements ReceiverRepository {
         await tx`SELECT body_hash FROM host_receipts WHERE owner_id=${input.ownerId} AND delivery_id=${input.delivery.id}`;
       if (receipt) {
         if (receipt.body_hash !== bodyHash) {
-          throw new Error('Delivery identity reused with different content');
+          throw new Error('Deliverable identity reused with different content');
         }
         return true;
       }
-      for (const record of input.delivery.deliverable.records) {
+      for (const record of input.delivery.records) {
         await applyRecord({
           tx,
           ownerId: input.ownerId,

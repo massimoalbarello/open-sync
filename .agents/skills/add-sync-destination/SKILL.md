@@ -16,8 +16,8 @@ in the destination; follow the repository's engineering and compatibility guidan
 - Return `accepted` only after the whole delivery is durably accepted by the receiver. Finish all
   I/O before returning; an in-memory handoff or an unawaited request is not durable acceptance.
 - Expect retries after timeouts, restarts, or a lost acknowledgement, including after the receiver
-  has already committed. Use stable delivery/event IDs for idempotency. Scope stored records to
-  their owner, configured sync, kind, and ID, and protect newer revisions from stale replay. If the receiver
+  has already committed. Use stable deliverable IDs and record revisions for idempotency. Scope
+  stored records to their owner, configured sync, kind, and ID, and protect newer revisions from stale replay. If the receiver
   cannot commit a batch atomically, make each effect replay-safe before acknowledging the batch.
 - Use `retry` for temporary failures, optionally providing a server-requested delay, and `rejected`
   for permanent failures requiring intervention. Never report success to clear an error. The
@@ -25,15 +25,15 @@ in the destination; follow the repository's engineering and compatibility guidan
 
 ## Deliver records with their assets
 
-- Declare asset support only when implemented. Read bytes through the delivery's asset capability;
-  never depend on engine storage paths, source credentials, or a later call back to the source.
-- Choose the receiver's natural contract: accept records and assets together, or durably upload
-  assets before sending records that reference them. The optional
-  [assetsFirst helper](../../../packages/sync/src/delivery/assets-first.ts) reuses persisted upload
-  outcomes and freezes the resolved record representation across retries. Use the supplied upload
-  idempotency key. The pure `resolveAssetReference()` and `resolveRecordAssets()` helpers resolve
-  declared placeholders when the receiver needs its own IDs or URLs; arbitrary strings in `data`
-  are not Markdown fields. Handle explicit unavailable-asset outcomes deliberately.
+- Receive one `deliverable` with its stable ID, sync identity, original records, asset descriptors,
+  and `openAsset(ref)` function. Read bytes only through that function; never depend on engine
+  storage paths, source credentials, or a later call back to the source.
+- Choose the receiver's natural contract: accept the whole deliverable together, or upload its
+  assets first and then send records with receiver references. The pure `resolveAssetReference()`
+  and `resolveRecordAssets()` helpers resolve declared placeholders when needed. The engine does
+  not persist upload receipts or rewritten records; a retry receives the original deliverable and
+  may repeat uploads. The destination owns upload idempotency, reference mapping, and any durable
+  representation it needs. Handle explicit unavailable descriptors deliberately.
 - Consume streams during the delivery attempt. After acceptance the engine may delete its local
   files immediately, so deferred receiver work needs its own durable copy or reference.
 
@@ -46,5 +46,5 @@ are registered by name; settle queued work and replace the sync before changing 
 contract incompatibly.
 
 Test the receiver committing successfully but losing its acknowledgement, then retry after an
-engine restart: records and uploads must not duplicate. Also cover partial upload/batch failure,
-asset availability before record acceptance, owner isolation, and cancellation where applicable.
+engine restart: verify the receiver handles repeated uploads and record delivery safely. Also cover
+partial upload/batch failure, asset availability before record acceptance, owner isolation, and cancellation where applicable.

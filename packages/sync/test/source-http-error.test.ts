@@ -157,7 +157,7 @@ test.each([rateLimited, forbidden, unavailable])(
         },
       ],
       destinationTypes: { local: accepted },
-      timing: { assetAttempts: 1 },
+
       onEvent: (event: SyncEvent) => events.push(event),
     };
     let engine = createSyncRuntime(options);

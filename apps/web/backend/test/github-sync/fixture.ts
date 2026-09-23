@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ProviderResponse } from '@context-use/open-sync/definition';
-import type { Delivery } from '@context-use/open-sync/delivery';
+import type { Deliverable } from '@context-use/open-sync/delivery';
 import { createSyncRuntime } from '@context-use/open-sync/engine';
 import type { JsonObject } from '@context-use/open-sync/json';
 import { localDestination } from '@open-sync/examples/destinations/local';
@@ -42,7 +42,7 @@ export async function fixture(config: JsonObject = {}) {
   const receiver = new ReceiverService(
     await SqliteReceiver.open({ db, assetDirectory: join(dir, 'assets') }),
   );
-  const delivered: Delivery[] = [];
+  const delivered: Deliverable[] = [];
   const destinationType = localDestination({
     isPaused: (scope) => receiver.isPaused(scope),
     accept: (input) => receiver.accept(input),
@@ -115,7 +115,7 @@ export async function fixture(config: JsonObject = {}) {
         async deliver(input: Parameters<typeof destinationType.deliver>[0]) {
           const result = await destinationType.deliver(input);
           if (result.status === 'accepted') {
-            delivered.push(input.delivery);
+            delivered.push(input.deliverable);
           }
           return result;
         },

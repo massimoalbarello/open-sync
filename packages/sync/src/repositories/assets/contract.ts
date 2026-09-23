@@ -1,44 +1,19 @@
-import type { AssetMetadata, AssetOutcome, AssetRef, DeliveryAsset } from '../../models/asset';
-import type { Delivery } from '../../models/delivery';
+import type { AssetMetadata, AssetRef } from '../../models/asset';
 import type { RunLease } from '../acquisition/contract';
 import type { DeliveryLease } from '../delivery/contract';
 
-export interface CapturedAsset {
-  asset: DeliveryAsset;
-  fileId: string | null;
-  attempt: number;
-  state: string;
-}
 export interface AssetRepository {
-  capture(input: { lease: RunLease; asset: AssetMetadata }): CapturedAsset;
-  captured(input: {
-    lease: RunLease;
-    asset: AssetMetadata;
-    file: { id: string; size: number; sha256: string };
-  }): void;
-  captureFailed(input: {
-    lease: RunLease;
-    asset: AssetMetadata;
-    code: string;
-    terminal: boolean;
-  }): void;
-  /** Keep the asset pending without counting the latest capture against its retry limit. */
-  captureDeferred(input: { lease: RunLease; asset: AssetMetadata; code: string }): void;
+  stage(input: { lease: RunLease; asset: AssetMetadata; unavailable?: string }): string;
+  captured(input: { lease: RunLease; id: string; size: number; sha256: string }): void;
   reserve(input: { lease: RunLease; id: string; bytes: number }): void;
   discarded(id: string): void;
   garbage(): string[];
   retained(id: string): boolean;
-  read(input: { lease: DeliveryLease; asset: AssetRef }): CapturedAsset;
-  receipt(input: { lease: DeliveryLease; asset: AssetRef }): {
-    key: string;
-    attempt: number;
-    outcome?: AssetOutcome;
-  };
-  recordOutcome(input: { lease: DeliveryLease; asset: AssetRef; outcome: AssetOutcome }): void;
-  materialize(input: { lease: DeliveryLease; build(): Delivery }): Delivery;
+  read(input: { lease: DeliveryLease; asset: AssetRef }): string;
 }
 export interface AssetFiles {
   write(input: {
+    id: string;
     body: ReadableStream<Uint8Array>;
     reserve(file: { id: string; bytes: number }): void;
     maxBytes: number;

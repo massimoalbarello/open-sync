@@ -82,7 +82,13 @@ test('published Gmail files stream through the owned transport into asset storag
     // Connector has staged a transit file, but Open Sync has not consumed/buffered it.
     const transit = join(fixture.files.dir, 'connector', 'files');
     expect((await readdir(transit)).length).toBeGreaterThan(0);
-    const captured = await files.write({ body, reserve, maxBytes: size, signal: abort.signal });
+    const captured = await files.write({
+      id: crypto.randomUUID(),
+      body,
+      reserve,
+      maxBytes: size,
+      signal: abort.signal,
+    });
     const hash = createHash('sha256');
     for (let remaining = size; remaining > 0; ) {
       const length = Math.min(remaining, chunkBytes);
@@ -96,6 +102,7 @@ test('published Gmail files stream through the owned transport into asset storag
     bytes = chunkBytes;
     await expect(
       files.write({
+        id: crypto.randomUUID(),
         body: await provider.download!(download),
         reserve,
         maxBytes: 1,

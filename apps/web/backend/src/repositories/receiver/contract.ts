@@ -1,5 +1,5 @@
-import type { AssetMetadata, AssetUpload } from '@context-use/open-sync/assets';
-import type { Delivery } from '@context-use/open-sync/delivery';
+import type { AssetMetadata, DeliveryAsset } from '@context-use/open-sync/assets';
+import type { Deliverable } from '@context-use/open-sync/delivery';
 import type { JsonObject } from '@context-use/open-sync/json';
 import type { RecordContent, SyncRecord } from '@context-use/open-sync/record';
 export interface ReceiverScope {
@@ -45,7 +45,13 @@ export interface ReceiverRepository {
     pageSize: number;
   }>;
   acceptAsset(
-    input: ReceiverScope & AssetUpload & { syncId: string; signal: AbortSignal },
+    input: ReceiverScope & {
+      asset: DeliveryAsset;
+
+      open(): Promise<ReadableStream<Uint8Array>>;
+      syncId: string;
+      signal: AbortSignal;
+    },
   ): Promise<string>;
   asset(input: ReceiverScope & { id: string }): Promise<
     | {
@@ -62,5 +68,5 @@ export interface ReceiverRepository {
   isPaused(scope: ReceiverScope): Promise<boolean>;
   status(scope: ReceiverScope): Promise<ReceiverStatus>;
   setPaused(input: ReceiverScope & { paused: boolean }): Promise<void>;
-  accept(input: ReceiverScope & { delivery: Delivery }): Promise<boolean>;
+  accept(input: ReceiverScope & { delivery: Omit<Deliverable, 'openAsset'> }): Promise<boolean>;
 }

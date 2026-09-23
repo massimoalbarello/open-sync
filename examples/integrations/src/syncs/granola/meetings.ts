@@ -48,7 +48,7 @@ export async function step(context: SyncContext): Promise<SyncStep> {
     );
   }
   return {
-    deliverable: { records },
+    records,
     checkpoint: {},
     complete: true,
   };

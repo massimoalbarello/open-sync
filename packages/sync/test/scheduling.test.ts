@@ -51,7 +51,7 @@ test('waiting sources and deliveries do not stop other steps, even at the same d
     destinationTypes: {
       local: {
         ...accepted,
-        async deliver({ delivery }) {
+        async deliver({ deliverable: delivery }) {
           if (delivery.syncId === slowDelivery) {
             await heldDelivery.promise;
           }
@@ -191,7 +191,7 @@ test.each(['blocked', 'leased', 'retry'] as const)(
         lease: f.acquisition.claim(leaseMs)!,
         page: {
           ...page,
-          deliverable: { records: [{ ...page.deliverable.records[0]!, id: 'next' }] },
+          records: [{ ...page.records[0]!, id: 'next' }],
         },
         definition: fixture.definition,
       });
@@ -226,7 +226,7 @@ test.each(['blocked', 'leased', 'retry'] as const)(
       f.deliveries.complete({ lease: independent, result: { status: 'accepted' }, delay: 0 });
       if (state === 'leased') {
         f.deliveries.complete({ lease: first, result: { status: 'accepted' }, delay: 0 });
-        expect(f.deliveries.claim(leaseMs)?.delivery.deliverable.records[0]?.id).toBe('next');
+        expect(f.deliveries.claim(leaseMs)?.delivery.records[0]?.id).toBe('next');
       }
     } finally {
       f.close();

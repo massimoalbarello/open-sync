@@ -1,4 +1,3 @@
-import type { Delivery, DeliveryResult } from './delivery';
 import { fail } from './error';
 import type { JsonValue } from './json';
 import type { SourceTimestamps } from './metadata';
@@ -19,7 +18,7 @@ export interface AssetCapture extends AssetMetadata {
   read(): Promise<ReadableStream<Uint8Array>>;
 }
 export interface SourceAssets {
-  /** Capture for this step, with durable read retry counts. Later steps must capture again. */
+  /** Capture for this step. A read failure fails the step; later steps capture again. */
   capture(input: AssetCapture): Promise<AssetRef>;
   /** Declare a known permanent source limitation without downloading or discarding the attachment. */
   unavailable(input: AssetMetadata & { code: string }): AssetRef;
@@ -27,24 +26,6 @@ export interface SourceAssets {
 export type AssetOutcome =
   | { status: 'accepted'; reference: string }
   | { status: 'failed'; code: string };
-export type AssetResult =
-  | { status: 'accepted'; reference: string }
-  | Exclude<DeliveryResult, { status: 'accepted' }>;
-export interface AssetUpload {
-  asset: DeliveryAsset;
-  idempotencyKey: string;
-  open(): Promise<ReadableStream<Uint8Array>>;
-}
-/** Bound to the current delivery. No storage paths, source capabilities or credentials are exposed. */
-export interface DestinationAssets {
-  open(asset: AssetRef): Promise<ReadableStream<Uint8Array>>;
-  transfer(input: {
-    asset: AssetRef;
-    upload(input: AssetUpload): Promise<AssetResult>;
-  }): Promise<AssetOutcome | Exclude<DeliveryResult, { status: 'accepted' }>>;
-  /** Freeze the destination representation before its first send, including across restarts. */
-  materialize(build: () => Delivery): Delivery;
-}
 export interface AssetRendering {
   structured(input: { asset: DeliveryAsset; outcome: AssetOutcome }): JsonValue;
   /** Return a destination URL for success, or plain explanatory text for failure. */

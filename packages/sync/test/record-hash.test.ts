@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import type { Delivery } from '../src/models/delivery';
+import type { Deliverable } from '../src/models/delivery';
 import type { SyncRecord } from '../src/models/record';
 import { accepted, alpha, configure, fixture, runtime } from './support';
 
@@ -9,18 +9,17 @@ test('every record uses one hash shape, including opaque data resembling the old
     ...base,
     data: { data: { value: 1 }, assetRefs: {}, markdownFields: [] },
   };
-  const received: Delivery[] = [];
+  const received: Deliverable[] = [];
   const f = runtime({
     registration: {
       definition: { ...fixture.definition, kinds: { item: { type: 'object' } } },
       load: () => ({
-        step: () =>
-          Promise.resolve({ deliverable: { records: [record] }, checkpoint: 1, complete: true }),
+        step: () => Promise.resolve({ records: [record], checkpoint: 1, complete: true }),
       }),
     },
     destination: {
       ...accepted,
-      deliver: ({ delivery }) => {
+      deliver: ({ deliverable: delivery }) => {
         received.push(delivery);
         return Promise.resolve({ status: 'accepted' });
       },
@@ -37,10 +36,7 @@ test('every record uses one hash shape, including opaque data resembling the old
     record = { ...base, data: { value: 1 }, assetRefs: {} };
     await run();
     expect(received).toHaveLength(2);
-    expect(received.map((delivery) => delivery.deliverable.records[0]!.revision)).toEqual([1, 2]);
-    expect(received[1]!.deliverable.records[0]!.contentHash).not.toBe(
-      received[0]!.deliverable.records[0]!.contentHash,
-    );
+    expect(received.map((delivery) => delivery.records[0]!.revision)).toEqual([1, 2]);
     record = { data: { value: 1 }, ...base };
     await run();
     expect(received).toHaveLength(2);
@@ -51,32 +47,30 @@ test('every record uses one hash shape, including opaque data resembling the old
 
 test('an asset content identity change redelivers its otherwise unchanged record', async () => {
   let version = 'first-content';
-  const received: Delivery[] = [];
+  const received: Deliverable[] = [];
   const f = runtime({
     registration: {
       ...fixture,
       load: () => ({
         step: ({ assets }) =>
           Promise.resolve({
-            deliverable: {
-              records: [
-                {
-                  operation: 'upsert',
-                  kind: 'item',
-                  id: 'one',
-                  data: { value: 1 },
-                  assetRefs: {
-                    file: assets.unavailable({
-                      id: 'attachment',
-                      version,
-                      name: 'attachment',
-                      mediaType: 'application/octet-stream',
-                      code: 'external_file',
-                    }),
-                  },
+            records: [
+              {
+                operation: 'upsert',
+                kind: 'item',
+                id: 'one',
+                data: { value: 1 },
+                assetRefs: {
+                  file: assets.unavailable({
+                    id: 'attachment',
+                    version,
+                    name: 'attachment',
+                    mediaType: 'application/octet-stream',
+                    code: 'external_file',
+                  }),
                 },
-              ],
-            },
+              },
+            ],
             checkpoint: 1,
             complete: true,
           }),
@@ -84,8 +78,8 @@ test('an asset content identity change redelivers its otherwise unchanged record
     },
     destination: {
       ...accepted,
-      acceptsAssets: true,
-      deliver: ({ delivery }) => {
+
+      deliver: ({ deliverable: delivery }) => {
         received.push(delivery);
         return Promise.resolve({ status: 'accepted' });
       },
@@ -103,12 +97,12 @@ test('an asset content identity change redelivers its otherwise unchanged record
     await run();
     await run();
     expect(received).toHaveLength(2);
-    expect(received[1]!.deliverable.records[0]).toMatchObject({
+    expect(received[1]!.records[0]).toMatchObject({
       revision: 2,
       data: { value: 1 },
       assetRefs: { file: { id: 'attachment', version } },
     });
-    expect(received[1]!.deliverable.assets).toMatchObject([{ id: 'attachment', version }]);
+    expect(received[1]!.assets).toMatchObject([{ id: 'attachment', version }]);
   } finally {
     await f.close();
   }

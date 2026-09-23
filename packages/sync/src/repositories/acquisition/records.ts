@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite';
+import type { DeliveryAsset } from '../../models/asset';
 import type { DeliveredRecord } from '../../models/delivery';
 import { canonicalJson } from '../../models/json';
 import type { SyncRecord } from '../../models/record';
@@ -8,6 +9,7 @@ export function writeRecord(input: {
   db: Database;
   sync: Sync;
   record: SyncRecord;
+  assets: DeliveryAsset[];
 }): DeliveredRecord | undefined {
   const { db, sync, record } = input;
   const previous = db
@@ -18,7 +20,8 @@ export function writeRecord(input: {
   if (record.operation === 'delete' && (!previous || previous.deleted === 1)) {
     return;
   }
-  const contentHash = record.operation === 'upsert' ? hashRecord(record) : previous!.hash;
+  const contentHash =
+    record.operation === 'upsert' ? hashRecord({ record, assets: input.assets }) : previous!.hash;
   if (record.operation === 'upsert' && previous?.deleted === 0 && previous.hash === contentHash) {
     return;
   }
@@ -33,16 +36,23 @@ export function writeRecord(input: {
     revision,
     Number(record.operation === 'delete'),
   );
-  return { ...record, eventId: `event_${crypto.randomUUID()}`, revision, contentHash };
+  return { ...record, revision };
 }
 
-function hashRecord(record: Extract<SyncRecord, { operation: 'upsert' }>) {
+function hashRecord({
+  record,
+  assets,
+}: {
+  record: Extract<SyncRecord, { operation: 'upsert' }>;
+  assets: DeliveryAsset[];
+}) {
   return canonicalJson({
     id: record.id,
     kind: record.kind,
     data: record.data,
     content: record.content ?? null,
     assetRefs: record.assetRefs ?? {},
+    assets,
     preview: record.preview ?? null,
     createdAt: record.createdAt ?? null,
     updatedAt: record.updatedAt ?? null,

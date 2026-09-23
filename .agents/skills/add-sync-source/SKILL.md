@@ -30,7 +30,7 @@ Follow the repository's engineering and compatibility guidance.
 - Verify pagination capabilities for the actual endpoint and authentication mode; justify any
   exception to native pagination. Reject explicit truncation and state coverage limitations.
   Exhausting the returned list does not prove the provider exposed all historical data.
-- Return the next checkpoint with the complete output. The engine commits them atomically.
+- Return `{ records, checkpoint, complete }` with the complete output. The engine commits them atomically.
   Throw on incomplete or failed retrieval; never skip failed records to advance the cursor.
   Set `complete` only when the current scan is exhausted.
 - Establish how pagination behaves during updates, restarts, and cursor expiry. Use stable
@@ -43,7 +43,10 @@ Follow the repository's engineering and compatibility guidance.
   fetch-time values that turn unchanged records into updates. Define what updates and deletions
   the source can actually observe, and guard against resuming under a different account.
 - Capture assets through `context.assets`, give each immutable version a stable identity, and
-  declare the returned references in each record's `assetRefs`. Use `assetPlaceholder()` when
+  declare the returned references in each record's `assetRefs`. Assets belong to records; there is
+  no standalone asset output. Repeated references share one capture within a step; later steps
+  capture again. Capture failures fail the whole step instead of becoming unavailable attachments.
+  Use `assetPlaceholder()` when
   embedding a reference in JSON or readable content; keep Markdown in `content`, not engine-marked
   fields inside `data`. The engine treats `data` values as opaque. Keep credentials,
   temporary download URLs, and file paths out of checkpoints and queued output. Preserve

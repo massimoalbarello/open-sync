@@ -127,6 +127,9 @@ async function connectSource(input: {
   await page.goto(`${origin}/syncs/${syncId}`);
   await page.getByRole('heading', { name: `${source.name} → Local SQLite`, exact: true }).waitFor();
   await page.getByRole('link', { name: 'Polling history', exact: true }).click();
+  if (source.service === 'gmail') {
+    await failedAssetJourney({ page, origin, syncId });
+  }
   if (source.service === 'slack') {
     await sourceRetryJourney({ page, origin, syncId });
   }
@@ -197,10 +200,12 @@ async function verifyRecords(input: {
     const receivedAttachments = records.records[0].data.messages[0].attachments;
     const attachmentCount = 4;
     assert.equal(receivedAttachments.length, attachmentCount);
-    assert.deepEqual(receivedAttachments[3], {
-      name: 'oversized.bin',
-      file: { status: 'failed', code: 'asset_too_large' },
-    });
+    assert.equal(receivedAttachments[3].name, 'oversized.bin');
+    const recovered = await page.request.get(
+      `${origin}/api/receiver/assets/${receivedAttachments[3].file}`,
+    );
+    assert.equal(recovered.status(), successStatus);
+    assert.equal(await recovered.text(), 'recovered attachment');
     const large = await page.request.get(
       `${origin}/api/receiver/assets/${receivedAttachments[2].file}`,
     );
@@ -276,4 +281,29 @@ async function verifyRecords(input: {
       animations: 'disabled',
     });
   }
+}
+
+async function failedAssetJourney(input: { page: Page; origin: string; syncId: string }) {
+  const { page, origin, syncId } = input;
+  await page.getByRole('cell', { name: 'Paused', exact: true }).waitFor();
+  const syncPath = `${origin}/api/open-sync/sync/syncs/${syncId}`;
+  const sync = await (await page.request.get(syncPath)).json();
+  assert.equal(sync.enabled, false);
+  assert.equal(sync.status, 'connector_request_failed');
+  const history = await (await page.request.get(`${syncPath}/polls`)).json();
+  assert.equal(history.polls[0].recordsProcessed, 0);
+  for (const section of ['records', 'assets']) {
+    const received = await (
+      await page.request.get(
+        `${origin}/api/receiver/${section}?syncId=${encodeURIComponent(syncId)}`,
+      )
+    ).json();
+    assert.deepEqual(received[section], []);
+  }
+  await page.screenshot({
+    path: 'artifacts/asset-fetch-paused.png',
+    fullPage: true,
+    animations: 'disabled',
+  });
+  await page.getByRole('button', { name: 'Resume', exact: true }).click();
 }

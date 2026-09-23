@@ -1,9 +1,9 @@
-import type { Delivery, DeliveryPage, DeliveryResult, QueueStatus } from '../../models/delivery';
+import type { Deliverable, DeliveryPage, DeliveryResult, QueueStatus } from '../../models/delivery';
 import type { Resource, Scope } from '../../models/identity';
 import type { Sync } from '../../models/sync';
 
 export interface DeliveryLease extends Scope {
-  delivery: Delivery;
+  delivery: Omit<Deliverable, 'openAsset'>;
   destination: Sync['destination'];
   workerId: string;
   generation: number;

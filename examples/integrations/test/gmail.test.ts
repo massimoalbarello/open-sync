@@ -169,7 +169,7 @@ test('Gmail never commits an empty or mismatched thread or advances a repeated c
 });
 
 test.each(['available', 'oversized'])(
-  'Gmail preserves attachment identities and continues after an %s download',
+  'Gmail preserves attachment identities and fails atomically for an %s download',
   async (mode) => {
     const tooLarge = 413;
     const downloads: string[] = [];
@@ -221,6 +221,14 @@ test.each(['available', 'oversized'])(
       },
     });
     try {
+      if (mode === 'oversized') {
+        await f.engine.tick();
+        expect(f.saved.checkpoint).toEqual(gmailThreads.definition.initialCheckpoint);
+        expect(f.saved.status).toBe('source_http_413');
+        expect(f.records).toEqual([]);
+        expect(downloads).toEqual(['attachment2']);
+        return;
+      }
       await f.finish();
       expect(downloads).toEqual(['attachment2']);
       const record = f.records[0]!;
@@ -233,20 +241,9 @@ test.each(['available', 'oversized'])(
         { id: 'm1:2', version: '1' },
       ]);
       expect(JSON.stringify(record)).not.toContain(Buffer.from('inline').toString('base64url'));
-      const assets = f.deliveries[0]!.deliverable.assets!;
+      const assets = f.deliveries[0]!.assets!;
       expect(assets[0]).toMatchObject({ id: 'm1:1', size: Buffer.byteLength('inline') });
-      expect(assets[1]).toMatchObject(
-        mode === 'oversized'
-          ? { id: 'm1:2', unavailable: 'asset_too_large' }
-          : { id: 'm1:2', size: Buffer.byteLength('external') },
-      );
-      if (mode === 'oversized') {
-        await f.restart();
-        f.queue();
-        await f.finish();
-        expect(downloads).toHaveLength(1);
-        expect(f.records).toHaveLength(1);
-      }
+      expect(assets[1]).toMatchObject({ id: 'm1:2', size: Buffer.byteLength('external') });
     } finally {
       await f.close();
     }

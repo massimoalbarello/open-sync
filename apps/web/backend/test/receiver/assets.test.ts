@@ -18,7 +18,7 @@ test('receiver owns its bytes and stable asset IDs, checks integrity, and isolat
     const input = {
       ...owner,
       syncId: 'source',
-      idempotencyKey: 'upload',
+
       signal: new AbortController().signal,
       asset: {
         id: 'file',
@@ -61,13 +61,23 @@ test('receiver owns its bytes and stable asset IDs, checks integrity, and isolat
     await expect(
       receiver.acceptAsset({
         ...input,
-        idempotencyKey: 'bad',
+
         asset: { ...input.asset, id: 'corrupt', sha256: 'wrong' },
       }),
     ).rejects.toThrow('content mismatch');
     expect(await readdir(assetDirectory)).toHaveLength(1);
+    expect(
+      await receiver.acceptAsset({ ...input, asset: { ...input.asset, name: 'changed.bin' } }),
+    ).toBe(id);
+    expect(await receiver.assetInfo({ ...owner, id })).toHaveProperty('name', 'changed.bin');
+    const other = await receiver.acceptAsset({ ...input, syncId: 'other-sync' });
+    expect(other).not.toBe(id);
+    expect(await receiver.assetInfo({ ...owner, id: other })).toHaveProperty(
+      'syncId',
+      'other-sync',
+    );
     await expect(
-      receiver.acceptAsset({ ...input, asset: { ...input.asset, name: 'changed.bin' } }),
+      receiver.acceptAsset({ ...input, asset: { ...input.asset, sha256: 'changed-bytes' } }),
     ).rejects.toThrow('identity reused');
   } finally {
     await db.close();

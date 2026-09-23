@@ -75,7 +75,7 @@ test('Slack captures private files and preserves external limitations without re
         ],
       },
     });
-    expect(f.deliveries[0]?.deliverable.assets).toMatchObject([
+    expect(f.deliveries[0]!.assets).toMatchObject([
       { id: 'F1', size: Buffer.byteLength('private file') },
       { id: 'F2', unavailable: 'external_connection_required' },
     ]);

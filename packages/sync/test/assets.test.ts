@@ -1,108 +1,86 @@
 import { Database } from 'bun:sqlite';
-import { expect, test } from 'bun:test';
+import { expect, spyOn, test } from 'bun:test';
 import { readdir } from 'node:fs/promises';
-import { assetsFirst } from '../src/delivery/assets-first';
-import type { AssetRendering, AssetUpload, DeliveryAsset } from '../src/models/asset';
-import { assetKey, assetPlaceholder } from '../src/models/asset';
-import { resolveRecordAssets } from '../src/models/asset-references';
-import { SourceHttpError, type SyncRegistration } from '../src/models/definition';
-import type { Delivery, DestinationType } from '../src/models/delivery';
+import { type AssetMetadata, assetPlaceholder } from '../src/models/asset';
+import type { SyncContext, SyncRegistration, SyncStep } from '../src/models/definition';
+import type { Deliverable, DestinationType } from '../src/models/delivery';
+import { defaultLimits } from '../src/models/limits';
+import { DirectoryAssets } from '../src/repositories/assets/filesystem';
+import { SqliteAssets } from '../src/repositories/assets/sqlite';
 import { createSyncRuntime } from '../src/runtime';
-import { alpha, beta, savedSync, storage } from './support';
+import { accepted, alpha, beta, fixture, repositories, savedSync, storage } from './support';
 
-const binaryBytes = [...Buffer.from('00ff0d0a', 'hex')];
-const maxAttempts = 3;
-const maxTicks = 5;
-const assetByteLimit = 1024;
-const rendering: AssetRendering = {
-  structured: ({ outcome }) =>
-    outcome.status === 'accepted' ? outcome.reference : { status: 'failed', code: outcome.code },
-  markdown: ({ outcome }) =>
-    outcome.status === 'accepted'
-      ? `https://destination.example/files/${outcome.reference}`
-      : 'Attachment unavailable',
+const leaseMs = 60_000;
+const pollCount = 3;
+const changedRevisions = [1, 2, pollCount];
+const metadata: AssetMetadata = {
+  id: 'file',
+  version: '1',
+  name: 'file.txt',
+  mediaType: 'text/plain',
 };
-function source(
-  input: { read?(): Promise<ReadableStream<Uint8Array>>; version?: string } = {},
-): SyncRegistration {
+const bytes = () => Promise.resolve(new Blob(['attachment']).stream());
+function record(ref: { id: string; version: string }) {
   return {
-    definition: {
-      id: 'assets.test',
-
-      configSchema: { type: 'object' },
-      checkpointSchema: { type: 'integer' },
-      initialCheckpoint: 0,
-      kinds: { note: { type: 'object' } },
-    },
-    load: () => ({
-      async step(context) {
-        const asset = await context.assets.capture({
-          id: 'file',
-          version: input.version ?? '1',
-          name: 'file.bin',
-          mediaType: 'application/octet-stream',
-          read:
-            input.read ?? (() => Promise.resolve(new Blob([new Uint8Array(binaryBytes)]).stream())),
-        });
-        return {
-          deliverable: {
-            records: [
-              {
-                operation: 'upsert',
-                kind: 'note',
-                id: 'first',
-                data: { file: assetPlaceholder('first') },
-                content: { format: 'markdown', body: `[file](${assetPlaceholder('first')})` },
-                assetRefs: { first: asset },
-              },
-            ],
-          },
-          checkpoint: 1,
-          complete: true,
-        };
-      },
-    }),
+    operation: 'upsert' as const,
+    kind: 'item',
+    id: 'record',
+    data: { file: assetPlaceholder('file') },
+    assetRefs: { file: { id: ref.id, version: ref.version } },
   };
 }
-async function setup(input: {
-  destination: DestinationType;
-  registration?: SyncRegistration;
-  attempts?: number;
-  maxAssetBytes?: number;
-  maxPendingAssetBytes?: number;
+function page(ref: { id: string; version: string }): SyncStep {
+  return { records: [record(ref)], checkpoint: 1, complete: true };
+}
+async function harness(input: {
+  step(context: SyncContext): Promise<SyncStep>;
+  destination?: DestinationType;
+  limits?: Parameters<typeof createSyncRuntime>[0]['limits'];
 }) {
   const files = storage();
-  const registration = input.registration ?? source();
+  const source: SyncRegistration = {
+    ...fixture,
+    definition: { ...fixture.definition, kinds: { item: { type: 'object' } } },
+    load: () => ({ step: input.step }),
+  };
   const options = {
     databasePath: files.path,
-    definitions: [registration],
-    destinationTypes: { target: input.destination },
-    timing: { assetAttempts: input.attempts ?? maxAttempts, retryMs: 1 },
-    limits: {
-      maxAssetBytes: input.maxAssetBytes ?? assetByteLimit,
-      ...(input.maxPendingAssetBytes ? { maxPendingAssetBytes: input.maxPendingAssetBytes } : {}),
-    },
+    definitions: [source],
+    destinationTypes: { local: input.destination ?? accepted },
+    limits: input.limits,
   };
   let engine = createSyncRuntime(options);
-  const destination = { type: 'target', input: {} };
   const sync = await engine.api.createSync({
     ...alpha,
-    definition: registration.definition.id,
-    config: {},
-    destination,
+    definition: source.definition.id,
+    config: { count: 1 },
+    destination: { type: 'local', input: {} },
   });
+  const scope = { ...alpha, id: sync.id };
   return {
     files,
-    sync,
-    options,
+    scope,
     get engine() {
       return engine;
     },
-    async tick() {
-      const db = new Database(files.path);
-      db.exec('UPDATE deliveries SET due_at=0');
-      db.exec("UPDATE syncs SET next_due_at=0 WHERE status!='succeeded'");
-      db.close();
+    get saved() {
+      return savedSync({ path: files.path, scope });
+    },
+    ledger() {
+      const db = new Database(files.path, { readonly: true });
+      try {
+        return db
+          .query<{ bytes: number; count: number }, []>(
+            'SELECT coalesce(sum(bytes),0) AS bytes,count(*) AS count FROM delivery_assets',
+          )
+          .get()!;
+      } finally {
+        db.close();
+      }
+    },
+    async poll() {
+      engine.api.queueRun(scope);
+      await engine.tick();
       await engine.tick();
     },
     async restart() {
@@ -115,468 +93,438 @@ async function setup(input: {
     },
   };
 }
-function separate(input: {
-  upload(input: AssetUpload): Promise<import('../src/models/asset').AssetResult>;
-  deliver(delivery: Delivery): Promise<import('../src/models/delivery').DeliveryResult>;
-}): DestinationType {
-  return {
-    configSchema: { type: 'object' },
-    acceptsAssets: true,
-    deliver: assetsFirst({
-      rendering,
-      upload: input.upload,
-      deliver: ({ delivery }) => input.deliver(delivery),
-    }),
-  };
-}
 
-test.each([false, true])(
-  'asset source timestamps remain immutable and survive delivery (unavailable: %s)',
-  async (unavailable) => {
-    let createdAt = '2020-01-01T01:00:00+01:00';
-    const received: DeliveryAsset[] = [];
-    const fixture = await setup({
-      registration: {
-        definition: source().definition,
-        load: () => ({
-          async step({ assets }) {
-            const metadata = {
-              id: 'dated',
-              version: '1',
-              name: 'dated.txt',
-              mediaType: 'text/plain',
-              createdAt,
-            };
-            const asset = unavailable
-              ? assets.unavailable({ ...metadata, code: 'source_unavailable' })
-              : await assets.capture({
-                  ...metadata,
-                  read: () => Promise.resolve(new Blob(['file']).stream()),
-                });
-            return { deliverable: { records: [], assets: [asset] }, checkpoint: 1, complete: true };
+test('a deliverable bundles original records, descriptors, and independently readable streams', async () => {
+  const received: Deliverable[] = [];
+  const f = await harness({
+    step: async ({ assets }) => page(await assets.capture({ ...metadata, read: bytes })),
+    destination: {
+      ...accepted,
+      async deliver({ deliverable }) {
+        received.push(deliverable);
+        expect(deliverable.assets).toMatchObject([{ ...metadata, size: 10 }]);
+        expect(deliverable.records[0]).toMatchObject(record(metadata));
+        for (const asset of deliverable.assets) {
+          expect(await new Response(await deliverable.openAsset(asset)).text()).toBe('attachment');
+          expect(await new Response(await deliverable.openAsset(asset)).text()).toBe('attachment');
+        }
+        await expect(deliverable.openAsset({ id: 'foreign', version: '1' })).rejects.toThrow(
+          'not found',
+        );
+        return { status: 'accepted' };
+      },
+    },
+  });
+  try {
+    await f.engine.tick();
+    expect(f.ledger()).toEqual({ count: 1, bytes: 10 });
+    await f.engine.tick();
+    expect(received).toHaveLength(1);
+    expect(received[0]!.syncId).toBe(f.scope.id);
+    expect(f.ledger()).toEqual({ count: 0, bytes: 0 });
+    expect(await readdir(`${f.files.path}.assets`)).toEqual([]);
+    await expect(received[0]!.openAsset(metadata)).rejects.toThrow('lease lost');
+  } finally {
+    await f.close();
+  }
+});
+
+test('lost acknowledgement and restart replay the original ID, records, descriptors and bytes', async () => {
+  let reads = 0;
+  const received: string[] = [];
+  let attempts = 0;
+  const f = await harness({
+    step: async ({ assets }) =>
+      page(
+        await assets.capture({
+          ...metadata,
+          read: () => {
+            reads++;
+            return bytes();
           },
         }),
-      },
-      destination: {
-        configSchema: { type: 'object' },
-        acceptsAssets: true,
-        deliver: ({ delivery }) => {
-          received.push(...delivery.deliverable.assets!);
-          return Promise.resolve({ status: 'accepted' });
-        },
-      },
-    });
-    try {
-      await fixture.tick();
-      await fixture.tick();
-      expect(received[0]).toMatchObject({ createdAt: '2020-01-01T00:00:00.000Z' });
-      expect(received[0]).not.toHaveProperty('updatedAt');
-      await fixture.restart();
-      createdAt = '2020-01-01T00:00:00.000Z';
-      const resource = { ...alpha, id: fixture.sync.id };
-      fixture.engine.api.queueRun(resource);
-      await fixture.tick();
-      await fixture.tick();
-      expect(fixture.engine.api.sync(resource).status).toBe('succeeded');
-      createdAt = '2020-01-02T00:00:00Z';
-      fixture.engine.api.queueRun(resource);
-      await fixture.tick();
-      expect(fixture.engine.api.sync(resource).status).toBe('asset_version_conflict');
-      createdAt = '2020-02-30T00:00:00Z';
-      fixture.engine.api.queueRun(resource);
-      await fixture.tick();
-      expect(fixture.engine.api.sync(resource).status).toBe('invalid_input');
-    } finally {
-      await fixture.close();
-    }
-  },
-);
-
-test('asset acceptance and materialized record survive restart, preserving source hashes and releasing only queued bytes', async () => {
-  let uploads = 0;
-  const records: Delivery[] = [];
-  const fixture = await setup({
-    destination: separate({
-      async upload(input) {
-        uploads++;
-        expect([...new Uint8Array(await new Response(await input.open()).arrayBuffer())]).toEqual(
-          binaryBytes,
-        );
-        return { status: 'accepted', reference: '42' };
-      },
-      deliver: (delivery) => {
-        records.push(delivery);
-        return Promise.resolve(records.length === 1 ? { status: 'retry' } : { status: 'accepted' });
-      },
-    }),
-  });
-  try {
-    await fixture.tick();
-    await fixture.tick();
-    expect(records).toHaveLength(1);
-    const db = new Database(fixture.files.path);
-    const logical = JSON.parse(
-      db.query<{ body: string }, []>('SELECT body FROM deliveries').get()!.body,
-    ) as Delivery;
-    db.close();
-    expect(logical.deliverable.records[0]).toMatchObject({
-      data: { file: 'open-sync-asset:first' },
-    });
-    expect(records[0]!.deliverable.records[0]).toMatchObject({
-      data: { file: '42' },
-      content: { format: 'markdown', body: '[file](https://destination.example/files/42)\n' },
-      contentHash: logical.deliverable.records[0]!.contentHash,
-    });
-    await fixture.restart();
-    await fixture.tick();
-    expect(uploads).toBe(1);
-    expect(records[1]).toEqual(records[0]);
-    expect(await readdir(`${fixture.files.path}.assets`)).toEqual([]);
-    fixture.engine.api.queueRun({ ...alpha, id: fixture.sync.id });
-    await fixture.tick();
-    await fixture.tick();
-    expect(records).toHaveLength(2);
-  } finally {
-    await fixture.close();
-  }
-});
-
-test('lost asset response retries the same idempotency key and obtains the original assigned reference', async () => {
-  const remote = new Map<string, string>();
-  const keys: string[] = [];
-  let delivered: Delivery | undefined;
-  const fixture = await setup({
-    destination: separate({
-      upload: async (input) => {
-        await new Response(await input.open()).arrayBuffer();
-        keys.push(input.idempotencyKey);
-        remote.set(input.idempotencyKey, remote.get(input.idempotencyKey) ?? 'remote-1');
-        if (keys.length === 1) {
-          throw new Error('Response lost');
+      ),
+    destination: {
+      ...accepted,
+      async deliver({ deliverable }) {
+        const { openAsset, ...body } = deliverable;
+        received.push(JSON.stringify(body));
+        expect(await new Response(await openAsset(metadata)).text()).toBe('attachment');
+        // Destination may mutate its copy; it must not alter the queued payload.
+        deliverable.records.length = 0;
+        if (++attempts === 1) {
+          throw new Error('receiver committed; acknowledgement lost');
         }
-        return { status: 'accepted', reference: remote.get(input.idempotencyKey)! };
+        return { status: 'accepted' };
       },
-      deliver: (delivery) => {
-        delivered = delivery;
-        return Promise.resolve({ status: 'accepted' });
-      },
-    }),
+    },
   });
   try {
-    await fixture.tick();
-    await fixture.tick();
-    await fixture.restart();
-    await fixture.tick();
-    expect(keys).toHaveLength(2);
-    expect(keys[0]).toBe(keys[1]);
-    expect(remote.size).toBe(1);
-    expect(delivered?.deliverable.records[0]).toMatchObject({ data: { file: 'remote-1' } });
+    await f.engine.tick();
+    await f.engine.tick();
+    expect(f.ledger().bytes).toBe(10);
+    await f.restart();
+    const queued = f.engine.api.deliveries(alpha).deliveries[0]!;
+    f.engine.api.retryDelivery({ ...alpha, id: queued.id });
+    await f.engine.tick();
+    expect(received).toHaveLength(2);
+    expect(received[0]).toBe(received[1]);
+    expect(reads).toBe(1);
+    expect(f.ledger().count).toBe(0);
   } finally {
-    await fixture.close();
+    await f.close();
   }
 });
 
-test('bounded upload failures become explicit record outcomes, including Markdown, after persisted retries', async () => {
-  let calls = 0;
-  let delivered: Delivery | undefined;
-  const fixture = await setup({
-    destination: separate({
-      upload: () => {
-        calls++;
-        return Promise.resolve({ status: 'retry', code: 'remote_unavailable' });
-      },
-      deliver: (delivery) => {
-        delivered = delivery;
-        return Promise.resolve({ status: 'accepted' });
-      },
-    }),
-  });
-  try {
-    await fixture.tick();
-    await fixture.tick();
-    await fixture.restart();
-    await fixture.tick();
-    await fixture.tick();
-    expect(calls).toBe(maxAttempts);
-    expect(delivered?.deliverable.records[0]).toMatchObject({
-      data: {
-        file: { status: 'failed', code: 'remote_unavailable' },
-      },
-      content: { format: 'markdown', body: 'Attachment unavailable\n' },
-    });
-    expect(fixture.engine.api.status(alpha).queue.pendingRecords).toBe(0);
-  } finally {
-    await fixture.close();
-  }
-});
-
-test.each([
-  { mode: 'fetch', expectedReads: maxAttempts, code: 'asset_fetch_failed' },
-  { mode: 'oversized', expectedReads: 1, code: 'asset_too_large' },
-  { mode: 'provider_oversized', expectedReads: 1, code: 'asset_too_large' },
-])(
-  '$mode capture failures never enqueue partial content or lose the record',
-  async ({ mode, expectedReads, code }) => {
-    let delivered: Delivery | undefined;
-    let reads = 0;
-    const fixture = await setup({
-      maxAssetBytes: mode === 'oversized' ? 2 : assetByteLimit,
-      registration: source({
+test('later deliveries download again and unchanged records release all new captures', async () => {
+  let reads = 0;
+  let value = 1;
+  const received: Deliverable[] = [];
+  const f = await harness({
+    step: async ({ assets }) => {
+      const ref = await assets.capture({
+        ...metadata,
         read: () => {
           reads++;
-          if (mode === 'provider_oversized') {
-            return Promise.reject(new SourceHttpError({ status: 413 }));
-          }
-          return mode !== 'fetch'
-            ? Promise.resolve(new Blob(['too large']).stream())
-            : Promise.reject(new Error('Token must not leak'));
-        },
-      }),
-      destination: separate({
-        upload: () => {
-          throw new Error('Unavailable assets must not be uploaded');
-        },
-        deliver: (delivery) => {
-          delivered = delivery;
-          return Promise.resolve({ status: 'accepted' });
-        },
-      }),
-    });
-    try {
-      for (let tick = 0; tick < maxTicks; tick++) {
-        await fixture.tick();
-      }
-      expect(reads).toBe(expectedReads);
-      expect(delivered?.deliverable.records[0]).toMatchObject({
-        data: {
-          file: {
-            status: 'failed',
-            code,
-          },
+          return bytes();
         },
       });
-      expect(JSON.stringify(delivered)).not.toContain('Token must not leak');
-    } finally {
-      await fixture.close();
-    }
-  },
-);
-
-test('bundle adapters receive logical references and streams, with no requirement to return asset IDs', async () => {
-  let captured: Delivery | undefined;
-  const fixture = await setup({
+      return { ...page(ref), records: [{ ...record(ref), data: { value } }] };
+    },
     destination: {
-      configSchema: { type: 'object' },
-      acceptsAssets: true,
-      async deliver({ delivery, assets }) {
-        captured = delivery;
-        expect(
-          await new Response(await assets!.open(delivery.deliverable.assets![0]!)).arrayBuffer(),
-        ).toHaveProperty('byteLength', binaryBytes.length);
-        await expect(assets!.open({ id: 'foreign', version: '1' })).rejects.toMatchObject({
-          code: 'not_found',
-        });
-        return { status: 'accepted' };
+      ...accepted,
+      deliver: ({ deliverable }) => {
+        received.push(deliverable);
+        return Promise.resolve({ status: 'accepted' });
       },
     },
   });
   try {
-    await fixture.tick();
-    await fixture.tick();
-    expect(captured?.version).toBe(2);
-    expect(captured?.deliverable.records[0]).toMatchObject({
-      data: { file: 'open-sync-asset:first' },
-    });
-    expect(fixture.engine.api.status(beta).queue.pendingDeliveries).toBe(0);
+    await f.poll();
+    await f.poll();
+    expect(reads).toBe(2);
+    expect(received).toHaveLength(1);
+    expect(f.ledger().count).toBe(0);
+    value = 2;
+    await f.poll();
+    expect(reads).toBe(pollCount);
+    expect(received).toHaveLength(2);
+    expect(received[1]!.id).not.toBe(received[0]!.id);
+    expect(received[1]!.assets).toEqual(received[0]!.assets);
   } finally {
-    await fixture.close();
+    await f.close();
   }
 });
 
-test('placeholder protocol resolves repeated and distinct assets while preserving literal code and link formatting', () => {
-  const refs = { a: { id: 'first', version: '1' }, b: { id: 'second', version: '1' } };
-  const record = {
-    operation: 'upsert' as const,
-    kind: 'note',
-    id: '1',
-    eventId: 'event',
-    revision: 1,
-    contentHash: 'source',
-    assetRefs: refs,
-    content: {
-      format: 'markdown' as const,
-      body: '| File | Status |\n| --- | --- |\n| [first](open-sync-asset:a) | ~~pending~~ |\n\n- [x] Read the file',
+test('asset descriptor changes and unavailable-to-available recovery change the record hash', async () => {
+  let available = false;
+  let name = 'first.txt';
+  const received: Deliverable[] = [];
+  const f = await harness({
+    step: async ({ assets }) =>
+      page(
+        available
+          ? await assets.capture({ ...metadata, name, read: bytes })
+          : assets.unavailable({ ...metadata, name, code: 'not_exposed' }),
+      ),
+    destination: {
+      ...accepted,
+      deliver: ({ deliverable }) => {
+        received.push(deliverable);
+        return Promise.resolve({ status: 'accepted' });
+      },
     },
-    data: {
-      files: ['open-sync-asset:b', 'open-sync-asset:a', 'open-sync-asset:a'],
-      body: '[first][ref] ![second](open-sync-asset:b) `open-sync-asset:a`\n\n[ref]: open-sync-asset:a',
-    },
-  };
-  const resolved = resolveRecordAssets({
-    record,
-    assets: Object.values(refs).map((ref) => ({
-      ...ref,
-      name: ref.id,
-      mediaType: 'text/plain',
-      size: 1,
-      sha256: 'hash',
-    })),
-    outcomes: new Map([
-      [assetKey(refs.a), { status: 'accepted', reference: 'A' }],
-      [assetKey(refs.b), { status: 'accepted', reference: 'B' }],
-    ]),
-    rendering,
   });
-  expect(resolved).toMatchObject({ contentHash: 'source', data: { files: ['B', 'A', 'A'] } });
-  expect(resolved.operation === 'upsert' && resolved.data.body).toContain('`open-sync-asset:a`');
-  expect(resolved.operation === 'upsert' && resolved.content?.body).toMatch(/^\| File\s+\|/m);
-  expect(resolved.operation === 'upsert' && resolved.content?.body).toContain(
-    '[first](https://destination.example/files/A)',
-  );
-  expect(resolved.operation === 'upsert' && resolved.content?.body).toContain('~~pending~~');
-  expect(resolved.operation === 'upsert' && resolved.content?.body).toContain(
-    '* [x] Read the file',
-  );
-  expect(resolved.operation === 'upsert' && resolved.data.body).toBe(record.data.body);
-  expect(record.data.files).toEqual([
-    'open-sync-asset:b',
-    'open-sync-asset:a',
-    'open-sync-asset:a',
-  ]);
+  try {
+    await f.poll();
+    available = true;
+    await f.poll();
+    name = 'renamed.txt';
+    await f.poll();
+    await f.poll();
+    expect(received).toHaveLength(changedRevisions.length);
+    expect(received.map((d) => d.records[0]!.revision)).toEqual(changedRevisions);
+    expect(received[0]!.assets[0]).toHaveProperty('unavailable', 'not_exposed');
+    expect(received[1]!.assets[0]).toHaveProperty('size', 10);
+    expect(received[2]!.assets[0]).toHaveProperty('name', 'renamed.txt');
+  } finally {
+    await f.close();
+  }
 });
 
-test.each([
-  '[file][ref]\n\n> [ref]: open-sync-asset:a',
-  '[file][ref]\n\n- [ref]: open-sync-asset:a',
-  '[file][ref]\n\n[ref]: open-sync-asset:a\n[ref]: https://wrong.example/file',
-])(
-  'Markdown asset references follow nested definitions and first-definition precedence: %s',
-  (body) => {
-    const ref = { id: 'first', version: '1' };
-    const record = {
-      operation: 'upsert' as const,
-      kind: 'note',
-      id: '1',
-      eventId: 'event',
-      revision: 1,
-      contentHash: 'source',
-      assetRefs: { a: ref },
-      data: {},
-      content: { format: 'markdown' as const, body },
-    };
-    for (const outcome of [
-      { status: 'accepted' as const, reference: 'A' },
-      { status: 'failed' as const, code: 'unavailable' },
-    ]) {
-      const resolved = resolveRecordAssets({
-        record,
-        assets: [{ ...ref, name: 'file', mediaType: 'text/plain', size: 1, sha256: 'hash' }],
-        outcomes: new Map([[assetKey(ref), outcome]]),
-        rendering,
-      });
-      expect(resolved.operation === 'upsert' && resolved.content?.body).toContain(
-        outcome.status === 'accepted'
-          ? '[file](https://destination.example/files/A)'
-          : 'Attachment unavailable',
-      );
-      expect(resolved.operation === 'upsert' && resolved.content?.body).not.toContain(
-        'open-sync-asset:',
-      );
-    }
-  },
-);
-
-test('a failed step releases staged bytes and retries without advancing its checkpoint', async () => {
-  let reads = 0;
-  let failPage = true;
-  const original = source({
-    read: () => {
-      reads++;
-      return Promise.resolve(new Blob(['stable bytes']).stream());
-    },
-  });
-  const registration: SyncRegistration = {
-    ...original,
-    load: async () => {
-      const executable = await original.load();
+test('unrelated captures and reference ordering do not change records', async () => {
+  let reverse = false;
+  let otherName = 'other';
+  const received: Deliverable[] = [];
+  const f = await harness({
+    step: async ({ assets }) => {
+      const refs = [];
+      for (const id of reverse ? ['b', 'a'] : ['a', 'b']) {
+        refs.push(await assets.capture({ ...metadata, id, read: bytes }));
+      }
+      await assets.capture({ ...metadata, id: 'unused', name: otherName, read: bytes });
       return {
-        async step(context) {
-          const page = await executable.step(context);
-          if (failPage) {
-            throw new Error('Source interrupted after capture');
-          }
-          return page;
-        },
+        records: [
+          {
+            ...record(refs[0]!),
+            assetRefs: Object.fromEntries(refs.map((ref) => [ref.id, ref])),
+            data: {},
+          },
+        ],
+        checkpoint: 1,
+        complete: true,
       };
     },
-  };
-  const fixture = await setup({
-    registration,
-    destination: separate({
-      upload: () => Promise.resolve({ status: 'accepted', reference: '42' }),
-      deliver: () => Promise.resolve({ status: 'accepted' }),
-    }),
+    destination: {
+      ...accepted,
+      deliver: ({ deliverable }) => {
+        received.push(deliverable);
+        return Promise.resolve({ status: 'accepted' });
+      },
+    },
   });
   try {
-    await fixture.tick();
-    expect(
-      savedSync({ path: fixture.files.path, scope: { ...alpha, id: fixture.sync.id } }).checkpoint,
-    ).toBe(0);
-    expect(await readdir(`${fixture.files.path}.assets`)).toHaveLength(0);
-    await fixture.restart();
-    failPage = false;
-    await fixture.tick();
-    await fixture.tick();
-    expect(reads).toBe(2);
-    expect(fixture.engine.api.status(alpha).queue.pendingRecords).toBe(0);
+    await f.poll();
+    reverse = true;
+    otherName = 'changed unused descriptor';
+    await f.poll();
+    expect(received).toHaveLength(1);
+    expect(received[0]!.assets.map((a) => a.id)).toEqual(['a', 'b']);
+    expect(f.ledger().count).toBe(0);
   } finally {
-    await fixture.close();
+    await f.close();
   }
 });
 
-test('a slow destination does not hold delivery to another owner and destination', async () => {
-  const entered = Promise.withResolvers<void>();
-  const release = Promise.withResolvers<void>();
-  const otherDelivered = Promise.withResolvers<void>();
-  const fixture = await setup({
+test('concurrent captures shared by several records download once per step', async () => {
+  let reads = 0;
+  const f = await harness({
+    step: async ({ assets }) => {
+      const capture = {
+        ...metadata,
+        read: () => {
+          reads++;
+          return bytes();
+        },
+      };
+      const [left, right] = await Promise.all([assets.capture(capture), assets.capture(capture)]);
+      return {
+        records: [record(left), { ...record(right), id: 'second' }],
+        checkpoint: 1,
+        complete: true,
+      };
+    },
+  });
+  try {
+    await f.engine.tick();
+    expect(reads).toBe(1);
+    expect(f.ledger().count).toBe(1);
+    expect(f.engine.api.status(alpha).queue.pendingRecords).toBe(2);
+  } finally {
+    await f.close();
+  }
+});
+
+test('conflicting descriptors within one step fail atomically', async () => {
+  const f = await harness({
+    step: async ({ assets }) => {
+      await assets.capture({ ...metadata, read: bytes });
+      return page(await assets.capture({ ...metadata, name: 'conflict', read: bytes }));
+    },
+  });
+  try {
+    await f.engine.tick();
+    expect(f.saved.checkpoint).toBe(0);
+    expect(f.saved.status).toBe('asset_version_conflict');
+    expect(f.ledger().count).toBe(0);
+  } finally {
+    await f.close();
+  }
+});
+
+test('partial reads fail the whole step on every retry, never becoming an unavailable success', async () => {
+  let fail = true;
+  let reads = 0;
+  const f = await harness({
+    step: async ({ assets }) =>
+      page(
+        await assets.capture({
+          ...metadata,
+          read: () => {
+            reads++;
+            return Promise.resolve(
+              fail
+                ? new ReadableStream<Uint8Array>({
+                    start(c) {
+                      c.enqueue(new TextEncoder().encode('partial'));
+                    },
+                    pull() {
+                      throw new Error('network failed');
+                    },
+                  })
+                : new Blob(['complete']).stream(),
+            );
+          },
+        }),
+      ),
+  });
+  try {
+    const failures = 4;
+    for (let i = 0; i < failures; i++) {
+      f.engine.api.queueRun(f.scope);
+      await f.engine.tick();
+      expect(f.saved.checkpoint).toBe(0);
+      expect(f.engine.api.status(alpha).queue.pendingRecords).toBe(0);
+      expect(f.ledger().count).toBe(0);
+    }
+    await f.restart();
+    fail = false;
+    await f.poll();
+    expect(reads).toBe(failures + 1);
+    expect(f.saved.checkpoint).toBe(1);
+  } finally {
+    await f.close();
+  }
+});
+
+test('known unavailable assets remain explicit and have no stream', async () => {
+  let received = false;
+  const f = await harness({
+    step: ({ assets }) =>
+      Promise.resolve(page(assets.unavailable({ ...metadata, code: 'not_exposed' }))),
     destination: {
-      configSchema: { type: 'object' },
-      acceptsAssets: true,
-      async deliver({ scope, assets, delivery }) {
-        const bytes = await new Response(
-          await assets!.open(delivery.deliverable.assets![0]!),
-        ).text();
-        expect(bytes.length).toBeGreaterThan(0);
-        if (scope.ownerId === alpha.ownerId) {
-          entered.resolve();
-          await release.promise;
-        } else {
-          otherDelivered.resolve();
-        }
+      ...accepted,
+      async deliver({ deliverable }) {
+        expect(deliverable.assets[0]).toHaveProperty('unavailable', 'not_exposed');
+        await expect(deliverable.openAsset(metadata)).rejects.toThrow('asset content missing');
+        received = true;
         return { status: 'accepted' };
       },
     },
   });
-  let first: Promise<void> | undefined;
-  let second: Promise<void> | undefined;
   try {
-    await fixture.tick();
-    const target = { type: 'target', input: {} };
-    await fixture.engine.api.createSync({
-      ...beta,
-      definition: source().definition.id,
-      config: {},
-      destination: target,
-    });
-    fixture.engine.start();
-    first = fixture.tick();
-    await entered.promise;
-    second = fixture.tick();
-    await otherDelivered.promise;
-    expect(fixture.engine.api.status(alpha).queue.pendingRecords).toBe(1);
+    await f.poll();
+    expect(received).toBe(true);
+    expect(f.ledger().count).toBe(0);
   } finally {
-    release.resolve();
-    await Promise.all([first, second]);
-    await fixture.close();
+    await f.close();
+  }
+});
+
+test('cleanup failure retains the file reservation until unlink succeeds', async () => {
+  const f = await harness({
+    step: async ({ assets }) => page(await assets.capture({ ...metadata, read: bytes })),
+  });
+  let deletion: ReturnType<typeof spyOn> | undefined;
+  try {
+    await f.engine.tick();
+    deletion = spyOn(DirectoryAssets.prototype, 'remove').mockRejectedValue(
+      new Error('unlink failed'),
+    );
+    await expect(f.engine.tick()).rejects.toThrow('unlink failed');
+    expect(f.engine.api.status(alpha).queue.pendingRecords).toBe(0);
+    expect(f.ledger()).toEqual({ bytes: 10, count: 1 });
+    expect(await readdir(`${f.files.path}.assets`)).toHaveLength(1);
+    deletion.mockRestore();
+    deletion = undefined;
+    await f.engine.tick();
+    expect(f.ledger().count).toBe(0);
+  } finally {
+    deletion?.mockRestore();
+    await f.close();
+  }
+});
+
+test('stale acquisition generations cannot retain or queue old staged assets', () => {
+  const f = repositories();
+  try {
+    const lease = f.acquisition.claim(leaseMs)!;
+    const assets = new SqliteAssets({
+      db: f.db,
+      maxBytes: defaultLimits.maxPendingAssetBytes,
+      maxSyncBytes: defaultLimits.maxSyncAssetBytes,
+    });
+    const id = assets.stage({ lease, asset: metadata, unavailable: 'not_exposed' });
+    f.db.query('UPDATE runs SET generation=generation+1 WHERE id=?').run(lease.id);
+    expect(assets.garbage()).toEqual([id]);
+    expect(() => assets.reserve({ lease, id, bytes: 1 })).toThrow('lease lost');
+    const next = { ...lease, generation: lease.generation + 1 };
+    expect(() =>
+      f.acquisition.commit({
+        lease: next,
+        page: page(metadata),
+        definition: { ...fixture.definition, kinds: { item: { type: 'object' } } },
+      }),
+    ).toThrow('asset not captured');
+    expect(f.catalog.sync({ ...alpha, id: f.sync.id }).checkpoint).toBe(0);
+  } finally {
+    f.close();
+  }
+});
+
+test('asset streams are scoped to the queued delivery owner', async () => {
+  const f = await harness({
+    step: async ({ assets }) => page(await assets.capture({ ...metadata, read: bytes })),
+  });
+  try {
+    await f.engine.tick();
+    expect(f.engine.api.deliveries(beta).deliveries).toEqual([]);
+    const db = new Database(f.files.path);
+    try {
+      const { SqliteDeliveries } = await import('../src/repositories/delivery/sqlite');
+      const deliveries = new SqliteDeliveries(db);
+      const lease = deliveries.claim(leaseMs)!;
+      const assets = new SqliteAssets({ db, maxBytes: 100, maxSyncBytes: 100 });
+      expect(() => assets.read({ lease: { ...lease, ...beta }, asset: metadata })).toThrow(
+        'lease lost',
+      );
+    } finally {
+      db.close();
+    }
+  } finally {
+    await f.close();
+  }
+});
+
+test('a changed record retains only its own assets while unchanged sibling captures are deleted', async () => {
+  let changed = false;
+  let hold = false;
+  const received: Deliverable[] = [];
+  const f = await harness({
+    step: async ({ assets }) => {
+      const [left, right] = await Promise.all(
+        ['left', 'right'].map((id) => assets.capture({ ...metadata, id, read: bytes })),
+      );
+      return {
+        records: [
+          { ...record(left!), id: 'left', data: { value: changed ? 2 : 1 } },
+          { ...record(right!), id: 'right' },
+        ],
+        checkpoint: 1,
+        complete: true,
+      };
+    },
+    destination: {
+      ...accepted,
+      deliver: ({ deliverable }) => {
+        received.push(deliverable);
+        return Promise.resolve(
+          hold ? { status: 'rejected', code: 'hold' } : { status: 'accepted' },
+        );
+      },
+    },
+  });
+  try {
+    await f.poll();
+    changed = true;
+    hold = true;
+    await f.poll();
+    expect(received).toHaveLength(2);
+    expect(received[1]!.records.map((r) => r.id)).toEqual(['left']);
+    expect(received[1]!.assets.map((a) => a.id)).toEqual(['left']);
+    expect(f.ledger()).toEqual({ bytes: 10, count: 1 });
+    expect(await readdir(`${f.files.path}.assets`)).toHaveLength(1);
+  } finally {
+    await f.close();
   }
 });

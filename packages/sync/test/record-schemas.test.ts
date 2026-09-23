@@ -1,10 +1,10 @@
 import { expect, test } from 'bun:test';
 import type { SyncRegistration, SyncStep } from '../src/models/definition';
-import type { Delivery } from '../src/models/delivery';
+import type { Deliverable } from '../src/models/delivery';
 import { accepted, alpha, configure, fixture, runtime, savedSync } from './support';
 
 test('each record kind uses its own schema and an invalid kind leaves the whole page uncommitted', async () => {
-  const received: Delivery[] = [];
+  const received: Deliverable[] = [];
   let invalid = false;
   const registration: SyncRegistration = {
     definition: {
@@ -23,17 +23,15 @@ test('each record kind uses its own schema and an invalid kind leaves the whole 
       // biome-ignore lint/suspicious/useAwait: Trusted fixture implements the asynchronous source boundary.
       async step(): Promise<SyncStep> {
         return {
-          deliverable: {
-            records: [
-              { operation: 'upsert', kind: 'item', id: 'same-id', data: { value: 1 } },
-              {
-                operation: 'upsert',
-                kind: 'profile',
-                id: 'same-id',
-                data: invalid ? { active: 'wrong' } : { active: true },
-              },
-            ],
-          },
+          records: [
+            { operation: 'upsert', kind: 'item', id: 'same-id', data: { value: 1 } },
+            {
+              operation: 'upsert',
+              kind: 'profile',
+              id: 'same-id',
+              data: invalid ? { active: 'wrong' } : { active: true },
+            },
+          ],
           checkpoint: 1,
           complete: true,
         };
@@ -44,7 +42,7 @@ test('each record kind uses its own schema and an invalid kind leaves the whole 
     registration,
     destination: {
       ...accepted,
-      deliver: ({ delivery }) => {
+      deliver: ({ deliverable: delivery }) => {
         received.push(delivery);
         return Promise.resolve({ status: 'accepted' });
       },
@@ -64,7 +62,7 @@ test('each record kind uses its own schema and an invalid kind leaves the whole 
     f.engine.api.queueRun(resource);
     await f.engine.tick();
     await f.engine.tick();
-    expect(received[0]!.deliverable.records).toMatchObject([
+    expect(received[0]!.records).toMatchObject([
       { kind: 'item', data: { value: 1 } },
       { kind: 'profile', data: { active: true } },
     ]);

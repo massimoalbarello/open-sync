@@ -56,8 +56,6 @@ export function createSyncRuntime(options: SyncRuntimeOptions) {
       db,
       maxBytes: limits.maxPendingAssetBytes,
       maxSyncBytes: limits.maxSyncAssetBytes,
-      maxDeliveryBytes: Math.min(limits.maxPendingBytes, limits.maxSyncPendingBytes),
-      maxMaterializedBytes: limits.maxMaterializedBytes,
     });
     const files = new DirectoryAssets(options.assetDirectory ?? `${options.databasePath}.assets`);
     const log = safeLogger(options.onEvent);

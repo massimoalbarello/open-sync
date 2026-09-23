@@ -54,7 +54,7 @@ export const fixture: SyncRegistration = {
             ]
           : [];
       cursor = Math.min(cursor + 1, Number(config.count));
-      return { deliverable: { records }, checkpoint: cursor, complete: cursor === config.count };
+      return { records, checkpoint: cursor, complete: cursor === config.count };
     },
   }),
 };
@@ -63,9 +63,7 @@ export const accepted: DestinationType = {
   deliver: () => Promise.resolve({ status: 'accepted' }),
 };
 export const page = {
-  deliverable: {
-    records: [{ operation: 'upsert' as const, kind: 'item', id: 'first', data: { value: 1 } }],
-  },
+  records: [{ operation: 'upsert' as const, kind: 'item', id: 'first', data: { value: 1 } }],
   checkpoint: 1,
   complete: false,
 };

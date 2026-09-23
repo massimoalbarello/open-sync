@@ -1,10 +1,12 @@
 import type { Database } from 'bun:sqlite';
+import { assetKey, type DeliveryAsset } from '../../models/asset';
 import type { SyncDefinition, SyncStep } from '../../models/definition';
 import type { DeliveredRecord } from '../../models/delivery';
 import { fail } from '../../models/error';
 import { canonicalJson } from '../../models/json';
 import type { QueueLimits } from '../../models/limits';
 import { preparePage } from '../../models/page';
+import { capturedAssets } from '../assets/sqlite';
 import { hasQueueCapacity } from '../queue-usage';
 import type { AcquisitionRepository, RunLease } from './contract';
 import { assertRun, claimRun, finishRun } from './lease';
@@ -44,23 +46,17 @@ export class SqliteAcquisition implements AcquisitionRepository {
       if (input.definition.id !== sync.definition) {
         fail('definition_conflict');
       }
-      const records: DeliveredRecord[] = [];
-      for (const record of page.deliverable.records) {
-        const changed = writeRecord({ db, sync, record });
-        if (changed) {
-          records.push(changed);
-        }
-      }
-      enqueue({ db, sync, records, limits, assets: page.deliverable.assets });
+      const { records, assets } = changedRecords({ db, lease: input.lease, sync, page });
+      enqueue({ db, sync, records, limits, assets, lease: input.lease });
       db.query(
         'UPDATE syncs SET checkpoint=?,checkpoint_revision=checkpoint_revision+1 WHERE owner_id=? AND id=?',
       ).run(canonicalJson(page.checkpoint).json, sync.ownerId, sync.id);
       db.query(
         `UPDATE runs SET records_processed=records_processed+?,records_changed=records_changed+? WHERE owner_id=? AND id=?`,
-      ).run(page.deliverable.records.length, records.length, input.lease.ownerId, input.lease.id);
+      ).run(page.records.length, records.length, input.lease.ownerId, input.lease.id);
       db.query(`UPDATE polls SET records_processed=records_processed+?,records_changed=records_changed+?
         WHERE owner_id=? AND id=(SELECT poll_id FROM runs WHERE owner_id=? AND id=?)`).run(
-        page.deliverable.records.length,
+        page.records.length,
         records.length,
         input.lease.ownerId,
         input.lease.ownerId,
@@ -90,4 +86,29 @@ export class SqliteAcquisition implements AcquisitionRepository {
       })
       .immediate();
   }
+}
+
+function changedRecords(input: {
+  db: Database;
+  lease: RunLease;
+  sync: import('../../models/sync').Sync;
+  page: SyncStep;
+}) {
+  const records: DeliveredRecord[] = [];
+  const assets = new Map<string, DeliveryAsset>();
+  for (const record of input.page.records) {
+    const referenced = capturedAssets({
+      db: input.db,
+      lease: input.lease,
+      refs: record.operation === 'upsert' ? Object.values(record.assetRefs ?? {}) : [],
+    });
+    const changed = writeRecord({ db: input.db, sync: input.sync, record, assets: referenced });
+    if (changed) {
+      records.push(changed);
+      for (const asset of referenced) {
+        assets.set(assetKey(asset), asset);
+      }
+    }
+  }
+  return { records, assets: [...assets.values()] };
 }

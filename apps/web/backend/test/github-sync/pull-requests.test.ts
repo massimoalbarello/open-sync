@@ -80,9 +80,11 @@ test('GitHub resumes committed pages after restart, then polls only updates sinc
       createdAt: '2020-01-01T00:00:00.000Z',
       updatedAt: new Date(f.pulls[0]!.updatedAt).toISOString(),
     });
-    expect(
-      f.delivered.flatMap((batch) => batch.deliverable.records).map((record) => record.id),
-    ).toEqual(['a', 'b', 'c']);
+    expect(f.delivered.flatMap((batch) => batch.records).map((record) => record.id)).toEqual([
+      'a',
+      'b',
+      'c',
+    ]);
 
     // An unchanged next poll stops at the timestamp boundary without hydrating old PRs.
     const before = f.delivered.length;
@@ -108,7 +110,7 @@ test('GitHub resumes committed pages after restart, then polls only updates sinc
         .filter((request) => request.query.includes(summary))
         .map((request) => request.variables.id),
     ).toEqual(['a']);
-    expect(f.delivered.at(-1)!.deliverable.records).toMatchObject([
+    expect(f.delivered.at(-1)!.records).toMatchObject([
       { id: 'a', revision: 2, data: { body: 'Edited years later' } },
     ]);
 
@@ -238,7 +240,7 @@ test('an interrupted incremental poll retains its watermark and resumes the next
     });
     expect(
       f.delivered
-        .flatMap((batch) => batch.deliverable.records)
+        .flatMap((batch) => batch.records)
         .filter((record) => record.revision === 2)
         .map((record) => record.id),
     ).toEqual(['a', 'b', 'c']);
@@ -287,9 +289,10 @@ test('GitHub commits no partial page when a later record fails, then retries the
         .filter((request) => request.query.includes(summary))
         .map((request) => request.variables.id),
     ).toEqual(['a', 'b', 'c']);
-    expect(
-      f.delivered.map((batch) => batch.deliverable.records.map((record) => record.id)),
-    ).toEqual([['a', 'b'], ['c']]);
+    expect(f.delivered.map((batch) => batch.records.map((record) => record.id))).toEqual([
+      ['a', 'b'],
+      ['c'],
+    ]);
   } finally {
     await f.close();
   }
