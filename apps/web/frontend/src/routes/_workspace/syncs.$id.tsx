@@ -13,29 +13,18 @@ import {
   syncDetailOptions,
   syncKeys,
 } from '../../queries/sync';
-import { RunHistory } from './-syncs/run-history';
 import { SyncAccount } from './-syncs/sync-account';
 
 const millisecondsPerMinute = 60_000;
-type Section = 'overview' | 'history';
-const maxOffset = 1_000_000;
 export const Route = createFileRoute('/_workspace/syncs/$id')({
   component: SyncDetail,
-  validateSearch: (search: Record<string, unknown>): { section?: Section; offset?: number } => ({
-    section: search.section === 'history' ? search.section : 'overview',
-    offset:
-      Number.isSafeInteger(Number(search.offset)) && Number(search.offset) > 0
-        ? Math.min(maxOffset, Number(search.offset))
-        : 0,
-  }),
 });
 function SyncDetail() {
   const { userId } = Route.useRouteContext();
   const { id } = Route.useParams();
   const navigate = Route.useNavigate();
   const [confirmRemoval, setConfirmRemoval] = useState(false);
-  const { section = 'overview', offset = 0 } = Route.useSearch();
-  const query = useQuery(syncDetailOptions({ userId, id, offset }));
+  const query = useQuery(syncDetailOptions({ userId, id }));
   const catalog = useQuery(catalogOptions(userId));
   const client = useQueryClient();
   const invalidate = () => client.invalidateQueries({ queryKey: syncKeys.owner(userId) });
@@ -140,45 +129,23 @@ function SyncDetail() {
               Connect provider to start syncing
             </Link>
           )}
-          <nav aria-label="Sync sections" className="flex flex-wrap gap-6 border-border border-b">
-            {(['overview', 'history'] as const).map((entry) => (
-              <Link
-                key={entry}
-                to="/syncs/$id"
-                params={{ id }}
-                search={{ section: entry }}
-                aria-current={entry === section ? 'page' : undefined}
-                className={`border-b-2 pb-3 text-sm ${entry === section ? 'border-foreground font-medium' : 'border-transparent text-muted-foreground'}`}
-              >
-                {
-                  {
-                    overview: 'Overview',
-                    history: 'Run history',
-                  }[entry]
-                }
-              </Link>
-            ))}
-          </nav>
-          {section === 'overview' && (
-            <div className="max-w-2xl space-y-6">
-              <dl className="grid grid-cols-[auto_1fr] gap-x-8 gap-y-3 text-sm">
-                <dt className="text-muted-foreground">Sync interval</dt>
-                <dd>{sync.intervalMs / millisecondsPerMinute} minutes</dd>
-                <dt className="text-muted-foreground">Next scheduled run</dt>
-                <dd>{nextRun(sync)}</dd>
-              </dl>
-              <Link
-                to="/records"
-                search={{ syncId: sync.id }}
-                className="inline-block text-sm underline"
-              >
-                View records
-              </Link>
-            </div>
-          )}
-          {section === 'history' && query.data && (
-            <RunHistory id={id} offset={offset} history={query.data} />
-          )}
+          <div className="max-w-2xl space-y-6">
+            <dl className="grid grid-cols-[auto_1fr] gap-x-8 gap-y-3 text-sm">
+              <dt className="text-muted-foreground">Status</dt>
+              <dd>{sync.status.replaceAll('_', ' ')}</dd>
+              <dt className="text-muted-foreground">Sync interval</dt>
+              <dd>{sync.intervalMs / millisecondsPerMinute} minutes</dd>
+              <dt className="text-muted-foreground">Next scheduled run</dt>
+              <dd>{nextRun(sync)}</dd>
+            </dl>
+            <Link
+              to="/records"
+              search={{ syncId: sync.id }}
+              className="inline-block text-sm underline"
+            >
+              View records
+            </Link>
+          </div>
         </div>
       )}
     </SectionPage>

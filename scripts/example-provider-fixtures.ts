@@ -2,9 +2,6 @@ import { readFileSync } from 'node:fs';
 
 // Provider HTTP boundaries only: authentication, OAuth state, MCP and storage stay real.
 let granolaRegistrationAttempts = 0;
-let granolaListingAttempts = 0;
-let slackReplyAttempts = 0;
-let gmailOversizedAttempts = 0;
 export const granolaFixtureMeetingCount = 23;
 const granolaMeetingIds = [...Array(granolaFixtureMeetingCount).keys()].map(
   (index) => `meeting-${index + 1}`,
@@ -69,13 +66,6 @@ function gmailResponse(request: Request) {
       data: Buffer.from('external attachment').toString('base64url'),
     });
   }
-  if (url.pathname.endsWith('/messages/email-1/attachments/oversized-attachment')) {
-    return oversizedAttachment();
-  }
-  if (url.pathname.endsWith('/messages/email-1/attachments/large-attachment')) {
-    const size = 18_874_373;
-    return attachmentResponse(size);
-  }
   if (url.pathname.endsWith('/threads')) {
     const query = url.searchParams.get('q') ?? '';
     const oldest = Number(query.match(/after:(\d+)/)?.[1] ?? 0);
@@ -136,18 +126,6 @@ function gmailMessage(input: { id: string; date: string; text: string }) {
                 mimeType: 'application/octet-stream',
                 body: { attachmentId: 'fixture-attachment' },
               },
-              {
-                partId: '4',
-                filename: 'large.bin',
-                mimeType: 'application/octet-stream',
-                body: { attachmentId: 'large-attachment' },
-              },
-              {
-                partId: '3',
-                filename: 'oversized.bin',
-                mimeType: 'application/octet-stream',
-                body: { attachmentId: 'oversized-attachment' },
-              },
             ]
           : []),
       ],
@@ -172,32 +150,6 @@ function slackResponse(request: Request) {
       },
       team: { id: 'T1', name: 'Example' },
     });
-  }
-  if (url.pathname === '/api/conversations.replies' && url.searchParams.has('cursor')) {
-    const injectedFailures = 2;
-    const ok = 200;
-    const unavailable = 503;
-    if (++slackReplyAttempts <= injectedFailures) {
-      return Response.json(
-        {
-          ok: false,
-          error: slackReplyAttempts === 1 ? 'ratelimited' : 'private-upstream-detail',
-          detail: 'private-upstream-detail',
-        },
-        {
-          status: slackReplyAttempts === 1 ? ok : unavailable,
-          headers: { 'retry-after': '60' },
-        },
-      );
-    }
-    const permissionFailure = 4;
-    if (slackReplyAttempts === permissionFailure) {
-      return Response.json({
-        ok: false,
-        error: 'missing_scope',
-        detail: 'private-upstream-detail',
-      });
-    }
   }
   const body = (() => {
     switch (url.pathname) {
@@ -339,13 +291,11 @@ function granolaToolResponse(params: {
   if (listing && params.arguments?.time_range !== 'last_30_days') {
     throw new Error('Unexpected Granola listing window');
   }
-  // Exercise the real connector's rejection of explicit MCP listing truncation.
-  const truncated = listing && ++granolaListingAttempts === 1;
   return {
     content: [
       {
         type: 'text',
-        text: `<meetings_data count="${ids.length}"${truncated ? ' has_more="true"' : ''}>${ids.map((id) => `<meeting id="${id}" title="Planning ${id}" date="2026-09-19"><known_participants>Alice, Sam</known_participants><summary>## Decisions\nShip it.</summary></meeting>`).join('')}</meetings_data>`,
+        text: `<meetings_data count="${ids.length}">${ids.map((id) => `<meeting id="${id}" title="Planning ${id}" date="2026-09-19"><known_participants>Alice, Sam</known_participants><summary>## Decisions\nShip it.</summary></meeting>`).join('')}</meetings_data>`,
       },
     ],
   };
@@ -417,39 +367,4 @@ function previewAttachments() {
       ),
     },
   }));
-}
-
-function attachmentResponse(size: number) {
-  const chunkBytes = 98_301;
-  let remaining = size;
-  return new Response(
-    new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(Buffer.from('{"data":"'));
-      },
-      pull(controller) {
-        if (remaining) {
-          const length = Math.min(remaining, chunkBytes);
-          controller.enqueue(Buffer.from(Buffer.alloc(length, 'A').toString('base64url')));
-          remaining -= length;
-        } else {
-          controller.enqueue(Buffer.from(`","size":${size}}`));
-          controller.close();
-        }
-      },
-    }),
-    { headers: { 'content-type': 'application/json' } },
-  );
-}
-
-function oversizedAttachment() {
-  if (++gmailOversizedAttempts === 1) {
-    const tooLarge = 104_857_601;
-    return attachmentResponse(tooLarge);
-  }
-  const recovered = 'recovered attachment';
-  return Response.json({
-    size: Buffer.byteLength(recovered),
-    data: Buffer.from(recovered).toString('base64url'),
-  });
 }

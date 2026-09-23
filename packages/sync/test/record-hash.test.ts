@@ -1,109 +1,47 @@
 import { expect, test } from 'bun:test';
-import type { Deliverable } from '../src/models/delivery';
 import type { SyncRecord } from '../src/models/record';
-import { accepted, alpha, configure, fixture, runtime } from './support';
+import { writeRecord } from '../src/repositories/acquisition/records';
+import { page, repositories } from './support';
 
-test('every record uses one hash shape, including opaque data resembling the old hash envelope', async () => {
-  const base = { operation: 'upsert' as const, kind: 'item', id: 'one' };
-  let record: SyncRecord = {
-    ...base,
-    data: { data: { value: 1 }, assetRefs: {}, markdownFields: [] },
-  };
-  const received: Deliverable[] = [];
-  const f = runtime({
-    registration: {
-      definition: { ...fixture.definition, kinds: { item: { type: 'object' } } },
-      load: () => ({
-        step: () => Promise.resolve({ records: [record], checkpoint: 1, complete: true }),
-      }),
-    },
-    destination: {
-      ...accepted,
-      deliver: ({ deliverable: delivery }) => {
-        received.push(delivery);
-        return Promise.resolve({ status: 'accepted' });
-      },
-    },
-  });
+test.each([
+  { data: { value: 2 } },
+  { content: { format: 'markdown' as const, body: '# New content' } },
+  { preview: 'New preview' },
+  { createdAt: '2020-01-01T00:00:00.000Z' },
+  { updatedAt: '2020-01-02T00:00:00.000Z' },
+  { assetRefs: { file: { id: 'attachment', version: '2' } } },
+] as const)(
+  '%j changes and removals advance revisions; repeated records deduplicate',
+  (changed) => {
+    const f = repositories();
+    const save = (record: SyncRecord) =>
+      writeRecord({ db: f.db, sync: f.sync, record, assets: [], force: false });
+    try {
+      const original = page.records[0]!;
+      const updated = { ...original, ...changed };
+      expect(save(original)?.revision).toBe(1);
+      expect(save(updated)).toEqual({ ...updated, revision: 2 });
+      expect(save(updated)).toBeUndefined();
+      const finalRevision = 3;
+      expect(save(original)).toEqual({ ...original, revision: finalRevision });
+    } finally {
+      f.close();
+    }
+  },
+);
+
+test('opaque data cannot collide with the hash envelope and absent references normalize consistently', () => {
+  const f = repositories();
+  const save = (record: SyncRecord) =>
+    writeRecord({ db: f.db, sync: f.sync, record, assets: [], force: false });
   try {
-    const sync = await configure(f.engine);
-    const run = async () => {
-      f.engine.api.runNow({ ...alpha, id: sync.id });
-      await f.engine.tick();
-      await f.engine.tick();
-    };
-    await run();
-    record = { ...base, data: { value: 1 }, assetRefs: {} };
-    await run();
-    expect(received).toHaveLength(2);
-    expect(received.map((delivery) => delivery.records[0]!.revision)).toEqual([1, 2]);
-    record = { data: { value: 1 }, ...base };
-    await run();
-    expect(received).toHaveLength(2);
+    const original = page.records[0]!;
+    save({ ...original, data: { data: original.data, assetRefs: {}, markdownFields: [] } });
+    expect(save({ ...original, assetRefs: {} })?.revision).toBe(2);
+    expect(
+      save({ data: original.data, id: original.id, kind: original.kind, operation: 'upsert' }),
+    ).toBeUndefined();
   } finally {
-    await f.close();
-  }
-});
-
-test('an asset content identity change redelivers its otherwise unchanged record', async () => {
-  let version = 'first-content';
-  const received: Deliverable[] = [];
-  const f = runtime({
-    registration: {
-      ...fixture,
-      load: () => ({
-        step: ({ assets }) =>
-          Promise.resolve({
-            records: [
-              {
-                operation: 'upsert',
-                kind: 'item',
-                id: 'one',
-                data: { value: 1 },
-                assetRefs: {
-                  file: assets.unavailable({
-                    id: 'attachment',
-                    version,
-                    name: 'attachment',
-                    mediaType: 'application/octet-stream',
-                    code: 'external_file',
-                  }),
-                },
-              },
-            ],
-            checkpoint: 1,
-            complete: true,
-          }),
-      }),
-    },
-    destination: {
-      ...accepted,
-
-      deliver: ({ deliverable: delivery }) => {
-        received.push(delivery);
-        return Promise.resolve({ status: 'accepted' });
-      },
-    },
-  });
-  try {
-    const sync = await configure(f.engine);
-    const run = async () => {
-      f.engine.api.runNow({ ...alpha, id: sync.id });
-      await f.engine.tick();
-      await f.engine.tick();
-    };
-    await run();
-    version = 'changed-content';
-    await run();
-    await run();
-    expect(received).toHaveLength(2);
-    expect(received[1]!.records[0]).toMatchObject({
-      revision: 2,
-      data: { value: 1 },
-      assetRefs: { file: { id: 'attachment', version } },
-    });
-    expect(received[1]!.assets).toMatchObject([{ id: 'attachment', version }]);
-  } finally {
-    await f.close();
+    f.close();
   }
 });

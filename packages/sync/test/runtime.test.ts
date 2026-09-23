@@ -209,11 +209,7 @@ test('shutdown aborts trusted execution, cancels the step, and leaves a resumabl
           scope: { ...alpha, id: restarted.api.syncs(alpha)[0]!.id },
         }).checkpoint,
       ).toBe(1);
-      const sync = restarted.api.syncs(alpha)[0]!;
-      expect(restarted.api.runs({ ...alpha, id: sync.id }).runs[0]).toMatchObject({
-        state: 'interrupted',
-        recordsProcessed: 1,
-      });
+      expect(restarted.api.syncs(alpha)[0]!.status).toBe('interrupted');
     } finally {
       await restarted.close();
     }

@@ -44,12 +44,6 @@ export class SyncManagement {
     this.guard(scope);
     return this.input.registry.destinationTypes();
   }
-  runs(input: Resource & { offset?: number }) {
-    this.guard(input);
-    const offset = input.offset ?? 0;
-    positive(offset + 1);
-    return this.input.catalog.runs({ ...input, offset });
-  }
   private async prepareDestination(input: Scope & { destination: CreateSync['destination'] }) {
     const scope = { actorId: input.actorId, ownerId: input.ownerId };
     const type = this.input.registry.destination(input.destination.type);

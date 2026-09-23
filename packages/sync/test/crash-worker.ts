@@ -8,7 +8,7 @@ import { alpha, fixture, page } from './support';
 
 const db = openDatabase(join(process.argv[2]!, 'sync.db'));
 const catalog = new SqliteCatalog(db);
-const acquisition = new SqliteAcquisition({ db, limits: defaultLimits, historyLimit: 1 });
+const acquisition = new SqliteAcquisition({ db, limits: defaultLimits });
 const deliveries = new SqliteDeliveries(db);
 const leaseMs = 60_000;
 

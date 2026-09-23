@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 import { enableVirtualPasskey } from './auth';
-export async function virtualPasskeyBrowser(input: { headless: boolean }) {
+export async function virtualPasskeyBrowser(input: { headless: boolean; timezoneId?: string }) {
   const browser = await chromium.launch({
     headless: input.headless,
     handleSIGINT: false,
@@ -9,6 +9,7 @@ export async function virtualPasskeyBrowser(input: { headless: boolean }) {
   try {
     const context = await browser.newContext({
       viewport: input.headless ? { width: 1280, height: 720 } : null,
+      timezoneId: input.timezoneId,
     });
     const page = await context.newPage();
     await enableVirtualPasskey(page);

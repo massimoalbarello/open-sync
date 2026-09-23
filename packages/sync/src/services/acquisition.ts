@@ -8,7 +8,7 @@ import { retryDelay, type Timing } from '../models/limits';
 import type { Registry } from '../models/registry';
 import { retryableStatus } from '../models/source-http-error';
 import { identifier } from '../models/validation';
-import type { AcquisitionRepository, RunLease } from '../repositories/acquisition/contract';
+import type { AcquisitionLease, AcquisitionRepository } from '../repositories/acquisition/contract';
 import type { AssetFiles, AssetRepository } from '../repositories/assets/contract';
 
 export class AcquisitionService {
@@ -33,11 +33,11 @@ export class AcquisitionService {
   claim() {
     return this.input.repository.claim(this.input.timing.leaseMs);
   }
-  async execute(input: { lease: RunLease; signal: AbortSignal }): Promise<void> {
+  async execute(input: { lease: AcquisitionLease; signal: AbortSignal }): Promise<void> {
     const { repository, timing } = this.input;
     const { lease } = input;
     try {
-      if (!repository.hasCapacity(lease)) {
+      if (!repository.hasCapacity()) {
         this.finish({ lease, state: 'waiting_for_capacity', delay: timing.retryMs });
         return;
       }
@@ -46,7 +46,7 @@ export class AcquisitionService {
       this.failed({ ...input, error });
     }
   }
-  private failed(input: { lease: RunLease; signal: AbortSignal; error: unknown }): void {
+  private failed(input: { lease: AcquisitionLease; signal: AbortSignal; error: unknown }): void {
     const { timing, log } = this.input;
     const { lease, signal, error } = input;
     const code = signal.aborted
@@ -86,7 +86,7 @@ export class AcquisitionService {
       pause,
     });
   }
-  private async consume(input: { lease: RunLease; signal: AbortSignal }): Promise<void> {
+  private async consume(input: { lease: AcquisitionLease; signal: AbortSignal }): Promise<void> {
     const { repository, registry } = this.input;
     const { lease, signal } = input;
     const entry = registry.definition(lease.sync.definition);
@@ -146,7 +146,7 @@ function abortCode(signal: AbortSignal): string {
 function sourceAssets(input: {
   repository: AssetRepository;
   files: AssetFiles;
-  lease: RunLease;
+  lease: AcquisitionLease;
   signal: AbortSignal;
   maxBytes: number;
 }): SourceAssets {

@@ -41,7 +41,6 @@ test('a waiting sync survives restart, cannot run unbound and accepts its first 
     await expect(engine.api.createSync(create)).rejects.toThrow('connection required');
     const waiting = await engine.api.createSync({ ...create, enabled: false });
     await engine.tick();
-    expect(engine.api.runs({ ...alpha, id: waiting.id }).runs).toHaveLength(0);
     await engine.close();
     engine = createSyncRuntime(options);
     const id = waiting.id;

@@ -8,15 +8,13 @@ import type { QueueLimits } from '../../models/limits';
 import { preparePage } from '../../models/page';
 import { capturedAssets } from '../assets/sqlite';
 import { hasQueueCapacity } from '../queue-usage';
-import type { AcquisitionRepository, RunLease } from './contract';
-import { assertRun, claimRun, finishRun } from './lease';
+import type { AcquisitionLease, AcquisitionRepository } from './contract';
+import { assertAcquisition, claimAcquisition, finishAcquisition } from './lease';
 import { enqueue } from './outbox';
 import { writeRecord } from './records';
 
 export class SqliteAcquisition implements AcquisitionRepository {
-  constructor(
-    private readonly input: { db: Database; limits: QueueLimits; historyLimit: number },
-  ) {}
+  constructor(private readonly input: { db: Database; limits: QueueLimits }) {}
   capacityReleased(): void {
     this.input.db
       .query("UPDATE syncs SET next_due_at=? WHERE enabled=1 AND status='waiting_for_capacity'")
@@ -26,23 +24,21 @@ export class SqliteAcquisition implements AcquisitionRepository {
     return (
       this.input.db
         .query<{ due: number | null }, []>(`
-      SELECT MIN(COALESCE((SELECT expires_at FROM sync_runs r WHERE r.owner_id=i.owner_id
-      AND r.sync_id=i.id AND r.state='running'), i.next_due_at)) AS due
-      FROM syncs i WHERE enabled=1`)
+      SELECT MIN(COALESCE(expires_at,next_due_at)) AS due FROM syncs WHERE enabled=1`)
         .get()?.due ?? undefined
     );
   }
   claim(leaseMs: number) {
-    return claimRun({ ...this.input, leaseMs });
+    return claimAcquisition({ ...this.input, leaseMs });
   }
-  hasCapacity(lease?: RunLease) {
-    return hasQueueCapacity({ ...this.input, sync: lease?.sync });
+  hasCapacity() {
+    return hasQueueCapacity(this.input);
   }
-  commit(input: { lease: RunLease; page: SyncStep; definition: SyncDefinition }): void {
+  commit(input: { lease: AcquisitionLease; page: SyncStep; definition: SyncDefinition }): void {
     const { db, limits } = this.input;
     const page = preparePage({ ...input, limits });
     db.transaction(() => {
-      const sync = assertRun({ db, lease: input.lease });
+      const sync = assertAcquisition({ db, lease: input.lease });
       if (input.definition.id !== sync.definition) {
         fail('definition_conflict');
       }
@@ -53,10 +49,7 @@ export class SqliteAcquisition implements AcquisitionRepository {
         sync.ownerId,
         sync.id,
       );
-      db.query(
-        `UPDATE sync_runs SET records_processed=records_processed+?,records_queued=records_queued+? WHERE owner_id=? AND id=?`,
-      ).run(page.records.length, records.length, input.lease.ownerId, input.lease.id);
-      finishRun({
+      finishAcquisition({
         db,
         lease: input.lease,
         state: page.complete ? 'succeeded' : 'ready',
@@ -68,8 +61,8 @@ export class SqliteAcquisition implements AcquisitionRepository {
   finish(input: Parameters<AcquisitionRepository['finish']>[0]): void {
     this.input.db
       .transaction(() => {
-        assertRun({ db: this.input.db, lease: input.lease });
-        finishRun({ db: this.input.db, ...input });
+        assertAcquisition({ db: this.input.db, lease: input.lease });
+        finishAcquisition({ db: this.input.db, ...input });
       })
       .immediate();
   }
@@ -77,7 +70,7 @@ export class SqliteAcquisition implements AcquisitionRepository {
 
 function changedRecords(input: {
   db: Database;
-  lease: RunLease;
+  lease: AcquisitionLease;
   sync: import('../../models/sync').Sync;
   page: SyncStep;
 }) {

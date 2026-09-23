@@ -33,20 +33,6 @@ export type SyncStatus =
   | 'disabled'
   | 'succeeded'
   | 'interrupted';
-export type RunState = Exclude<SyncStatus, 'disabled'> | 'paused' | 'cancelled';
-export type RunMode = 'incremental' | 'resync';
-
-export interface SyncRun {
-  id: string;
-  mode: RunMode;
-  state: RunState;
-  errorCode: string | null;
-  startedAt: number;
-  completedAt: number | null;
-  recordsProcessed: number;
-  recordsQueued: number;
-}
-
 /** Host-visible status; configuration, checkpoints and execution fencing remain private. */
 export interface SyncSummary {
   id: string;

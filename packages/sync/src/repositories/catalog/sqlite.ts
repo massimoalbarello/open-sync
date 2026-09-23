@@ -6,7 +6,6 @@ import { canonicalJson, type JsonObject, type JsonValue } from '../../models/jso
 import type { CreateSync } from '../../models/sync';
 import { readSync } from '../rows';
 import type { CatalogRepository } from './contract';
-import { readRuns } from './history';
 
 const defaultIntervalMs = 60_000;
 
@@ -47,10 +46,6 @@ export class SqliteCatalog implements CatalogRepository {
       .all(scope.ownerId)
       .map(({ id }) => this.sync({ ...scope, id }));
   }
-  runs(input: Resource & { offset: number }) {
-    this.sync(input);
-    return readRuns({ db: this.db, scope: input });
-  }
   connectSync(input: Resource & { connection: ConnectionRef }) {
     return this.db
       .transaction(() => {
@@ -75,7 +70,7 @@ export class SqliteCatalog implements CatalogRepository {
         }
         this.db
           .query(
-            `UPDATE syncs SET enabled=?,status=?,error_code=NULL,next_due_at=? WHERE owner_id=? AND id=?`,
+            `UPDATE syncs SET enabled=?,status=?,error_code=NULL,next_due_at=?,generation=generation+1,expires_at=NULL WHERE owner_id=? AND id=?`,
           )
           .run(
             Number(input.enabled),
@@ -84,10 +79,6 @@ export class SqliteCatalog implements CatalogRepository {
             input.ownerId,
             input.id,
           );
-        this.db
-          .query(`UPDATE sync_runs SET state=?,generation=generation+1,expires_at=NULL,error_code=NULL
-        WHERE owner_id=? AND sync_id=? AND completed_at IS NULL`)
-          .run(input.enabled ? 'ready' : 'paused', input.ownerId, input.id);
         return this.sync(input);
       })
       .immediate();
@@ -100,9 +91,7 @@ export class SqliteCatalog implements CatalogRepository {
         }
         if (
           this.db
-            .query(
-              `SELECT 1 FROM sync_runs WHERE owner_id=? AND sync_id=? AND state='running' AND expires_at>?`,
-            )
+            .query(`SELECT 1 FROM syncs WHERE owner_id=? AND id=? AND expires_at>?`)
             .get(input.ownerId, input.id, Date.now())
         ) {
           fail('busy');
@@ -120,19 +109,10 @@ export class SqliteCatalog implements CatalogRepository {
           fail('disabled');
         }
         this.db
-          .query(`UPDATE sync_runs SET state='cancelled',completed_at=?,expires_at=NULL
-        WHERE owner_id=? AND sync_id=? AND completed_at IS NULL`)
-          .run(Date.now(), input.ownerId, input.id);
-        this.db
           .query(
-            `UPDATE syncs SET checkpoint=?,status='ready',error_code=NULL,next_due_at=? WHERE owner_id=? AND id=?`,
+            `UPDATE syncs SET checkpoint=?,status='ready',error_code=NULL,next_due_at=?,resync=1,failure_count=0,generation=generation+1,expires_at=NULL WHERE owner_id=? AND id=?`,
           )
           .run(canonicalJson(input.checkpoint).json, Date.now(), input.ownerId, input.id);
-        this.db
-          .query(
-            `INSERT INTO sync_runs(owner_id,id,sync_id,mode,state,started_at) VALUES (?,?,?,'resync','ready',?)`,
-          )
-          .run(input.ownerId, `run_${crypto.randomUUID()}`, input.id, Date.now());
       })
       .immediate();
   }
@@ -145,9 +125,6 @@ export class SqliteCatalog implements CatalogRepository {
           .run(input.ownerId, input.id);
         this.db
           .query('DELETE FROM record_state WHERE owner_id=? AND sync_id=?')
-          .run(input.ownerId, input.id);
-        this.db
-          .query('DELETE FROM sync_runs WHERE owner_id=? AND sync_id=?')
           .run(input.ownerId, input.id);
         this.db.query('DELETE FROM syncs WHERE owner_id=? AND id=?').run(input.ownerId, input.id);
         this.db

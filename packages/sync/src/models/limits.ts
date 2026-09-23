@@ -1,9 +1,6 @@
 import { fail } from './error';
 export interface QueueLimits {
   maxPendingBytes: number;
-  maxSyncPendingBytes: number;
-  maxSyncPendingRecords: number;
-  maxSyncAssetBytes: number;
   maxPendingRecords: number;
   maxPageBytes: number;
   maxPageRecords: number;
@@ -13,9 +10,6 @@ export interface QueueLimits {
 }
 export const defaultLimits: QueueLimits = {
   maxPendingBytes: 67_108_864,
-  maxSyncPendingBytes: 16_777_216,
-  maxSyncPendingRecords: 25_000,
-  maxSyncAssetBytes: 268_435_456,
   maxPendingRecords: 100_000,
   maxPageBytes: 1_048_576,
   maxPageRecords: 1000,
@@ -27,7 +21,6 @@ export const defaultTiming = {
   leaseMs: 60_000,
   timeoutMs: 30_000,
   retryMs: 30_000,
-  historyLimit: 1000,
   sourceConcurrency: 4,
   deliveryConcurrency: 4,
 };

@@ -8,51 +8,31 @@ const leaseMs = 60_000;
 const createdAt = '2020-01-01T00:00:00.000Z';
 const updatedAt = '2020-01-02T00:00:00.000Z';
 
-test.each([false, true])(
-  'record metadata changes advance revisions while equivalent polls deduplicate (content: %s)',
-  (withContent) => {
-    const f = repositories();
-    try {
-      let revision = 0;
-      const content = { format: 'markdown' as const, body: '# Note' };
-      const original = { ...page.records[0]!, ...(withContent ? { content } : {}) };
-      for (const metadata of [
-        {},
-        { preview: 'First preview' },
-        { preview: 'Changed preview' },
-        { preview: 'Changed preview', createdAt },
-        { preview: 'Changed preview', createdAt, updatedAt },
-        {},
-      ]) {
-        const output = { ...page, records: [{ ...original, ...metadata }] };
-        f.acquisition.commit({
-          lease: f.acquisition.claim(leaseMs)!,
-          page: output,
-          definition: fixture.definition,
-        });
-        const delivery = f.deliveries.claim(leaseMs)!;
-        const record = delivery.delivery.records[0]!;
-        expect(record).toMatchObject({ ...metadata, revision: ++revision });
-        f.deliveries.complete({ lease: delivery, result: { status: 'accepted' }, delay: 0 });
-        // UTC normalization happens before hashing, including timezone and whitespace differences.
-        const equivalent = {
-          ...original,
-          ...metadata,
-          ...(metadata.createdAt ? { createdAt: '2020-01-01T01:00:00+01:00' } : {}),
-          ...(metadata.preview ? { preview: `  ${metadata.preview.replace(' ', '\n')}  ` } : {}),
-        };
-        f.acquisition.commit({
-          lease: f.acquisition.claim(leaseMs)!,
-          page: { ...page, records: [equivalent] },
-          definition: fixture.definition,
-        });
-        expect(f.deliveries.status(alpha).pendingRecords).toBe(0);
-      }
-    } finally {
-      f.close();
+test('equivalent timestamp and preview representations deduplicate before hashing', () => {
+  const f = repositories();
+  try {
+    for (const metadata of [
+      { preview: 'First preview', createdAt, updatedAt },
+      { preview: '  First\npreview  ', createdAt: '2020-01-01T01:00:00+01:00', updatedAt },
+    ]) {
+      f.acquisition.commit({
+        lease: f.acquisition.claim(leaseMs)!,
+        page: { ...page, records: [{ ...page.records[0]!, ...metadata }] },
+        definition: fixture.definition,
+      });
     }
-  },
-);
+    const delivery = f.deliveries.claim(leaseMs)!;
+    expect(delivery.delivery.records[0]).toMatchObject({
+      preview: 'First preview',
+      createdAt,
+      updatedAt,
+      revision: 1,
+    });
+    expect(f.deliveries.status(alpha).pendingRecords).toBe(1);
+  } finally {
+    f.close();
+  }
+});
 
 test('preview normalization keeps a bounded single line without splitting Unicode characters', () => {
   const maxCharacters = 200;

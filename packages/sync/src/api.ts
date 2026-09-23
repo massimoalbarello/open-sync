@@ -6,7 +6,6 @@ export type SyncApi = Pick<
   SyncManagement,
   | 'definitions'
   | 'destinationTypes'
-  | 'runs'
   | 'createSync'
   | 'connectSync'
   | 'syncs'
@@ -28,7 +27,6 @@ export function syncApi(service: SyncManagement): SyncApi {
   return {
     definitions: service.definitions.bind(service),
     destinationTypes: service.destinationTypes.bind(service),
-    runs: service.runs.bind(service),
     createSync: service.createSync.bind(service),
     connectSync: service.connectSync.bind(service),
     syncs: service.syncs.bind(service),

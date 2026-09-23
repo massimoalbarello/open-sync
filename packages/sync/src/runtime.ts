@@ -55,14 +55,13 @@ export function createSyncRuntime(options: SyncRuntimeOptions) {
     const assets = new SqliteAssets({
       db,
       maxBytes: limits.maxPendingAssetBytes,
-      maxSyncBytes: limits.maxSyncAssetBytes,
     });
     const files = new DirectoryAssets(options.assetDirectory ?? `${options.databasePath}.assets`);
     const log = safeLogger(options.onEvent);
     let recoverFiles = true;
     const worker = new Worker({
       acquisition: new AcquisitionService({
-        repository: new SqliteAcquisition({ db, limits, historyLimit: timing.historyLimit }),
+        repository: new SqliteAcquisition({ db, limits }),
         registry,
         assets,
         files,

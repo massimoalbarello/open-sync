@@ -8,60 +8,6 @@ import { accepted, alpha, fixture, page, repositories, savedSync, storage } from
 
 const leaseMs = 60_000;
 
-test('a full sync pauses without consuming the budget of a healthy sync at the same destination', async () => {
-  const files = storage();
-  let blockedSource = '';
-  const received: string[] = [];
-  const engine = createSyncRuntime({
-    databasePath: files.path,
-    definitions: [fixture],
-    limits: { maxSyncPendingRecords: 2, maxPendingRecords: 5 },
-    destinationTypes: {
-      local: {
-        ...accepted,
-        deliver: ({ deliverable: delivery }) => {
-          if (delivery.syncId === blockedSource) {
-            return Promise.resolve({ status: 'rejected', code: 'blocked' });
-          }
-          received.push(delivery.syncId);
-          return Promise.resolve({ status: 'accepted' });
-        },
-      },
-    },
-  });
-  try {
-    const destination = { type: 'local', input: {} };
-    const blocked = await engine.api.createSync({
-      ...alpha,
-      definition: fixture.definition.id,
-      config: { count: 5 },
-      destination,
-    });
-    blockedSource = blocked.id;
-    const healthy = await engine.api.createSync({
-      ...alpha,
-      definition: fixture.definition.id,
-      config: { count: 5 },
-      destination,
-    });
-    const rounds = 8;
-    for (let i = 0; i < rounds; i++) {
-      await engine.tick();
-    }
-    expect(savedSync({ path: files.path, scope: { ...alpha, id: blocked.id } })).toMatchObject({
-      checkpoint: 2,
-      status: 'waiting_for_capacity',
-    });
-    expect(engine.api.sync({ ...alpha, id: healthy.id }).status).toBe('succeeded');
-    const expectedRecords = 5;
-    expect(received).toHaveLength(expectedRecords);
-    expect(engine.api.status(alpha).queue.pendingRecords).toBe(2);
-  } finally {
-    await engine.close();
-    files.close();
-  }
-});
-
 test('concurrent steps cannot overcommit the global record budget or advance rejected progress', () => {
   const f = repositories({ maxPendingRecords: 1 });
   try {
@@ -92,7 +38,6 @@ test('download reservations account for other in-flight downloads and survive re
   const f = repositories();
   const limits = {
     maxBytes: 8,
-    maxSyncBytes: 6,
   };
   try {
     const first = f.acquisition.claim(leaseMs)!;
@@ -130,8 +75,8 @@ test('download reservations account for other in-flight downloads and survive re
         'waiting for capacity',
       );
       restored.discarded(left);
-      restored.reserve({ lease: second, id: right, bytes: 6 });
-      expect(() => restored.reserve({ lease: second, id: right, bytes: 7 })).toThrow(
+      restored.reserve({ lease: second, id: right, bytes: 8 });
+      expect(() => restored.reserve({ lease: second, id: right, bytes: 9 })).toThrow(
         'step exceeds asset capacity',
       );
     } finally {
@@ -177,7 +122,7 @@ test('a step larger than its budget preserves pending assets and resumes after c
       },
     },
   };
-  let engine = createSyncRuntime({ ...options, limits: { maxSyncAssetBytes: 2 } });
+  let engine = createSyncRuntime({ ...options, limits: { maxPendingAssetBytes: 2 } });
   try {
     const destination = { type: 'local', input: {} };
     const sync = await engine.api.createSync({
