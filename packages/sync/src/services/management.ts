@@ -44,12 +44,6 @@ export class SyncManagement {
     this.guard(scope);
     return this.input.registry.destinationTypes();
   }
-  runs(input: Resource & { offset?: number }) {
-    this.guard(input);
-    const offset = input.offset ?? 0;
-    positive(offset + 1);
-    return this.input.catalog.runs({ ...input, offset });
-  }
   private async prepareDestination(input: Scope & { destination: CreateSync['destination'] }) {
     const scope = { actorId: input.actorId, ownerId: input.ownerId };
     const type = this.input.registry.destination(input.destination.type);
@@ -106,6 +100,11 @@ export class SyncManagement {
   sync(input: Resource) {
     this.guard(input);
     return summarizeSync(this.input.catalog.sync(input));
+  }
+  /** Latest 20 polling iterations, newest first, including the current scan. */
+  polls(input: Resource) {
+    this.guard(input);
+    return this.input.catalog.polls(input);
   }
   async connectSync(input: Resource & { connection: ConnectionRef }) {
     this.guard(input);

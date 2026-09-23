@@ -42,7 +42,6 @@ test.each(['paused', 'interrupted', 'timed_out', 'waiting_for_capacity'])(
       assets: new SqliteAssets({
         db: f.db,
         maxBytes: defaultLimits.maxPendingAssetBytes,
-        maxSyncBytes: defaultLimits.maxSyncAssetBytes,
       }),
       files: new DirectoryAssets(`${f.files.path}.assets`),
       maxAssetBytes: defaultLimits.maxAssetBytes,
@@ -82,7 +81,7 @@ test.each(['paused', 'interrupted', 'timed_out', 'waiting_for_capacity'])(
   },
 );
 
-test('source failures back off durably despite partial progress and pruned history, then reset on success', async () => {
+test('source failures back off durably despite partial progress, then reset on success', async () => {
   const files = storage();
   const events: SyncEvent[] = [];
   let now = Date.now();
@@ -108,7 +107,7 @@ test('source failures back off durably despite partial progress and pruned histo
       },
     ],
     destinationTypes: { local: accepted },
-    timing: { retryMs, historyLimit: 1 },
+    timing: { retryMs },
     onEvent: (event: SyncEvent) => events.push(event),
   };
   let engine = createSyncRuntime(options);
@@ -143,13 +142,12 @@ test('source failures back off durably despite partial progress and pruned histo
       await engine.tick();
       expect(events).toHaveLength(attempts);
       now++;
-      // Reopen the actual SQLite database on each attempt, with history retained for just one run.
+      // Reopen the actual SQLite database on each attempt, to verify persisted backoff.
       await engine.close();
       engine = createSyncRuntime(options);
     }
     expect(events.at(-1)?.fields?.failureCount).toBe(delays.length);
     expect(JSON.stringify(events)).not.toContain('private upstream payload');
-    expect(engine.api.runs(scope).runs[0]?.recordsQueued).toBe(1);
 
     // A different owner starts at the base delay, even while the first source is backed off.
     const destination = { type: 'local', input: {} };

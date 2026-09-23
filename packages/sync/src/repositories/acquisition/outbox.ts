@@ -6,7 +6,7 @@ import { canonicalJson } from '../../models/json';
 import type { QueueLimits } from '../../models/limits';
 import type { Sync } from '../../models/sync';
 import { queueUsage } from '../queue-usage';
-import type { RunLease } from './contract';
+import type { AcquisitionLease } from './contract';
 
 export function enqueue(input: {
   db: Database;
@@ -14,7 +14,7 @@ export function enqueue(input: {
   records: DeliveredRecord[];
   limits: QueueLimits;
   assets: DeliveryAsset[];
-  lease: RunLease;
+  lease: AcquisitionLease;
 }): void {
   if (!input.records.length) {
     return;
@@ -31,17 +31,11 @@ export function enqueue(input: {
   };
   const body = canonicalJson(delivery).json;
   const bytes = Buffer.byteLength(body);
-  if (
-    bytes > Math.min(limits.maxPendingBytes, limits.maxSyncPendingBytes) ||
-    input.records.length > Math.min(limits.maxPendingRecords, limits.maxSyncPendingRecords)
-  ) {
+  if (bytes > limits.maxPendingBytes || input.records.length > limits.maxPendingRecords) {
     fail('page_exceeds_queue_capacity');
   }
   const usage = queueUsage({ db });
-  const own = queueUsage({ db, ownerId: sync.ownerId, syncId: sync.id });
   if (
-    bytes + own.pendingBytes > limits.maxSyncPendingBytes ||
-    input.records.length + own.pendingRecords > limits.maxSyncPendingRecords ||
     bytes + usage.pendingBytes > limits.maxPendingBytes ||
     input.records.length + usage.pendingRecords > limits.maxPendingRecords
   ) {
@@ -52,14 +46,7 @@ export function enqueue(input: {
   ).run(sync.ownerId, delivery.id, sync.id, body, bytes, input.records.length, Date.now());
   for (const asset of assets) {
     db.query(
-      `UPDATE delivery_assets SET delivery_id=? WHERE owner_id=? AND run_id=? AND generation=? AND asset_id=? AND asset_version=?`,
-    ).run(
-      delivery.id,
-      sync.ownerId,
-      input.lease.id,
-      input.lease.generation,
-      asset.id,
-      asset.version,
-    );
+      `UPDATE delivery_assets SET delivery_id=? WHERE owner_id=? AND sync_id=? AND generation=? AND asset_id=? AND asset_version=?`,
+    ).run(delivery.id, sync.ownerId, sync.id, input.lease.generation, asset.id, asset.version);
   }
 }

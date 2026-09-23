@@ -94,17 +94,10 @@ test('resync replays all pages and assets across capacity, retry, pause and rest
     expect(engine.api.sync(scope).status).toBe('waiting_for_capacity');
     const queued = engine.api.deliveries(alpha).deliveries[0]!;
     expect(queued.state).toBe('blocked');
-    const replayId = engine.api.runs(scope).runs[0]!.id;
     await engine.api.setEnabled({ ...scope, enabled: false });
     await engine.close();
     engine = createSyncRuntime(options);
     await engine.tick();
-    expect(engine.api.runs(scope).runs[0]).toMatchObject({
-      id: replayId,
-      mode: 'resync',
-      state: 'paused',
-      recordsQueued: 1,
-    });
     reject = false;
     engine.api.retryDelivery({ ...alpha, id: queued.id });
     await engine.tick();
@@ -120,13 +113,6 @@ test('resync replays all pages and assets across capacity, retry, pause and rest
     engine.api.runNow(scope);
     await engine.tick();
     await engine.tick();
-    expect(engine.api.runs(scope).runs[0]).toMatchObject({
-      id: replayId,
-      mode: 'resync',
-      state: 'succeeded',
-      recordsProcessed: 2,
-      recordsQueued: 2,
-    });
     expect(received.map(({ record }) => [record.id, record.revision])).toEqual([
       ['0', 1],
       ['1', 1],
@@ -134,16 +120,22 @@ test('resync replays all pages and assets across capacity, retry, pause and rest
       ['1', 2],
     ]);
     expect(new Set(received.map(({ id }) => id)).size).toBe(initialTicks);
+    expect(engine.api.polls(scope)).toHaveLength(2);
+    expect(engine.api.polls(scope)[0]).toMatchObject({
+      state: 'succeeded',
+      recordsProcessed: 2,
+      recordsQueued: 2,
+    });
     expect(received.every(({ bytes }) => bytes === 'content')).toBe(true);
     engine.api.runNow(scope);
     await engine.tick();
     await engine.tick();
-    expect(engine.api.runs(scope).runs[0]).toMatchObject({
-      mode: 'incremental',
+    expect(received).toHaveLength(initialTicks);
+    expect(engine.api.polls(scope)[0]).toMatchObject({
+      state: 'succeeded',
       recordsProcessed: 2,
       recordsQueued: 0,
     });
-    expect(received).toHaveLength(initialTicks);
     expect(await readdir(`${files.path}.assets`)).toEqual([]);
     expect(events).toContain('execution_failed');
   } finally {
@@ -158,7 +150,6 @@ test('resync fences old captures, keeps pending FIFO and replays explicit tombst
   const assets = new SqliteAssets({
     db: f.db,
     maxBytes: defaultLimits.maxPendingAssetBytes,
-    maxSyncBytes: defaultLimits.maxSyncAssetBytes,
   });
   try {
     f.acquisition.commit({
@@ -173,7 +164,16 @@ test('resync fences old captures, keeps pending FIFO and replays explicit tombst
       delay: 0,
     });
     const stale = f.acquisition.claim(leaseMs)!;
+    const [poll] = f.catalog.polls(scope);
     f.catalog.resync({ ...scope, checkpoint: 0 });
+    expect(f.catalog.polls(scope)).toEqual([
+      {
+        ...poll!,
+        state: 'interrupted',
+        errorCode: 'resync_requested',
+        completedAt: expect.any(Number),
+      },
+    ]);
     expect(() =>
       f.acquisition.commit({ lease: stale, page, definition: fixture.definition }),
     ).toThrow('lease lost');
@@ -262,10 +262,8 @@ test('idempotent enable preserves active work; resync cancels only the old acqui
     const scope = { ...alpha, id: sync.id };
     const first = engine.tick();
     await entered.promise;
-    const run = engine.api.runs(scope).runs[0]!;
     await engine.api.setEnabled({ ...scope, enabled: true });
     expect(signal!.aborted).toBe(false);
-    expect(engine.api.runs(scope).runs[0]).toEqual(run);
     await engine.api.resync(scope);
     expect(signal!.aborted).toBe(true);
     await first;
@@ -273,10 +271,6 @@ test('idempotent enable preserves active work; resync cancels only the old acqui
     late.resolve({ ...page, checkpoint: 99 });
     await Bun.sleep(0);
     expect(savedSync({ path: files.path, scope }).checkpoint).toBe(1);
-    expect(engine.api.runs(scope).runs).toMatchObject([
-      { mode: 'resync', state: 'succeeded', recordsQueued: 1 },
-      { id: run.id, state: 'cancelled' },
-    ]);
   } finally {
     late.resolve(page);
     await engine.close();
@@ -313,7 +307,7 @@ test('removal is owner-scoped and fences both durable leases without deleting pr
     expect(() =>
       f.deliveries.complete({ lease: delivery, result: { status: 'accepted' }, delay: 0 }),
     ).toThrow('lease lost');
-    for (const table of ['syncs', 'sync_runs', 'record_state', 'deliveries']) {
+    for (const table of ['syncs', 'record_state', 'deliveries', 'sync_polls']) {
       expect(f.db.query(`SELECT * FROM ${table}`).all()).toEqual([]);
     }
     expect(f.db.query('SELECT id FROM provider_connections').all()).toEqual([{ id: 'account' }]);

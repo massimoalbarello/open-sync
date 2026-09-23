@@ -33,6 +33,24 @@ test('mountable management routes require host authorization and preserve resour
       }),
     );
     expect(missing.status).toBe(notFound);
+    const pollsUrl = `http://localhost/api/sync/syncs/${sync.id}/polls`;
+    expect((await app.handle(new Request(pollsUrl))).status).toBe(unauthorized);
+    expect(
+      (
+        await app.handle(
+          new Request(pollsUrl, {
+            headers: { 'test-actor': 'beta' },
+          }),
+        )
+      ).status,
+    ).toBe(notFound);
+    await f.engine.tick();
+    const polls = await app.handle(
+      new Request(pollsUrl, {
+        headers: { 'test-actor': 'alpha' },
+      }),
+    );
+    expect(await polls.json()).toEqual(f.engine.api.polls({ ...alpha, id: sync.id }));
     const invalid = await app.handle(
       new Request('http://localhost/api/sync/syncs', {
         method: 'POST',

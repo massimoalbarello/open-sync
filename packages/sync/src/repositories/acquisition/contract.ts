@@ -1,9 +1,8 @@
 import type { SyncDefinition, SyncStep } from '../../models/definition';
 import type { Scope } from '../../models/identity';
-import type { RunState, Sync } from '../../models/sync';
+import type { Sync, SyncStatus } from '../../models/sync';
 
-export interface RunLease extends Scope {
-  id: string;
+export interface AcquisitionLease extends Scope {
   sync: Sync;
   generation: number;
   force: boolean;
@@ -12,12 +11,12 @@ export interface RunLease extends Scope {
 export interface AcquisitionRepository {
   capacityReleased(): void;
   nextDue(): number | undefined;
-  claim(leaseMs: number): RunLease | undefined;
-  hasCapacity(lease?: RunLease): boolean;
-  commit(input: { lease: RunLease; page: SyncStep; definition: SyncDefinition }): void;
+  claim(leaseMs: number): AcquisitionLease | undefined;
+  hasCapacity(): boolean;
+  commit(input: { lease: AcquisitionLease; page: SyncStep; definition: SyncDefinition }): void;
   finish(input: {
-    lease: RunLease;
-    state: RunState;
+    lease: AcquisitionLease;
+    state: Exclude<SyncStatus, 'running' | 'disabled'>;
     errorCode?: string;
     delay: number;
     failureCount?: number;

@@ -43,21 +43,21 @@ export async function removeSync(input: { id: string }) {
     throw new Error('Could not remove this sync.');
   }
 }
-export function syncDetailOptions(input: { userId: string; id: string; offset: number }) {
+export function syncDetailOptions(input: { userId: string; id: string }) {
   return queryOptions({
-    queryKey: [...syncKeys.owner(input.userId), input.id, 'runs', input.offset],
+    queryKey: [...syncKeys.owner(input.userId), input.id],
     refetchInterval: refreshMs,
     queryFn: async () => {
       const resource = syncApi.sync.syncs({ id: input.id });
-      const [sync, history, connections] = await Promise.all([
+      const [sync, connections, polls] = await Promise.all([
         resource.get(),
-        resource.runs.get({ query: { offset: input.offset } }),
         syncApi.providers.connections.get(),
+        resource.polls.get(),
       ]);
-      if (sync.error || history.error || connections.error) {
+      if (sync.error || connections.error || polls.error) {
         throw new Error('Could not load this sync.');
       }
-      return { sync: sync.data, ...history.data, connections: connections.data };
+      return { sync: sync.data, connections: connections.data, polls: polls.data };
     },
   });
 }

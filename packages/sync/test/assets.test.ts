@@ -12,7 +12,8 @@ import { accepted, alpha, beta, fixture, repositories, savedSync, storage } from
 
 const leaseMs = 60_000;
 const pollCount = 3;
-const changedRevisions = [1, 2, pollCount];
+const identityRevision = 4;
+const changedRevisions = [1, 2, pollCount, identityRevision];
 const metadata: AssetMetadata = {
   id: 'file',
   version: '1',
@@ -216,16 +217,17 @@ test('later deliveries download again and unchanged records release all new capt
   }
 });
 
-test('asset descriptor changes and unavailable-to-available recovery change the record hash', async () => {
+test('asset metadata, content identity and availability changes redeliver the record', async () => {
   let available = false;
   let name = 'first.txt';
+  let version = metadata.version;
   const received: Deliverable[] = [];
   const f = await harness({
     step: async ({ assets }) =>
       page(
         available
-          ? await assets.capture({ ...metadata, name, read: bytes })
-          : assets.unavailable({ ...metadata, name, code: 'not_exposed' }),
+          ? await assets.capture({ ...metadata, name, version, read: bytes })
+          : assets.unavailable({ ...metadata, name, version, code: 'not_exposed' }),
       ),
     destination: {
       ...accepted,
@@ -240,6 +242,8 @@ test('asset descriptor changes and unavailable-to-available recovery change the 
     available = true;
     await f.poll();
     name = 'renamed.txt';
+    await f.poll();
+    version = '2';
     await f.poll();
     await f.poll();
     expect(received).toHaveLength(changedRevisions.length);
@@ -442,10 +446,11 @@ test('stale acquisition generations cannot retain or queue old staged assets', (
     const assets = new SqliteAssets({
       db: f.db,
       maxBytes: defaultLimits.maxPendingAssetBytes,
-      maxSyncBytes: defaultLimits.maxSyncAssetBytes,
     });
     const id = assets.stage({ lease, asset: metadata, unavailable: 'not_exposed' });
-    f.db.query('UPDATE sync_runs SET generation=generation+1 WHERE id=?').run(lease.id);
+    f.db
+      .query('UPDATE syncs SET generation=generation+1 WHERE owner_id=? AND id=?')
+      .run(alpha.ownerId, lease.sync.id);
     expect(assets.garbage()).toEqual([id]);
     expect(() => assets.reserve({ lease, id, bytes: 1 })).toThrow('lease lost');
     const next = { ...lease, generation: lease.generation + 1 };
@@ -474,7 +479,7 @@ test('asset streams are scoped to the queued delivery owner', async () => {
       const { SqliteDeliveries } = await import('../src/repositories/delivery/sqlite');
       const deliveries = new SqliteDeliveries(db);
       const lease = deliveries.claim(leaseMs)!;
-      const assets = new SqliteAssets({ db, maxBytes: 100, maxSyncBytes: 100 });
+      const assets = new SqliteAssets({ db, maxBytes: 100 });
       expect(() => assets.read({ lease: { ...lease, ...beta }, asset: metadata })).toThrow(
         'lease lost',
       );

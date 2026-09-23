@@ -1,6 +1,8 @@
 import { expect, test } from 'bun:test';
 import type { SyncRegistration, SyncStep } from '../src/models/definition';
 import type { Deliverable } from '../src/models/delivery';
+import { defaultLimits } from '../src/models/limits';
+import { preparePage } from '../src/models/page';
 import { accepted, alpha, configure, fixture, runtime, savedSync } from './support';
 
 test('each record kind uses its own schema and an invalid kind leaves the whole page uncommitted', async () => {
@@ -72,5 +74,31 @@ test('each record kind uses its own schema and an invalid kind leaves the whole 
     expect(received).toHaveLength(1);
   } finally {
     await f.close();
+  }
+});
+
+test('content is independent of the data schema and invalid content rejects the entire page', () => {
+  const page = (content: unknown) =>
+    ({
+      records: [{ operation: 'upsert', kind: 'item', id: 'one', data: { value: 1 }, content }],
+      checkpoint: 1,
+      complete: true,
+    }) as SyncStep;
+  const valid = { format: 'markdown', body: '# Full record\n\nNo copy in data.' };
+  expect(
+    preparePage({ page: page(valid), definition: fixture.definition, limits: defaultLimits })
+      .records[0],
+  ).toMatchObject({ content: valid });
+  for (const invalid of [
+    null,
+    '',
+    [],
+    { format: 'html', body: '<p>No</p>' },
+    { format: 'markdown', body: 1 },
+    { format: 'markdown', body: '', extra: true },
+  ]) {
+    expect(() =>
+      preparePage({ page: page(invalid), definition: fixture.definition, limits: defaultLimits }),
+    ).toThrow();
   }
 });

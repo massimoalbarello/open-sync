@@ -1,11 +1,11 @@
 import type { AssetMetadata, AssetRef } from '../../models/asset';
-import type { RunLease } from '../acquisition/contract';
+import type { AcquisitionLease } from '../acquisition/contract';
 import type { DeliveryLease } from '../delivery/contract';
 
 export interface AssetRepository {
-  stage(input: { lease: RunLease; asset: AssetMetadata; unavailable?: string }): string;
-  captured(input: { lease: RunLease; id: string; size: number; sha256: string }): void;
-  reserve(input: { lease: RunLease; id: string; bytes: number }): void;
+  stage(input: { lease: AcquisitionLease; asset: AssetMetadata; unavailable?: string }): string;
+  captured(input: { lease: AcquisitionLease; id: string; size: number; sha256: string }): void;
+  reserve(input: { lease: AcquisitionLease; id: string; bytes: number }): void;
   discarded(id: string): void;
   garbage(): string[];
   retained(id: string): boolean;

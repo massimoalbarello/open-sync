@@ -106,7 +106,6 @@ test.each(
       status: 'disabled',
       errorCode: `source_http_${status}`,
     });
-    expect(engine.api.runs(scope).runs[0]?.state).toBe('paused');
     await engine.close();
     engine = createSyncRuntime(options);
     await engine.tick();

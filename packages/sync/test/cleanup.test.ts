@@ -256,7 +256,7 @@ test('releasing partial captures does not spin a capacity retry; acceptance wake
   const engine = createSyncRuntime({
     databasePath: files.path,
     definitions: [source],
-    limits: { maxPendingAssetBytes: 6, maxSyncAssetBytes: 4 },
+    limits: { maxPendingAssetBytes: 6 },
     destinationTypes: {
       local: {
         ...accepted,

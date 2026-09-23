@@ -82,7 +82,6 @@ export function repositories(input: { maxPendingRecords?: number; maxPendingByte
   const acquisition = new SqliteAcquisition({
     db,
     limits: { ...defaultLimits, ...input },
-    historyLimit: 1,
   });
   const deliveries = new SqliteDeliveries(db);
 

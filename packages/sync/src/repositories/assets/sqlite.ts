@@ -5,18 +5,18 @@ import { fail } from '../../models/error';
 import { canonicalJson } from '../../models/json';
 import { normalizeSourceTimestamps } from '../../models/metadata';
 import { identifier } from '../../models/validation';
-import type { RunLease } from '../acquisition/contract';
-import { assertRun } from '../acquisition/lease';
+import type { AcquisitionLease } from '../acquisition/contract';
+import { assertAcquisition } from '../acquisition/lease';
 import { assertDelivery } from '../delivery/lease';
 import { assetBytes } from './capacity';
 import type { AssetRepository } from './contract';
 
 const retained = `EXISTS (SELECT 1 FROM deliveries d WHERE d.owner_id=a.owner_id AND d.id=a.delivery_id)
-  OR EXISTS (SELECT 1 FROM sync_runs r WHERE r.owner_id=a.owner_id AND r.id=a.run_id
-    AND r.generation=a.generation AND r.state='running' AND r.expires_at>?)`;
+  OR EXISTS (SELECT 1 FROM syncs s WHERE s.owner_id=a.owner_id AND s.id=a.sync_id
+    AND s.generation=a.generation AND s.enabled=1 AND s.expires_at>?)`;
 
 export class SqliteAssets implements AssetRepository {
-  constructor(private readonly input: { db: Database; maxBytes: number; maxSyncBytes: number }) {}
+  constructor(private readonly input: { db: Database; maxBytes: number }) {}
   stage(input: Parameters<AssetRepository['stage']>[0]): string {
     const { db } = this.input;
     validateMetadata(input.asset);
@@ -25,19 +25,18 @@ export class SqliteAssets implements AssetRepository {
     }
     return db
       .transaction(() => {
-        assertRun({ db, lease: input.lease });
+        assertAcquisition({ db, lease: input.lease });
         const id = crypto.randomUUID();
         const descriptor = canonicalJson({
           ...input.asset,
           ...normalizeSourceTimestamps(input.asset),
           ...(input.unavailable === undefined ? {} : { unavailable: input.unavailable }),
         }).json;
-        db.query(`INSERT INTO delivery_assets(id,owner_id,sync_id,run_id,generation,asset_id,asset_version,descriptor,ready)
-        VALUES (?,?,?,?,?,?,?,?,?)`).run(
+        db.query(`INSERT INTO delivery_assets(id,owner_id,sync_id,generation,asset_id,asset_version,descriptor,ready)
+        VALUES (?,?,?,?,?,?,?,?)`).run(
           id,
           input.lease.ownerId,
           input.lease.sync.id,
-          input.lease.id,
           input.lease.generation,
           input.asset.id,
           input.asset.version,
@@ -51,12 +50,18 @@ export class SqliteAssets implements AssetRepository {
   captured(input: Parameters<AssetRepository['captured']>[0]): void {
     const { db } = this.input;
     db.transaction(() => {
-      assertRun({ db, lease: input.lease });
+      assertAcquisition({ db, lease: input.lease });
       const row = db
         .query<{ descriptor: string }, (string | number)[]>(
-          'SELECT descriptor FROM delivery_assets WHERE id=? AND owner_id=? AND run_id=? AND generation=? AND bytes=? AND ready=0',
+          'SELECT descriptor FROM delivery_assets WHERE id=? AND owner_id=? AND sync_id=? AND generation=? AND bytes=? AND ready=0',
         )
-        .get(input.id, input.lease.ownerId, input.lease.id, input.lease.generation, input.size);
+        .get(
+          input.id,
+          input.lease.ownerId,
+          input.lease.sync.id,
+          input.lease.generation,
+          input.size,
+        );
       if (!row) {
         fail('asset_reservation_missing');
       }
@@ -68,35 +73,22 @@ export class SqliteAssets implements AssetRepository {
     }).immediate();
   }
   reserve(input: Parameters<AssetRepository['reserve']>[0]): void {
-    const { db, maxBytes, maxSyncBytes } = this.input;
+    const { db, maxBytes } = this.input;
     db.transaction(() => {
-      assertRun({ db, lease: input.lease });
+      assertAcquisition({ db, lease: input.lease });
       const row = db
         .query<{ bytes: number }, (string | number)[]>(
-          'SELECT bytes FROM delivery_assets WHERE id=? AND owner_id=? AND run_id=? AND generation=? AND ready=0',
+          'SELECT bytes FROM delivery_assets WHERE id=? AND owner_id=? AND sync_id=? AND generation=? AND ready=0',
         )
-        .get(input.id, input.lease.ownerId, input.lease.id, input.lease.generation);
+        .get(input.id, input.lease.ownerId, input.lease.sync.id, input.lease.generation);
       if (!row || input.bytes < row.bytes) {
         fail('asset_reservation_conflict');
       }
       const delta = input.bytes - row!.bytes;
-      if (
-        delta +
-          assetBytes({
-            db,
-            ownerId: input.lease.ownerId,
-            runId: input.lease.id,
-            generation: input.lease.generation,
-          }) >
-        Math.min(maxBytes, maxSyncBytes)
-      ) {
+      if (delta + assetBytes({ db, lease: input.lease }) > maxBytes) {
         fail('step_exceeds_asset_capacity');
       }
-      if (
-        delta + assetBytes({ db }) > maxBytes ||
-        delta + assetBytes({ db, ownerId: input.lease.ownerId, syncId: input.lease.sync.id }) >
-          maxSyncBytes
-      ) {
+      if (delta + assetBytes({ db }) > maxBytes) {
         fail('waiting_for_capacity');
       }
       db.query('UPDATE delivery_assets SET bytes=? WHERE id=?').run(input.bytes, input.id);
@@ -146,7 +138,7 @@ export class SqliteAssets implements AssetRepository {
 /** Called inside the checkpoint transaction. A previous acquisition generation cannot supply bytes. */
 export function capturedAssets(input: {
   db: Database;
-  lease: RunLease;
+  lease: AcquisitionLease;
   refs: readonly AssetRef[];
 }): DeliveryAsset[] {
   const refs = new Map(input.refs.map((ref) => [assetKey(ref), ref]));
@@ -154,9 +146,9 @@ export function capturedAssets(input: {
     const ref = refs.get(key)!;
     const row = input.db
       .query<{ descriptor: string }, (string | number)[]>(
-        'SELECT descriptor FROM delivery_assets WHERE owner_id=? AND run_id=? AND generation=? AND asset_id=? AND asset_version=? AND ready=1',
+        'SELECT descriptor FROM delivery_assets WHERE owner_id=? AND sync_id=? AND generation=? AND asset_id=? AND asset_version=? AND ready=1',
       )
-      .get(input.lease.ownerId, input.lease.id, input.lease.generation, ref.id, ref.version);
+      .get(input.lease.ownerId, input.lease.sync.id, input.lease.generation, ref.id, ref.version);
     if (!row) {
       return fail('asset_not_captured');
     }

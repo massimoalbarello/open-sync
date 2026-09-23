@@ -59,13 +59,9 @@ export function createSyncController(input: {
       { ...resourceParams, body: t.Object({ enabled: t.Boolean() }) },
     )
     .get(
-      '/syncs/:id/runs',
-      ({ scope, params, query }) =>
-        input.api.runs({ ...scope, id: params.id, offset: query.offset }),
-      {
-        ...resourceParams,
-        query: t.Object({ offset: t.Optional(t.Integer({ minimum: 0, maximum: 1000000 })) }),
-      },
+      '/syncs/:id/polls',
+      ({ scope, params }) => input.api.polls({ ...scope, id: params.id }),
+      resourceParams,
     )
     .post(
       '/syncs/:id/run',

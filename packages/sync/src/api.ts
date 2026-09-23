@@ -6,11 +6,11 @@ export type SyncApi = Pick<
   SyncManagement,
   | 'definitions'
   | 'destinationTypes'
-  | 'runs'
   | 'createSync'
   | 'connectSync'
   | 'syncs'
   | 'sync'
+  | 'polls'
   | 'setEnabled'
   | 'runNow'
   | 'resync'
@@ -28,11 +28,11 @@ export function syncApi(service: SyncManagement): SyncApi {
   return {
     definitions: service.definitions.bind(service),
     destinationTypes: service.destinationTypes.bind(service),
-    runs: service.runs.bind(service),
     createSync: service.createSync.bind(service),
     connectSync: service.connectSync.bind(service),
     syncs: service.syncs.bind(service),
     sync: service.sync.bind(service),
+    polls: service.polls.bind(service),
     setEnabled: service.setEnabled.bind(service),
     runNow: service.runNow.bind(service),
     resync: service.resync.bind(service),
