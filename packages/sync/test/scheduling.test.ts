@@ -1,7 +1,16 @@
 import { expect, test } from 'bun:test';
 import type { SyncRegistration } from '../src/models/definition';
 import { createSyncRuntime } from '../src/runtime';
-import { accepted, alpha, configure, fixture, page, repositories, storage } from './support';
+import {
+  accepted,
+  alpha,
+  configure,
+  fixture,
+  page,
+  repositories,
+  savedSync,
+  storage,
+} from './support';
 
 const deadlineMs = 2000;
 async function until(check: () => boolean) {
@@ -27,7 +36,7 @@ test('waiting sources and deliveries do not stop other steps, even at the same d
       const executable = await fixture.load();
       return {
         async step(context) {
-          if (context.sourceId === slowSource) {
+          if (context.syncId === slowSource) {
             await heldSource.promise;
           }
           return executable.step(context);
@@ -43,42 +52,44 @@ test('waiting sources and deliveries do not stop other steps, even at the same d
       local: {
         ...accepted,
         async deliver({ delivery }) {
-          if (delivery.sourceId === slowDelivery) {
+          if (delivery.syncId === slowDelivery) {
             await heldDelivery.promise;
           }
-          delivered.push(delivery.sourceId);
+          delivered.push(delivery.syncId);
           return { status: 'accepted' };
         },
       },
     },
   });
   try {
-    const destination = engine.api.createDestination({ ...alpha, type: 'local', config: {} });
+    const destination = { type: 'local', input: {} };
     const installs: Awaited<ReturnType<typeof configure>>[] = [];
     const syncCount = 3;
     for (let i = 0; i < syncCount; i++) {
       installs.push(
-        await engine.api.createInstallation({
+        await engine.api.createSync({
           ...alpha,
-          definition: fixture.definition,
+          definition: fixture.definition.id,
           config: { count: 3 },
-          destinationId: destination.id,
+          destination,
         }),
       );
     }
-    slowSource = installs[0]!.sourceId;
-    slowDelivery = installs[1]!.sourceId;
+    slowSource = installs[0]!.id;
+    slowDelivery = installs[1]!.id;
     engine.start();
     engine.start();
-    await until(() => delivered.filter((id) => id === installs[2]!.sourceId).length === syncCount);
-    expect(engine.api.installation({ ...alpha, id: installs[0]!.id }).checkpoint).toBe(0);
+    await until(() => delivered.filter((id) => id === installs[2]!.id).length === syncCount);
+    expect(
+      savedSync({ path: files.path, scope: { ...alpha, id: installs[0]!.id } }).checkpoint,
+    ).toBe(0);
     expect(delivered).not.toContain(slowDelivery);
     heldSource.resolve();
     heldDelivery.resolve();
     await until(
       () =>
         engine.api.status(alpha).queue.pendingRecords === 0 &&
-        engine.api.installation({ ...alpha, id: installs[0]!.id }).status === 'succeeded',
+        engine.api.sync({ ...alpha, id: installs[0]!.id }).status === 'succeeded',
     );
     expect(delivered).toHaveLength(syncCount * syncCount);
   } finally {
@@ -99,7 +110,7 @@ test('an uncooperative step times out, releases its slot, and cannot commit a la
     load: async () => {
       const executable = await fixture.load();
       return {
-        step: (context) => (context.sourceId === held ? late.promise : executable.step(context)),
+        step: (context) => (context.syncId === held ? late.promise : executable.step(context)),
       };
     },
   };
@@ -111,18 +122,18 @@ test('an uncooperative step times out, releases its slot, and cannot commit a la
   });
   try {
     const first = await configure(engine);
-    held = first.sourceId;
+    held = first.id;
     const other = await configure(engine);
     engine.start();
     await until(
       () =>
-        engine.api.installation({ ...alpha, id: other.id }).status === 'succeeded' &&
+        engine.api.sync({ ...alpha, id: other.id }).status === 'succeeded' &&
         engine.api.status(alpha).queue.pendingRecords === 0,
     );
-    expect(engine.api.installation({ ...alpha, id: first.id }).status).toBe('timed_out');
+    expect(engine.api.sync({ ...alpha, id: first.id }).status).toBe('timed_out');
     late.resolve(page);
     await Bun.sleep(1);
-    expect(engine.api.installation({ ...alpha, id: first.id }).checkpoint).toBe(0);
+    expect(savedSync({ path: files.path, scope: { ...alpha, id: first.id } }).checkpoint).toBe(0);
     expect(engine.api.status(alpha).queue.pendingRecords).toBe(0);
   } finally {
     await engine.close();
@@ -196,12 +207,12 @@ test.each(['blocked', 'leased', 'retry'] as const)(
           delay: leaseMs,
         });
       }
-      f.catalog.setEnabled({ ...alpha, id: f.installation.id, enabled: false });
-      const other = f.catalog.createInstallation({
+      f.catalog.setEnabled({ ...alpha, id: f.sync.id, enabled: false });
+      const other = f.catalog.createSync({
         ...alpha,
-        definition: fixture.definition,
+        definition: fixture.definition.id,
         config: { count: 1 },
-        destinationId: f.installation.destinationId,
+        destination: f.sync.destination,
         initialCheckpoint: 0,
       });
       f.acquisition.commit({
@@ -210,7 +221,7 @@ test.each(['blocked', 'leased', 'retry'] as const)(
         definition: fixture.definition,
       });
       const independent = f.deliveries.claim(leaseMs)!;
-      expect(independent.delivery.installationId).toBe(other.id);
+      expect(independent.delivery.syncId).toBe(other.id);
       expect(f.deliveries.claim(leaseMs)).toBeUndefined();
       f.deliveries.complete({ lease: independent, result: { status: 'accepted' }, delay: 0 });
       if (state === 'leased') {
@@ -235,12 +246,12 @@ test('a delivery that ignores abort cannot hold shutdown or acknowledge after it
   };
   const engine = createSyncRuntime(options);
   try {
-    const destination = engine.api.createDestination({ ...alpha, type: 'local', config: {} });
-    await engine.api.createInstallation({
+    const destination = { type: 'local', input: {} };
+    await engine.api.createSync({
       ...alpha,
-      definition: fixture.definition,
+      definition: fixture.definition.id,
       config: { count: 1 },
-      destinationId: destination.id,
+      destination,
     });
     await engine.tick();
     await engine.tick();

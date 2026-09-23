@@ -10,7 +10,7 @@ CREATE TABLE host_receipts (
 );
 CREATE TABLE host_records (
   owner_id TEXT NOT NULL,
-  source_id TEXT NOT NULL,
+  sync_id TEXT NOT NULL,
   kind TEXT NOT NULL,
   record_id TEXT NOT NULL,
   revision INTEGER NOT NULL,
@@ -20,7 +20,7 @@ CREATE TABLE host_records (
   preview TEXT,
   created_at TEXT,
   updated_at TEXT,
-  PRIMARY KEY(owner_id, source_id, kind, record_id)
+  PRIMARY KEY(owner_id, sync_id, kind, record_id)
 );
 
-CREATE INDEX host_records_updated_at ON host_records(owner_id, updated_at DESC, source_id, kind, record_id) WHERE deleted=0;
+CREATE INDEX host_records_updated_at ON host_records(owner_id, updated_at DESC, sync_id, kind, record_id) WHERE deleted=0;

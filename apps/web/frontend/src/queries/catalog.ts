@@ -17,17 +17,15 @@ export async function createSync(input: Parameters<typeof api.api.dashboard.sync
 }
 
 export async function loadCatalog() {
-  const [sources, types, destinations] = await Promise.all([
+  const [sources, types] = await Promise.all([
     syncApi.sync.definitions.get(),
     syncApi.sync['destination-types'].get(),
-    syncApi.sync.destinations.get(),
   ]);
-  if (sources.error || types.error || destinations.error) {
+  if (sources.error || types.error) {
     throw new Error('Could not load sources and destinations.');
   }
   return {
     sources: sources.data.definitions,
     types: types.data.types,
-    destinations: destinations.data.destinations,
   };
 }

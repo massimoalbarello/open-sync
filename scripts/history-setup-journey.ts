@@ -37,17 +37,21 @@ export async function historySetupJourney(input: { page: Page; origin: string })
     animations: 'disabled',
   });
   await page.getByRole('option', { name: 'Last 3 months', exact: true }).click();
+  const submitted = page.waitForRequest(
+    (request) => request.url().endsWith('/api/dashboard/syncs') && request.method() === 'POST',
+  );
   await page.getByRole('button', { name: 'Create sync', exact: true }).click();
+  assert.deepEqual((await submitted).postDataJSON().config, { history: 'Last 3 months' });
   await page.waitForURL(/\/syncs\/sync_/);
   const syncId = new URL(page.url()).pathname.split('/').at(-1)!;
   await page.getByRole('link', { name: 'Polling history', exact: true }).click();
   await page.getByRole('cell', { name: 'Completed', exact: true }).waitFor();
-  const installation = await (
-    await page.request.get(`${origin}/api/open-sync/sync/installations/${syncId}`)
+  const sync = await (
+    await page.request.get(`${origin}/api/open-sync/sync/syncs/${syncId}`)
   ).json();
-  assert.deepEqual(installation.config, { history: 'Last 3 months' });
+  assert.equal(Object.hasOwn(sync, 'config'), false);
   const polls = await (
-    await page.request.get(`${origin}/api/open-sync/sync/installations/${syncId}/polls`)
+    await page.request.get(`${origin}/api/open-sync/sync/syncs/${syncId}/polls`)
   ).json();
   assert.equal(polls.polls[0].recordsProcessed, 0);
   await page.setViewportSize({ width: 1280, height: 720 });

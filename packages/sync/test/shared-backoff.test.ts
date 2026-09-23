@@ -15,7 +15,7 @@ test('source and delivery failures use the same durable exponential backoff', as
         ...fixture,
         load: () => ({
           step(context: SyncContext) {
-            return context.sourceId === failingSource
+            return context.syncId === failingSource
               ? Promise.reject(new Error('temporary'))
               : Promise.resolve({ ...page, complete: true });
           },
@@ -28,7 +28,7 @@ test('source and delivery failures use the same durable exponential backoff', as
   });
   try {
     const source = await configure(engine);
-    failingSource = source.sourceId;
+    failingSource = source.id;
     await configure(engine);
     await engine.tick();
     await engine.tick();
@@ -45,7 +45,7 @@ test('source and delivery failures use the same durable exponential backoff', as
     });
     for (const delay of delays) {
       const due = now + delay;
-      expect(engine.api.installation({ ...alpha, id: source.id }).nextDueAt).toBe(due);
+      expect(engine.api.sync({ ...alpha, id: source.id }).nextDueAt).toBe(due);
       expect(engine.api.deliveries(alpha).deliveries[0]?.nextAttemptAt).toBe(due);
       now = due;
       await engine.tick();

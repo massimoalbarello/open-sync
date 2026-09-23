@@ -27,18 +27,13 @@ function Syncs() {
         <p role="alert">{(query.error || catalog.error)?.message}</p>
       )}
       {query.isPending && <p>Loading syncs…</p>}
-      {query.data?.installations.length === 0 && (
+      {query.data?.syncs.length === 0 && (
         <p>No syncs yet. Create one from an available source and destination.</p>
       )}
       <ul className="divide-y divide-border">
-        {query.data?.installations.map((sync) => {
-          const source = catalog.data?.sources.find(
-            (entry) => entry.id === sync.definition.id && entry.version === sync.definition.version,
-          );
-          const destination = catalog.data?.destinations.find(
-            (entry) => entry.id === sync.destinationId,
-          );
-          const type = catalog.data?.types.find((entry) => entry.type === destination?.type);
+        {query.data?.syncs.map((sync) => {
+          const source = catalog.data?.sources.find((entry) => entry.id === sync.definition);
+          const type = catalog.data?.types.find((entry) => entry.type === sync?.destinationType);
           return (
             <li key={sync.id}>
               <Link
@@ -47,8 +42,8 @@ function Syncs() {
                 className="block space-y-2 py-5 hover:text-muted-foreground"
               >
                 <p className="font-medium">
-                  {source?.name ?? sync.definition.id} →{' '}
-                  {type?.name ?? destination?.type ?? 'Unavailable destination'}
+                  {source?.name ?? sync.definition} →{' '}
+                  {type?.name ?? sync.destinationType ?? 'Unavailable destination'}
                 </p>
                 <SyncAccount connection={sync.connection} connections={query.data?.connections} />
                 <p className="text-muted-foreground text-sm">

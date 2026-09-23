@@ -26,7 +26,7 @@ function AssetDetail() {
       }
       action={
         <div className="flex items-center gap-5">
-          <Link to="/assets" search={{ sourceId: asset?.sourceId }} className="text-sm underline">
+          <Link to="/assets" search={{ syncId: asset?.syncId }} className="text-sm underline">
             Back to assets
           </Link>
           {asset && <AssetDownload asset={asset} />}

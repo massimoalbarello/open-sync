@@ -28,9 +28,7 @@ test.each([
       for (let tick = 0; tick < drainTicks; tick++) {
         await f.engine.tick();
       }
-      expect(f.engine.api.installation({ ...owner, id: f.installation.id }).status).toBe(
-        'succeeded',
-      );
+      expect(f.engine.api.sync({ ...owner, id: f.sync.id }).status).toBe('succeeded');
       expect((await f.receiver.status(owner)).records).toBe(count);
       expect(f.requests.filter((request) => request.query.includes(summary))).toHaveLength(count);
     } finally {
@@ -41,7 +39,7 @@ test.each([
 
 test('GitHub resumes committed pages after restart, then polls only updates since its saved watermark', async () => {
   const f = await fixture();
-  const resource = { ...owner, id: f.installation.id };
+  const resource = { ...owner, id: f.sync.id };
   try {
     const reply = f.provider.respond;
     f.provider.respond = (input) => {
@@ -51,7 +49,7 @@ test('GitHub resumes committed pages after restart, then polls only updates sinc
       return reply(input);
     };
     await f.engine.tick();
-    const partial = f.engine.api.installation(resource).checkpoint;
+    const partial = f.savedState().checkpoint;
     expect(partial).toMatchObject({
       cursor: 'cursor-b',
       accountId: 'github-native-user-1',
@@ -69,7 +67,7 @@ test('GitHub resumes committed pages after restart, then polls only updates sinc
         .filter((request) => request.query.includes(discover))
         .map((request) => request.variables.after),
     ).toEqual(['cursor-b']);
-    const completed = f.engine.api.installation(resource).checkpoint;
+    const completed = f.savedState().checkpoint;
     expect(completed).toMatchObject({
       cursor: null,
       phase: 'updates',
@@ -128,7 +126,7 @@ test('GitHub resumes committed pages after restart, then polls only updates sinc
 
 test('partial results, repeated cursors and changed accounts cannot advance GitHub progress', async () => {
   const f = await fixture();
-  const resource = { ...owner, id: f.installation.id };
+  const resource = { ...owner, id: f.sync.id };
   try {
     const reply = f.provider.respond;
     f.provider.respond = (input) =>
@@ -142,12 +140,12 @@ test('partial results, repeated cursors and changed accounts cannot advance GitH
     await f.engine.tick();
     await f.engine.tick();
     await f.engine.tick();
-    const committed = f.engine.api.installation(resource).checkpoint;
+    const committed = f.savedState().checkpoint;
     f.provider.respond = (input) =>
       reply(input.query.includes(discover) ? { ...input, variables: { after: null } } : input);
     f.engine.api.queueRun(resource);
     await f.engine.tick();
-    expect(f.engine.api.installation(resource)).toMatchObject({
+    expect(f.savedState()).toMatchObject({
       checkpoint: committed,
       status: 'execution_failed',
     });
@@ -155,7 +153,7 @@ test('partial results, repeated cursors and changed accounts cannot advance GitH
     f.provider.accountId = 'different-account';
     f.engine.api.queueRun(resource);
     await f.engine.tick();
-    expect(f.engine.api.installation(resource)).toMatchObject({
+    expect(f.savedState()).toMatchObject({
       checkpoint: committed,
       status: 'execution_failed',
     });
@@ -167,7 +165,7 @@ test('partial results, repeated cursors and changed accounts cannot advance GitH
 
 test('cursor recovery preserves account and cycle identity after a committed page', async () => {
   const f = await fixture();
-  const resource = { ...owner, id: f.installation.id };
+  const resource = { ...owner, id: f.sync.id };
   try {
     const reply = f.provider.respond;
     f.provider.respond = (input) =>
@@ -176,7 +174,7 @@ test('cursor recovery preserves account and cycle identity after a committed pag
         : reply(input);
     await f.engine.tick();
     await f.engine.tick();
-    expect(f.engine.api.installation(resource).checkpoint).toMatchObject({
+    expect(f.savedState().checkpoint).toMatchObject({
       cursor: null,
       accountId: 'github-native-user-1',
       watermark: null,
@@ -184,10 +182,10 @@ test('cursor recovery preserves account and cycle identity after a committed pag
     await f.restart();
     f.provider.respond = reply;
     f.provider.accountId = 'different-account';
-    const checkpoint = f.engine.api.installation(resource).checkpoint;
+    const checkpoint = f.savedState().checkpoint;
     f.engine.api.queueRun(resource);
     await f.engine.tick();
-    expect(f.engine.api.installation(resource)).toMatchObject({
+    expect(f.savedState()).toMatchObject({
       checkpoint,
       status: 'execution_failed',
     });
@@ -198,13 +196,13 @@ test('cursor recovery preserves account and cycle identity after a committed pag
 
 test('an interrupted incremental poll retains its watermark and resumes the next complete page', async () => {
   const f = await fixture();
-  const resource = { ...owner, id: f.installation.id };
+  const resource = { ...owner, id: f.sync.id };
   try {
     await f.engine.tick();
     await f.engine.tick();
     await f.engine.tick();
     await f.engine.tick();
-    const baseline = f.engine.api.installation(resource).checkpoint as { watermark: string };
+    const baseline = f.savedState().checkpoint as { watermark: string };
     const updatedAt = new Date().toISOString();
     f.pulls[0]!.updatedAt = updatedAt;
     f.pulls[1]!.updatedAt = updatedAt;
@@ -221,7 +219,7 @@ test('an interrupted incremental poll retains its watermark and resumes the next
     f.engine.api.queueRun(resource);
     await f.engine.tick();
     await f.engine.tick();
-    const partial = f.engine.api.installation(resource).checkpoint as { cycleStartedAt: string };
+    const partial = f.savedState().checkpoint as { cycleStartedAt: string };
     expect(partial).toMatchObject({ cursor: 'cursor-b', watermark: baseline.watermark });
     await f.restart();
     f.provider.respond = reply;
@@ -234,7 +232,7 @@ test('an interrupted incremental poll retains its watermark and resumes the next
         .filter((request) => request.query.includes(summary))
         .map((request) => request.variables.id),
     ).toEqual(['c']);
-    expect(f.engine.api.installation(resource).checkpoint).toMatchObject({
+    expect(f.savedState().checkpoint).toMatchObject({
       cursor: null,
       watermark: partial.cycleStartedAt,
     });
@@ -251,9 +249,9 @@ test('an interrupted incremental poll retains its watermark and resumes the next
 
 test('GitHub commits no partial page when a later record fails, then retries the whole page after restart', async () => {
   const f = await fixture();
-  const resource = { ...owner, id: f.installation.id };
+  const resource = { ...owner, id: f.sync.id };
   try {
-    const checkpoint = f.engine.api.installation(resource).checkpoint;
+    const checkpoint = f.savedState().checkpoint;
     const respond = f.provider.respond;
     f.provider.respond = (input) => {
       if (input.query.includes(summary) && input.variables.id === 'b') {
@@ -262,7 +260,7 @@ test('GitHub commits no partial page when a later record fails, then retries the
       return respond(input);
     };
     await f.engine.tick();
-    expect(f.engine.api.installation(resource)).toMatchObject({
+    expect(f.savedState()).toMatchObject({
       checkpoint,
       checkpointRevision: 0,
     });
@@ -273,7 +271,7 @@ test('GitHub commits no partial page when a later record fails, then retries the
     f.requests.length = 0;
     f.engine.api.queueRun(resource);
     await f.engine.tick();
-    const saved = f.engine.api.installation(resource);
+    const saved = f.savedState();
     expect(saved.checkpoint).toMatchObject({ cursor: 'cursor-b' });
     expect(
       Object.values(saved.checkpoint!).every(

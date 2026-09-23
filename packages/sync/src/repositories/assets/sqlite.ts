@@ -35,22 +35,17 @@ export class SqliteAssets implements AssetRepository {
     return db
       .transaction(() => {
         assertRun({ db, lease: input.lease });
-        const key = [
-          input.lease.ownerId,
-          input.lease.installation.sourceId,
-          input.asset.id,
-          input.asset.version,
-        ];
+        const key = [input.lease.ownerId, input.lease.sync.id, input.asset.id, input.asset.version];
         const metadata = canonicalJson({
           ...input.asset,
           ...normalizeSourceTimestamps(input.asset),
         }).json;
         db.query(
-          'INSERT OR IGNORE INTO assets(owner_id,source_id,id,version,metadata) VALUES (?,?,?,?,?)',
+          'INSERT OR IGNORE INTO assets(owner_id,sync_id,id,version,metadata) VALUES (?,?,?,?,?)',
         ).run(...key, metadata);
         const row = db
           .query<AssetRow, string[]>(
-            'SELECT * FROM assets WHERE owner_id=? AND source_id=? AND id=? AND version=?',
+            'SELECT * FROM assets WHERE owner_id=? AND sync_id=? AND id=? AND version=?',
           )
           .get(...key)!;
         if (row.metadata !== metadata) {
@@ -59,26 +54,20 @@ export class SqliteAssets implements AssetRepository {
         if (row.state === 'ready' && !row.file_id) {
           const receipt = db
             .query<{ outcome: string | null }, string[]>(
-              'SELECT outcome FROM asset_receipts WHERE owner_id=? AND destination_id=? AND source_id=? AND asset_id=? AND asset_version=?',
+              'SELECT outcome FROM asset_receipts WHERE owner_id=? AND sync_id=? AND asset_id=? AND asset_version=?',
             )
-            .get(
-              input.lease.ownerId,
-              input.lease.installation.destinationId,
-              input.lease.installation.sourceId,
-              input.asset.id,
-              input.asset.version,
-            );
+            .get(input.lease.ownerId, input.lease.sync.id, input.asset.id, input.asset.version);
           if (!receipt?.outcome) {
             row.state = 'pending';
             db.query(
-              "UPDATE assets SET state='pending',attempt=0 WHERE owner_id=? AND source_id=? AND id=? AND version=?",
+              "UPDATE assets SET state='pending',attempt=0 WHERE owner_id=? AND sync_id=? AND id=? AND version=?",
             ).run(...key);
             row.attempt = 0;
           }
         }
         if (row.state === 'pending') {
           db.query(
-            'UPDATE assets SET attempt=attempt+1 WHERE owner_id=? AND source_id=? AND id=? AND version=?',
+            'UPDATE assets SET attempt=attempt+1 WHERE owner_id=? AND sync_id=? AND id=? AND version=?',
           ).run(...key);
           row.attempt++;
         }
@@ -95,26 +84,21 @@ export class SqliteAssets implements AssetRepository {
       assertRun({ db, lease: input.lease });
       const previous = db
         .query<{ sha256: string | null }, string[]>(
-          'SELECT sha256 FROM assets WHERE owner_id=? AND source_id=? AND id=? AND version=?',
+          'SELECT sha256 FROM assets WHERE owner_id=? AND sync_id=? AND id=? AND version=?',
         )
-        .get(
-          input.lease.ownerId,
-          input.lease.installation.sourceId,
-          input.asset.id,
-          input.asset.version,
-        );
+        .get(input.lease.ownerId, input.lease.sync.id, input.asset.id, input.asset.version);
       if (previous?.sha256 && previous.sha256 !== input.file.sha256) {
         fail('asset_version_conflict');
       }
       if (
         !db
           .query(
-            'SELECT 1 FROM asset_files WHERE id=? AND owner_id=? AND source_id=? AND run_id=? AND bytes=?',
+            'SELECT 1 FROM asset_files WHERE id=? AND owner_id=? AND sync_id=? AND run_id=? AND bytes=?',
           )
           .get(
             input.file.id,
             input.lease.ownerId,
-            input.lease.installation.sourceId,
+            input.lease.sync.id,
             input.lease.id,
             input.file.size,
           )
@@ -122,13 +106,13 @@ export class SqliteAssets implements AssetRepository {
         fail('asset_reservation_missing');
       }
       db.query(
-        "UPDATE assets SET file_id=?,size=?,sha256=?,state='ready',error_code=NULL WHERE owner_id=? AND source_id=? AND id=? AND version=?",
+        "UPDATE assets SET file_id=?,size=?,sha256=?,state='ready',error_code=NULL WHERE owner_id=? AND sync_id=? AND id=? AND version=?",
       ).run(
         input.file.id,
         input.file.size,
         input.file.sha256,
         input.lease.ownerId,
-        input.lease.installation.sourceId,
+        input.lease.sync.id,
         input.asset.id,
         input.asset.version,
       );
@@ -139,12 +123,12 @@ export class SqliteAssets implements AssetRepository {
     db.transaction(() => {
       assertRun({ db, lease: input.lease });
       db.query(
-        'UPDATE assets SET state=?,error_code=? WHERE owner_id=? AND source_id=? AND id=? AND version=?',
+        'UPDATE assets SET state=?,error_code=? WHERE owner_id=? AND sync_id=? AND id=? AND version=?',
       ).run(
         input.terminal ? 'failed' : 'pending',
         input.code,
         input.lease.ownerId,
-        input.lease.installation.sourceId,
+        input.lease.sync.id,
         input.asset.id,
         input.asset.version,
       );
@@ -155,11 +139,11 @@ export class SqliteAssets implements AssetRepository {
     db.transaction(() => {
       assertRun({ db, lease: input.lease });
       db.query(
-        "UPDATE assets SET attempt=MAX(0,attempt-1),error_code=? WHERE owner_id=? AND source_id=? AND id=? AND version=? AND state='pending'",
+        "UPDATE assets SET attempt=MAX(0,attempt-1),error_code=? WHERE owner_id=? AND sync_id=? AND id=? AND version=? AND state='pending'",
       ).run(
         input.code,
         input.lease.ownerId,
-        input.lease.installation.sourceId,
+        input.lease.sync.id,
         input.asset.id,
         input.asset.version,
       );
@@ -170,15 +154,15 @@ export class SqliteAssets implements AssetRepository {
     db.transaction(() => {
       assertRun({ db, lease: input.lease });
       const previous = db
-        .query<{ bytes: number; run_id: string; owner_id: string; source_id: string }, string[]>(
-          'SELECT bytes,run_id,owner_id,source_id FROM asset_files WHERE id=?',
+        .query<{ bytes: number; run_id: string; owner_id: string; sync_id: string }, string[]>(
+          'SELECT bytes,run_id,owner_id,sync_id FROM asset_files WHERE id=?',
         )
         .get(input.id);
       if (
         previous &&
         (previous.run_id !== input.lease.id ||
           previous.owner_id !== input.lease.ownerId ||
-          previous.source_id !== input.lease.installation.sourceId ||
+          previous.sync_id !== input.lease.sync.id ||
           input.bytes < previous.bytes)
       ) {
         fail('asset_reservation_conflict');
@@ -196,17 +180,17 @@ export class SqliteAssets implements AssetRepository {
           assetBytes({
             db,
             ownerId: input.lease.ownerId,
-            sourceId: input.lease.installation.sourceId,
+            syncId: input.lease.sync.id,
           }) >
           maxSyncBytes
       ) {
         fail('waiting_for_capacity');
       }
-      db.query(`INSERT INTO asset_files(id,owner_id,source_id,run_id,bytes) VALUES (?,?,?,?,?)
+      db.query(`INSERT INTO asset_files(id,owner_id,sync_id,run_id,bytes) VALUES (?,?,?,?,?)
         ON CONFLICT(id) DO UPDATE SET bytes=excluded.bytes`).run(
         input.id,
         input.lease.ownerId,
-        input.lease.installation.sourceId,
+        input.lease.sync.id,
         input.lease.id,
         input.bytes,
       );
@@ -214,8 +198,8 @@ export class SqliteAssets implements AssetRepository {
   }
   discarded(id: string): void {
     const deleted = this.input.db
-      .query<{ owner_id: string; source_id: string }, string[]>(
-        'DELETE FROM asset_files WHERE id=? AND NOT EXISTS (SELECT 1 FROM assets WHERE file_id=?) RETURNING owner_id,source_id',
+      .query<{ owner_id: string; sync_id: string }, string[]>(
+        'DELETE FROM asset_files WHERE id=? AND NOT EXISTS (SELECT 1 FROM assets WHERE file_id=?) RETURNING owner_id,sync_id',
       )
       .get(id, id);
     if (deleted) {
@@ -223,9 +207,9 @@ export class SqliteAssets implements AssetRepository {
       // Delivery acceptance wakes its source after cleanup has actually freed the bytes.
       this.input.db
         .query(
-          "UPDATE installations SET next_due_at=? WHERE enabled=1 AND status='waiting_for_capacity' AND NOT (owner_id=? AND source_id=?)",
+          "UPDATE syncs SET next_due_at=? WHERE enabled=1 AND status='waiting_for_capacity' AND NOT (owner_id=? AND id=?)",
         )
-        .run(Date.now(), deleted.owner_id, deleted.source_id);
+        .run(Date.now(), deleted.owner_id, deleted.sync_id);
     }
   }
 
@@ -235,7 +219,7 @@ export class SqliteAssets implements AssetRepository {
       .transaction(() => {
         // Only a live capture or a queued delivery can still need the local bytes.
         db.query(`UPDATE assets AS a SET file_id=NULL WHERE file_id IS NOT NULL
-        AND NOT EXISTS (SELECT 1 FROM delivery_assets d WHERE d.owner_id=a.owner_id AND d.source_id=a.source_id AND d.asset_id=a.id AND d.asset_version=a.version)
+        AND NOT EXISTS (SELECT 1 FROM delivery_assets d WHERE d.owner_id=a.owner_id AND d.sync_id=a.sync_id AND d.asset_id=a.id AND d.asset_version=a.version)
         AND NOT EXISTS (SELECT 1 FROM asset_files f JOIN runs r ON r.owner_id=f.owner_id AND r.id=f.run_id
           WHERE f.id=a.file_id AND r.state='running' AND r.expires_at>?)`).run(Date.now());
         // Keep the ledger entry until unlink succeeds; a crash or filesystem failure is retryable.
@@ -266,9 +250,9 @@ export class SqliteAssets implements AssetRepository {
     }
     const row = this.input.db
       .query<AssetRow, string[]>(
-        'SELECT * FROM assets WHERE owner_id=? AND source_id=? AND id=? AND version=?',
+        'SELECT * FROM assets WHERE owner_id=? AND sync_id=? AND id=? AND version=?',
       )
-      .get(input.lease.ownerId, input.lease.delivery.sourceId, input.asset.id, input.asset.version);
+      .get(input.lease.ownerId, input.lease.delivery.syncId, input.asset.id, input.asset.version);
     if (!row) {
       return fail('not_found');
     }
@@ -281,16 +265,16 @@ export class SqliteAssets implements AssetRepository {
         this.read(input);
         const keys = receiptKeys(input);
         db.query(
-          'INSERT OR IGNORE INTO asset_receipts(owner_id,destination_id,source_id,asset_id,asset_version,idempotency_key) VALUES (?,?,?,?,?,?)',
+          'INSERT OR IGNORE INTO asset_receipts(owner_id,sync_id,asset_id,asset_version,idempotency_key) VALUES (?,?,?,?,?)',
         ).run(...keys, `asset_${crypto.randomUUID()}`);
         const row = db
           .query<{ idempotency_key: string; attempt: number; outcome: string | null }, string[]>(
-            'SELECT * FROM asset_receipts WHERE owner_id=? AND destination_id=? AND source_id=? AND asset_id=? AND asset_version=?',
+            'SELECT * FROM asset_receipts WHERE owner_id=? AND sync_id=? AND asset_id=? AND asset_version=?',
           )
           .get(...keys)!;
         if (!row.outcome) {
           db.query(
-            'UPDATE asset_receipts SET attempt=attempt+1 WHERE owner_id=? AND destination_id=? AND source_id=? AND asset_id=? AND asset_version=?',
+            'UPDATE asset_receipts SET attempt=attempt+1 WHERE owner_id=? AND sync_id=? AND asset_id=? AND asset_version=?',
           ).run(...keys);
           row.attempt++;
         }
@@ -307,7 +291,7 @@ export class SqliteAssets implements AssetRepository {
     db.transaction(() => {
       this.read(input);
       db.query(
-        'UPDATE asset_receipts SET outcome=? WHERE owner_id=? AND destination_id=? AND source_id=? AND asset_id=? AND asset_version=? AND outcome IS NULL',
+        'UPDATE asset_receipts SET outcome=? WHERE owner_id=? AND sync_id=? AND asset_id=? AND asset_version=? AND outcome IS NULL',
       ).run(canonicalJson(input.outcome).json, ...receiptKeys(input));
     }).immediate();
   }
@@ -328,7 +312,7 @@ export class SqliteAssets implements AssetRepository {
         if (
           delivery.id !== input.lease.delivery.id ||
           delivery.ownerId !== input.lease.ownerId ||
-          delivery.sourceId !== input.lease.delivery.sourceId
+          delivery.syncId !== input.lease.delivery.syncId
         ) {
           fail('invalid_materialized_delivery');
         }
@@ -355,13 +339,7 @@ export class SqliteAssets implements AssetRepository {
   }
 }
 function receiptKeys(input: Parameters<AssetRepository['receipt']>[0]): string[] {
-  return [
-    input.lease.ownerId,
-    input.lease.destination.id,
-    input.lease.delivery.sourceId,
-    input.asset.id,
-    input.asset.version,
-  ];
+  return [input.lease.ownerId, input.lease.delivery.syncId, input.asset.id, input.asset.version];
 }
 function captured(row: AssetRow): CapturedAsset {
   return {

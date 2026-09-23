@@ -22,12 +22,12 @@ export function receiverController(input: {
       ({ scope, query }) =>
         input.receiver.records({
           ...scope,
-          sourceId: query.sourceId,
+          syncId: query.syncId,
           offset: query.offset ?? 0,
         }),
       {
         query: t.Object({
-          sourceId: t.Optional(t.String({ minLength: 1, maxLength: 1024 })),
+          syncId: t.Optional(t.String({ minLength: 1, maxLength: 1024 })),
           offset: t.Optional(t.Integer({ minimum: 0, maximum: 1000000 })),
         }),
       },
@@ -37,7 +37,7 @@ export function receiverController(input: {
       async ({ scope, query, status }) => {
         const record = await input.receiver.record({
           ...scope,
-          sourceId: query.sourceId,
+          syncId: query.syncId,
           kind: query.kind,
           id: query.id,
         });
@@ -45,7 +45,7 @@ export function receiverController(input: {
       },
       {
         query: t.Object({
-          sourceId: t.String({ minLength: 1, maxLength: 1024 }),
+          syncId: t.String({ minLength: 1, maxLength: 1024 }),
           kind: t.String({ minLength: 1, maxLength: 1024 }),
           id: t.String({ minLength: 1, maxLength: 1024 }),
         }),
@@ -72,10 +72,10 @@ export function receiverController(input: {
     .get(
       '/assets',
       ({ scope, query }) =>
-        input.receiver.assets({ ...scope, sourceId: query.sourceId, offset: query.offset ?? 0 }),
+        input.receiver.assets({ ...scope, syncId: query.syncId, offset: query.offset ?? 0 }),
       {
         query: t.Object({
-          sourceId: t.Optional(t.String({ minLength: 1, maxLength: 1024 })),
+          syncId: t.Optional(t.String({ minLength: 1, maxLength: 1024 })),
           offset: t.Optional(t.Integer({ minimum: 0, maximum: 1000000 })),
         }),
       },

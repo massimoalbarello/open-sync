@@ -7,7 +7,7 @@ import { createSyncRuntime } from '@context-use/open-sync/engine';
 import { githubPullRequests } from '@open-sync/examples/syncs/github';
 import { DashboardService } from '#backend/services/dashboard/service.ts';
 
-test('concurrent setup reuses local storage and authorization cannot strand or rebind a waiting sync', async () => {
+test('concurrent sync creation prepares local destinations and authorization cannot strand or rebind a waiting sync', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'dashboard-setup-'));
   const owner = { actorId: 'alice', ownerId: 'alice' };
   const connection = { id: 'owned', service: 'github' };
@@ -16,7 +16,6 @@ test('concurrent setup reuses local storage and authorization cannot strand or r
     definitions: [githubPullRequests],
     destinationTypes: {
       local: {
-        version: '1',
         configSchema: { type: 'object' },
         deliver: () => Promise.resolve({ status: 'accepted' }),
       },
@@ -61,31 +60,29 @@ test('concurrent setup reuses local storage and authorization cannot strand or r
       destination: { type: 'local', input: {} },
     };
     const created = await Promise.all([dashboard.create(input), dashboard.create(input)]);
-    expect(engine.api.destinations(owner)).toHaveLength(1);
     for (const sync of created) {
       expect(sync.authorizeService).toBeUndefined();
-      expect(engine.api.installation({ ...owner, id: sync.id }).connection).toEqual(connection);
+      expect(engine.api.sync({ ...owner, id: sync.id }).connection).toEqual(connection);
     }
-    const destinationId = engine.api.destinations(owner)[0]!.id;
-    const waiting = await engine.api.createInstallation({
+    const waiting = await engine.api.createSync({
       ...owner,
-      definition: githubPullRequests.definition,
+      definition: githubPullRequests.definition.id,
       config: {},
-      destinationId,
+      destination: { type: 'local', input: {} },
       enabled: false,
     });
     await Promise.all([
       dashboard.connectWaiting({ ...owner, connection }),
       dashboard.connectWaiting({ ...owner, connection }),
     ]);
-    const saved = engine.api.installation({ ...owner, id: waiting.id });
+    const saved = engine.api.sync({ ...owner, id: waiting.id });
     expect(saved.enabled).toBe(true);
-    expect(saved.bindingEpoch).toBe(waiting.bindingEpoch + 1);
+    expect(saved.connection).toEqual(connection);
     await dashboard.connectWaiting({
       ...owner,
       connection: { id: 'different', service: 'github' },
     });
-    expect(engine.api.installation({ ...owner, id: waiting.id }).connection).toEqual(connection);
+    expect(engine.api.sync({ ...owner, id: waiting.id }).connection).toEqual(connection);
   } finally {
     await engine.close();
     await rm(directory, { recursive: true, force: true });
@@ -101,7 +98,6 @@ test('dashboard creates syncs with an unrelated destination using its own setup 
     definitions: [{ ...githubPullRequests, definition }],
     destinationTypes: {
       archive: {
-        version: '1',
         configSchema: {
           type: 'object',
           properties: { bucket: { type: 'string' } },
@@ -133,12 +129,8 @@ test('dashboard creates syncs with an unrelated destination using its own setup 
       config: { history: 'Last 1 year' },
     };
     const sync = await dashboard.create(input);
-    expect(engine.api.installation({ ...owner, id: sync.id }).config).toEqual(input.config);
-    expect(engine.api.installation({ ...owner, id: sync.id }).destinationId).toBe(
-      engine.api.destinations(owner)[0]!.id,
-    );
-    expect(engine.api.destinations(owner)[0]?.type).toBe('archive');
-    expect(engine.api.destinations({ ...owner, ownerId: 'injected-owner' })).toHaveLength(0);
+    expect(engine.api.sync({ ...owner, id: sync.id }).destinationType).toBe('archive');
+    expect(engine.api.syncs({ ...owner, ownerId: 'injected-owner' })).toHaveLength(0);
     await expect(
       dashboard.create({
         ...input,
@@ -152,8 +144,7 @@ test('dashboard creates syncs with an unrelated destination using its own setup 
         destination: { type: 'archive', input: { endpoint: 'wrong field' } },
       }),
     ).rejects.toThrow();
-    expect(engine.api.destinations(owner)).toHaveLength(1);
-    expect(engine.api.installations(owner)).toHaveLength(1);
+    expect(engine.api.syncs(owner)).toHaveLength(1);
   } finally {
     await engine.close();
     await rm(directory, { recursive: true, force: true });
@@ -168,7 +159,6 @@ test('sync creation binds the selected owned OAuth account and refuses ambiguous
     definitions: [githubPullRequests],
     destinationTypes: {
       local: {
-        version: '1',
         configSchema: { type: 'object' },
         deliver: () => Promise.resolve({ status: 'accepted' }),
       },
@@ -219,25 +209,24 @@ test('sync creation binds the selected owned OAuth account and refuses ambiguous
         'Select a connected account',
       );
     }
-    expect(engine.api.destinations(owner)).toHaveLength(0);
-    expect(engine.api.installations(owner)).toHaveLength(0);
+    expect(engine.api.syncs(owner)).toHaveLength(0);
     for (const connectionId of ['personal', 'work']) {
       const created = await dashboard.create({ ...input, connectionId });
-      const saved = engine.api.installation({ ...owner, id: created.id });
+      const saved = engine.api.sync({ ...owner, id: created.id });
       expect(created.authorizeService).toBeUndefined();
       expect(saved.connection).toEqual({ id: connectionId, service: 'github' });
       expect(saved.enabled).toBe(true);
     }
-    expect(new Set(engine.api.installations(owner).map((entry) => entry.sourceId)).size).toBe(2);
+    expect(new Set(engine.api.syncs(owner).map((entry) => entry.id)).size).toBe(2);
     // Two accounts finish authorization during creation. The saved sync must not guess which to use.
     firstStatusEmpty = true;
     const waiting = await dashboard.create(input);
     expect(waiting.authorizeService).toBe('github');
     const resource = { ...owner, id: waiting.id };
-    expect(engine.api.installation(resource)).toMatchObject({ enabled: false });
-    expect(engine.api.installation(resource).connection).toBeUndefined();
+    expect(engine.api.sync(resource)).toMatchObject({ enabled: false });
+    expect(engine.api.sync(resource).connection).toBeUndefined();
     await dashboard.connectWaiting({ ...owner, connection: { id: 'work', service: 'github' } });
-    expect(engine.api.installation(resource)).toMatchObject({
+    expect(engine.api.sync(resource)).toMatchObject({
       enabled: true,
       connection: { id: 'work', service: 'github' },
     });

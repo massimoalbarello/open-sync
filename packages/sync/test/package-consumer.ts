@@ -29,8 +29,7 @@ if (connectorExported) {
 const definition: SyncRegistration = {
   definition: {
     id: 'package-test',
-    version: '1',
-    artifactId: 'package-test/1',
+
     configSchema: { type: 'object' },
     checkpointSchema: { type: 'integer' },
     initialCheckpoint: 0,
@@ -66,7 +65,6 @@ const options: OpenSyncOptions = {
   definitions: [definition],
   destinationTypes: {
     local: {
-      version: '1',
       configSchema: { type: 'object' },
       deliver: ({ delivery }) => {
         received.push(delivery);
@@ -140,12 +138,12 @@ try {
     if (!connection) {
       throw new Error('Provider connection was not created');
     }
-    const destination = sync.api.createDestination({ ...scope, type: 'local', config: {} });
-    await sync.api.createInstallation({
+    const destination = { type: 'local', input: {} };
+    await sync.api.createSync({
       ...scope,
-      destinationId: destination.id,
+      destination,
       config: {},
-      definition: definition.definition,
+      definition: definition.definition.id,
       connection: { id: connection.id, service: connection.service },
     });
     sync.start();

@@ -1,3 +1,4 @@
+import { syncApi } from './api';
 import { openDatabase } from './db/client';
 import { type Logger, safeLogger } from './execution/diagnostics';
 import type { ProviderGateway } from './execution/provider';
@@ -50,9 +51,6 @@ export function createSyncRuntime(options: SyncRuntimeOptions) {
   const db = openDatabase(options.databasePath);
   try {
     const catalog = new SqliteCatalog(db);
-    for (const definition of registry.definitions()) {
-      catalog.register(definition);
-    }
     const deliveries = new SqliteDeliveries(db);
     const assets = new SqliteAssets({
       db,
@@ -100,7 +98,7 @@ export function createSyncRuntime(options: SyncRuntimeOptions) {
     });
     let closing: Promise<void> | undefined;
     return {
-      api,
+      api: syncApi(api),
       start: () => worker.start(),
       tick: () => worker.tick(),
       close: () => {

@@ -8,7 +8,17 @@ import { DirectoryAssets } from '../src/repositories/assets/filesystem';
 import { SqliteAssets } from '../src/repositories/assets/sqlite';
 import { createSyncRuntime } from '../src/runtime';
 import { AcquisitionService } from '../src/services/acquisition';
-import { accepted, alpha, beta, configure, fixture, page, repositories, storage } from './support';
+import {
+  accepted,
+  alpha,
+  beta,
+  configure,
+  fixture,
+  page,
+  repositories,
+  savedSync,
+  storage,
+} from './support';
 
 const retryMs = 30_000;
 const maxBackoff = 3_600_000;
@@ -104,8 +114,8 @@ test('source failures back off durably despite partial progress and pruned histo
   };
   let engine = createSyncRuntime(options);
   try {
-    const installation = await configure(engine);
-    const scope = { ...alpha, id: installation.id };
+    const sync = await configure(engine);
+    const scope = { ...alpha, id: sync.id };
     const delays = Object.values({
       first: 30_000,
       second: 60_000,
@@ -120,7 +130,7 @@ test('source failures back off durably despite partial progress and pruned histo
     await engine.tick();
     for (const delay of delays) {
       await engine.tick();
-      expect(engine.api.installation(scope)).toMatchObject({
+      expect(savedSync({ path: files.path, scope: scope })).toMatchObject({
         checkpoint: 1,
         status: 'execution_failed',
         nextDueAt: now + delay,
@@ -142,27 +152,27 @@ test('source failures back off durably despite partial progress and pruned histo
     expect(engine.api.polls(scope).polls[0]?.recordsChanged).toBe(1);
 
     // A different owner starts at the base delay, even while the first source is backed off.
-    const destination = engine.api.createDestination({ ...beta, type: 'local', config: {} });
-    const other = await engine.api.createInstallation({
+    const destination = { type: 'local', input: {} };
+    const other = await engine.api.createSync({
       ...beta,
-      definition: fixture.definition,
+      definition: fixture.definition.id,
       config: { count: 1 },
-      destinationId: destination.id,
+      destination,
     });
     await engine.tick();
     await engine.tick();
     await engine.tick();
-    expect(engine.api.installation({ ...beta, id: other.id }).nextDueAt).toBe(now + retryMs);
+    expect(engine.api.sync({ ...beta, id: other.id }).nextDueAt).toBe(now + retryMs);
     await engine.api.setEnabled({ ...beta, id: other.id, enabled: false });
 
     failing = false;
     engine.api.queueRun(scope);
     await engine.tick();
-    expect(engine.api.installation(scope).status).toBe('succeeded');
+    expect(engine.api.sync(scope).status).toBe('succeeded');
     failing = true;
     engine.api.queueRun(scope);
     await engine.tick();
-    expect(engine.api.installation(scope).nextDueAt).toBe(now + retryMs);
+    expect(engine.api.sync(scope).nextDueAt).toBe(now + retryMs);
     expect(events.at(-1)?.fields?.failureCount).toBe(1);
   } finally {
     await engine.close();
@@ -215,26 +225,29 @@ test.each(['records', 'assets'])(
     };
     let engine = createSyncRuntime(options);
     try {
-      const installation = await configure(engine);
-      const scope = { ...alpha, id: installation.id };
+      const sync = await configure(engine);
+      const scope = { ...alpha, id: sync.id };
       await engine.tick();
-      expect(engine.api.installation(scope).nextDueAt).toBe(now + retryMs);
+      expect(engine.api.sync(scope).nextDueAt).toBe(now + retryMs);
       expect(events.at(-1)?.fields).toMatchObject({ httpStatus: 429, retryAfterMs: retryMs });
       expect(JSON.stringify(events)).not.toContain('private upstream payload');
       now += retryMs;
       await engine.tick();
       const secondDelay = 60_000;
-      expect(engine.api.installation(scope).nextDueAt).toBe(now + secondDelay);
+      expect(engine.api.sync(scope).nextDueAt).toBe(now + secondDelay);
       now += secondDelay;
       failing = false;
       await engine.tick();
-      expect(engine.api.installation(scope)).toMatchObject({ status: 'yielded', nextDueAt: now });
+      expect(savedSync({ path: files.path, scope: scope })).toMatchObject({
+        status: 'yielded',
+        nextDueAt: now,
+      });
       await engine.close();
       engine = createSyncRuntime(options);
       failing = true;
       await engine.tick();
       const thirdDelay = 120_000;
-      expect(engine.api.installation(scope).nextDueAt).toBe(now + thirdDelay);
+      expect(engine.api.sync(scope).nextDueAt).toBe(now + thirdDelay);
     } finally {
       await engine.close();
       clock.mockRestore();

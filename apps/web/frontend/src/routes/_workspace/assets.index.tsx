@@ -10,21 +10,21 @@ import { assetsOptions } from '../../queries/assets';
 
 export const Route = createFileRoute('/_workspace/assets/')({
   component: Assets,
-  validateSearch: (search: Record<string, unknown>): { sourceId?: string } => ({
-    sourceId: typeof search.sourceId === 'string' ? search.sourceId : undefined,
+  validateSearch: (search: Record<string, unknown>): { syncId?: string } => ({
+    syncId: typeof search.syncId === 'string' ? search.syncId : undefined,
   }),
 });
 
 function Assets() {
   const { userId } = Route.useRouteContext();
-  const { sourceId } = Route.useSearch();
-  const query = useInfiniteQuery(assetsOptions({ userId, sourceId }));
+  const { syncId } = Route.useSearch();
+  const query = useInfiniteQuery(assetsOptions({ userId, syncId }));
   const assets = query.data?.pages.flatMap((page) => page.assets) ?? [];
   return (
     <SectionPage
       title="Assets"
       action={
-        sourceId ? (
+        syncId ? (
           <Link to="/assets" search={{}} className="text-sm underline">
             All assets
           </Link>

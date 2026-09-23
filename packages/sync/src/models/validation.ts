@@ -11,7 +11,7 @@ export function identifier(value: unknown): asserts value is string {
 export function validate(input: { value: unknown; schema: Schema }): JsonValue {
   try {
     const json = canonicalJson(input.value);
-    // The validator mutates schemas while compiling; persisted manifests remain immutable.
+    // The validator mutates schemas while compiling; host-provided schemas remain unchanged.
     if (
       !new Validator(structuredClone(input.schema), '2020-12', false).validate(json.value).valid
     ) {

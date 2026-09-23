@@ -112,16 +112,13 @@ export async function providerSetupJourney(input: {
     fullPage: true,
     animations: 'disabled',
   });
-  const installation = await (
-    await page.request.get(`${origin}/api/open-sync/sync/installations/${id}`)
-  ).json();
+  const sync = await (await page.request.get(`${origin}/api/open-sync/sync/syncs/${id}`)).json();
   const status = await (await page.request.get(`${origin}/api/open-sync/providers/gmail`)).json();
   assert.equal(
-    installation.connection.id,
+    sync.connection.id,
     status.connections.find((entry: { account: string }) => entry.account === 'work@example.com')
       .id,
   );
-  assert.equal(installation.checkpoint.account, 'work@example.com');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${origin}/providers/gmail`);
   await page.getByRole('button', { name: 'Connect another account', exact: true }).waitFor();

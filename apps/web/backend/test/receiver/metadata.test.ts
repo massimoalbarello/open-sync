@@ -20,9 +20,8 @@ test('record metadata survives restart and follows revision ordering', async () 
       version: 1,
       id: 'metadata',
       ownerId: scope.ownerId,
-      sourceId: 'source',
-      installationId: 'installation',
-      definition: { id: 'test', version: '1', artifactId: 'test/1' },
+      syncId: 'source',
+      definition: 'test',
       deliverable: {
         records: [
           {

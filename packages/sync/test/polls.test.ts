@@ -2,7 +2,17 @@ import { expect, spyOn, test } from 'bun:test';
 import { createSyncController } from '../src/http/controller';
 import type { SyncRegistration } from '../src/models/definition';
 import { createSyncRuntime } from '../src/runtime';
-import { accepted, alpha, beta, configure, fixture, page, repositories, storage } from './support';
+import {
+  accepted,
+  alpha,
+  beta,
+  configure,
+  fixture,
+  page,
+  repositories,
+  savedSync,
+  storage,
+} from './support';
 
 test('a poll spans source steps and restart, counts records, and retains owner isolation', async () => {
   const files = storage();
@@ -16,8 +26,8 @@ test('a poll spans source steps and restart, counts records, and retains owner i
   };
   let engine = createSyncRuntime(options);
   try {
-    const installation = await configure(engine);
-    const resource = { ...alpha, id: installation.id };
+    const sync = await configure(engine);
+    const resource = { ...alpha, id: sync.id };
     now++;
     const other = await configure(engine);
     now++;
@@ -33,9 +43,9 @@ test('a poll spans source steps and restart, counts records, and retains owner i
     expect(first.attempts[0]?.state).toBe('yielded');
     await engine.close();
     engine = createSyncRuntime(options);
-    // The already-due second installation gets a turn before the first continues.
+    // The already-due second sync gets a turn before the first continues.
     await engine.tick();
-    expect(engine.api.installation({ ...alpha, id: other.id }).checkpoint).toBe(1);
+    expect(savedSync({ path: files.path, scope: { ...alpha, id: other.id } }).checkpoint).toBe(1);
     const remainingSlices = 4;
     for (let i = 0; i < remainingSlices; i++) {
       now++;
@@ -55,7 +65,7 @@ test('a poll spans source steps and restart, counts records, and retains owner i
       'yielded',
       'yielded',
     ]);
-    expect(() => engine.api.polls({ ...beta, id: installation.id })).toThrow('not found');
+    expect(() => engine.api.polls({ ...beta, id: sync.id })).toThrow('not found');
     engine.api.queueRun({ ...resource, backfill: true });
     const recordCount = 3;
     for (let i = 0; i < recordCount; i++) {
@@ -70,9 +80,7 @@ test('a poll spans source steps and restart, counts records, and retains owner i
     expect(engine.api.polls(resource).polls).toHaveLength(2);
     expect(engine.api.polls({ ...resource, offset: 1 }).polls).toHaveLength(1);
     const app = createSyncController({ api: engine.api, authorize: () => alpha });
-    const response = await app.handle(
-      new Request(`http://localhost/sync/installations/${installation.id}/polls`),
-    );
+    const response = await app.handle(new Request(`http://localhost/sync/syncs/${sync.id}/polls`));
     const ok = 200;
     expect(response.status).toBe(ok);
     expect((await response.json()).polls[0].recordsProcessed).toBe(recordCount);
@@ -108,19 +116,15 @@ test('each call commits one step and returns control to the scheduler', async ()
     timing: { timeoutMs, leaseMs: 1600 },
   });
   try {
-    const installation = await configure(engine);
+    const sync = await configure(engine);
     await engine.tick();
     expect(cleaned).toBe(true);
-    expect(engine.api.installation({ ...alpha, id: installation.id }).checkpoint).toBe(1);
-    expect(engine.api.polls({ ...alpha, id: installation.id }).polls[0]?.attempts[0]).toMatchObject(
-      {
-        state: 'yielded',
-        recordsProcessed: 1,
-      },
-    );
-    expect(
-      engine.api.installation({ ...alpha, id: installation.id }).nextDueAt,
-    ).toBeLessThanOrEqual(Date.now());
+    expect(savedSync({ path: files.path, scope: { ...alpha, id: sync.id } }).checkpoint).toBe(1);
+    expect(engine.api.polls({ ...alpha, id: sync.id }).polls[0]?.attempts[0]).toMatchObject({
+      state: 'yielded',
+      recordsProcessed: 1,
+    });
+    expect(engine.api.sync({ ...alpha, id: sync.id }).nextDueAt).toBeLessThanOrEqual(Date.now());
   } finally {
     await engine.close();
     files.close();
@@ -152,8 +156,8 @@ test('a stalled attempt times out; pausing preserves its poll and reprocessing c
     timing: { timeoutMs: 100 },
   });
   try {
-    const installation = await configure(engine);
-    const scope = { ...alpha, id: installation.id };
+    const sync = await configure(engine);
+    const scope = { ...alpha, id: sync.id };
     // Commit the page before testing the stalled attempt, independent of filesystem latency.
     await engine.tick();
     await engine.tick();
@@ -193,14 +197,12 @@ test.each([false, true])(
           definition: fixture.definition,
         }),
       ).toThrow('injected');
-      expect(
-        f.catalog.polls({ ...alpha, id: f.installation.id, offset: 0 }).polls[0],
-      ).toMatchObject({
+      expect(f.catalog.polls({ ...alpha, id: f.sync.id, offset: 0 }).polls[0]).toMatchObject({
         recordsProcessed: 0,
         recordsChanged: 0,
         completedAt: null,
       });
-      expect(f.catalog.installation({ ...alpha, id: f.installation.id }).checkpoint).toBe(0);
+      expect(f.catalog.sync({ ...alpha, id: f.sync.id }).checkpoint).toBe(0);
       expect(f.deliveries.status(alpha).pendingRecords).toBe(0);
     } finally {
       f.close();
@@ -219,7 +221,7 @@ test('empty completion batches do not inflate record totals', () => {
       page: { ...page, deliverable: { records: [] }, complete: true },
       definition: fixture.definition,
     });
-    const history = f.catalog.polls({ ...alpha, id: f.installation.id, offset: 0 });
+    const history = f.catalog.polls({ ...alpha, id: f.sync.id, offset: 0 });
     expect(history.polls[0]).toMatchObject({
       state: 'succeeded',
       recordsProcessed: 1,

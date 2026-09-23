@@ -30,19 +30,16 @@ function SyncDetail() {
   const invalidate = () => client.invalidateQueries({ queryKey: syncKeys.owner(userId) });
   const enable = useMutation({ mutationFn: setEnabled, onSuccess: invalidate });
   const run = useMutation({ mutationFn: runSync, onSuccess: invalidate });
-  const sync = query.data?.installation;
-  const source = catalog.data?.sources.find(
-    (entry) => entry.id === sync?.definition.id && entry.version === sync.definition.version,
-  );
-  const destination = catalog.data?.destinations.find((entry) => entry.id === sync?.destinationId);
-  const type = catalog.data?.types.find((entry) => entry.type === destination?.type);
+  const sync = query.data?.sync;
+  const source = catalog.data?.sources.find((entry) => entry.id === sync?.definition);
+  const type = catalog.data?.types.find((entry) => entry.type === sync?.destinationType);
   const needsAuthorization = !!source?.provider && !sync?.connection;
   const error = query.error || catalog.error || enable.error || run.error;
   return (
     <SectionPage
       title={
         sync
-          ? `${source?.name ?? sync.definition.id} → ${type?.name ?? destination?.type ?? 'Unavailable destination'}`
+          ? `${source?.name ?? sync.definition} → ${type?.name ?? sync.destinationType ?? 'Unavailable destination'}`
           : 'Sync'
       }
       subtitle={<SyncAccount connection={sync?.connection} connections={query.data?.connections} />}
@@ -122,7 +119,7 @@ function SyncDetail() {
               </dl>
               <Link
                 to="/records"
-                search={{ sourceId: sync.sourceId }}
+                search={{ syncId: sync.id }}
                 className="inline-block text-sm underline"
               >
                 View records

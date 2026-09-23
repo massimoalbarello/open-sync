@@ -11,17 +11,12 @@ const catalog = new SqliteCatalog(db);
 const acquisition = new SqliteAcquisition({ db, limits: defaultLimits, historyLimit: 1 });
 const deliveries = new SqliteDeliveries(db);
 const leaseMs = 60_000;
-catalog.register(fixture.definition);
-const destination = catalog.createDestination({
+
+const destination = { type: 'local', config: {} };
+catalog.createSync({
   ...alpha,
-  type: 'local',
-  version: '1',
-  config: {},
-});
-catalog.createInstallation({
-  ...alpha,
-  destinationId: destination.id,
-  definition: fixture.definition,
+  destination,
+  definition: fixture.definition.id,
   config: { count: 3 },
   initialCheckpoint: 0,
 });

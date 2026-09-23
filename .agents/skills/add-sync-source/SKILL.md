@@ -60,4 +60,5 @@ verify no partial records or advanced checkpoint are committed, then restart and
 Cover resuming at the next provider page without re-fetching preceding listing pages, multi-page
 completion, replay without duplicate changes, and cursor recovery. For pagination exceptions,
 cover incomplete listings and the declared coverage limit. Check the source's update/deletion
-semantics and schema/version compatibility; do not silently reinterpret a saved checkpoint.
+semantics and checkpoint compatibility. Implementations are registered by name; replace the sync
+for incompatible changes instead of silently reinterpreting its saved checkpoint.

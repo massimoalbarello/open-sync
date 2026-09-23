@@ -6,11 +6,10 @@ import { syncErrorResponse } from './index';
 
 const identifier = t.String({ minLength: 1, maxLength: 1024 });
 const config = t.Record(t.String(), t.Unknown());
-const definition = t.Object({ id: identifier, version: identifier, artifactId: identifier });
-const installationBody = t.Object({
-  definition,
+const syncBody = t.Object({
+  definition: identifier,
   config,
-  destinationId: identifier,
+  destination: t.Object({ type: identifier, input: config }),
   connection: t.Optional(t.Object({ id: identifier, service: identifier })),
   intervalMs: t.Optional(t.Integer({ minimum: 1 })),
   enabled: t.Optional(t.Boolean()),
@@ -36,41 +35,31 @@ export function createSyncController(input: {
     })
     .get('/definitions', ({ scope }) => ({ definitions: input.api.definitions(scope) }))
     .get('/destination-types', ({ scope }) => ({ types: input.api.destinationTypes(scope) }))
-    .get('/destinations', ({ scope }) => ({ destinations: input.api.destinations(scope) }))
+    .get('/syncs', ({ scope }) => ({ syncs: input.api.syncs(scope) }))
     .post(
-      '/destinations',
+      '/syncs',
       ({ scope, body }) =>
-        input.api.createDestination({ ...body, config: body.config as JsonObject, ...scope }),
-      {
-        body: t.Object({ type: identifier, config }),
-      },
-    )
-    .post(
-      '/destinations/setup',
-      ({ scope, body }) =>
-        input.api.setupDestination({ ...body, input: body.input as JsonObject, ...scope }),
-      { body: t.Object({ type: identifier, input: config }) },
-    )
-    .get('/installations', ({ scope }) => ({ installations: input.api.installations(scope) }))
-    .post(
-      '/installations',
-      ({ scope, body }) =>
-        input.api.createInstallation({ ...body, config: body.config as JsonObject, ...scope }),
-      { body: installationBody },
+        input.api.createSync({
+          ...body,
+          config: body.config as JsonObject,
+          destination: { type: body.destination.type, input: body.destination.input as JsonObject },
+          ...scope,
+        }),
+      { body: syncBody },
     )
     .get(
-      '/installations/:id',
-      ({ scope, params }) => input.api.installation({ ...scope, id: params.id }),
+      '/syncs/:id',
+      ({ scope, params }) => input.api.sync({ ...scope, id: params.id }),
       resourceParams,
     )
     .patch(
-      '/installations/:id',
+      '/syncs/:id',
       ({ scope, params, body }) =>
         input.api.setEnabled({ ...scope, id: params.id, enabled: body.enabled }),
       { ...resourceParams, body: t.Object({ enabled: t.Boolean() }) },
     )
     .get(
-      '/installations/:id/polls',
+      '/syncs/:id/polls',
       ({ scope, params, query }) =>
         input.api.polls({ ...scope, id: params.id, offset: query.offset }),
       {
@@ -79,7 +68,7 @@ export function createSyncController(input: {
       },
     )
     .post(
-      '/installations/:id/run',
+      '/syncs/:id/run',
       ({ scope, params, body }) => {
         input.api.queueRun({ ...scope, id: params.id, backfill: body.backfill });
         return { queued: true };

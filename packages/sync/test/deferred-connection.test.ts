@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { createSyncRuntime } from '../src/runtime';
-import { accepted, alpha, beta, fixture, storage } from './support';
+import { accepted, alpha, beta, fixture, savedSync, storage } from './support';
 
 const registration = {
   ...fixture,
@@ -31,55 +31,57 @@ test('a waiting sync survives restart, cannot run unbound and accepts its first 
   };
   let engine = createSyncRuntime(options);
   try {
-    const destination = engine.api.createDestination({ ...alpha, type: 'local', config: {} });
+    const destination = { type: 'local', input: {} };
     const create = {
       ...alpha,
-      definition: registration.definition,
-      destinationId: destination.id,
+      definition: registration.definition.id,
+      destination,
       config: { count: 1 },
     };
-    await expect(engine.api.createInstallation(create)).rejects.toThrow('connection required');
-    const waiting = await engine.api.createInstallation({ ...create, enabled: false });
+    await expect(engine.api.createSync(create)).rejects.toThrow('connection required');
+    const waiting = await engine.api.createSync({ ...create, enabled: false });
     await engine.tick();
     expect(engine.api.polls({ ...alpha, id: waiting.id }).polls).toHaveLength(0);
     await engine.close();
     engine = createSyncRuntime(options);
     const id = waiting.id;
-    expect(engine.api.installation({ ...alpha, id }).connection).toBeUndefined();
+    expect(engine.api.sync({ ...alpha, id }).connection).toBeUndefined();
     await expect(engine.api.setEnabled({ ...alpha, id, enabled: true })).rejects.toThrow(
       'connection required',
     );
     await expect(
-      engine.api.connectInstallation({
+      engine.api.connectSync({
         ...beta,
         id,
         connection: { id: 'owned', service: 'github' },
       }),
     ).rejects.toThrow('not found');
     await expect(
-      engine.api.connectInstallation({
+      engine.api.connectSync({
         ...alpha,
         id,
         connection: { id: 'foreign', service: 'github' },
       }),
     ).rejects.toThrow('not found');
-    expect(engine.api.installation({ ...alpha, id }).enabled).toBe(false);
-    const connected = await engine.api.connectInstallation({
+    expect(engine.api.sync({ ...alpha, id }).enabled).toBe(false);
+    const connected = await engine.api.connectSync({
       ...alpha,
       id,
       connection: { id: 'owned', service: 'github' },
     });
     expect(connected.enabled).toBe(true);
-    expect(connected.sourceId).toBe(waiting.sourceId);
+    expect(connected.id).toBe(waiting.id);
     await expect(
-      engine.api.connectInstallation({
+      engine.api.connectSync({
         ...alpha,
         id,
         connection: { id: 'owned', service: 'github' },
       }),
     ).rejects.toThrow('already connected');
     await engine.tick();
-    expect(engine.api.installation({ ...alpha, id }).checkpointRevision).toBeGreaterThan(0);
+    expect(
+      savedSync({ path: files.path, scope: { ...alpha, id } }).checkpointRevision,
+    ).toBeGreaterThan(0);
     await engine.close();
     engine = createSyncRuntime({ ...options, definitions: [] });
     expect((await engine.api.setEnabled({ ...alpha, id, enabled: false })).enabled).toBe(false);

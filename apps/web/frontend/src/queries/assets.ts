@@ -4,14 +4,14 @@ import { api } from '../lib/api';
 const notFound = 404;
 export const assetKeys = { owner: (userId: string) => ['assets', userId] as const };
 
-export function assetsOptions(input: { userId: string; sourceId?: string }) {
+export function assetsOptions(input: { userId: string; syncId?: string }) {
   return infiniteQueryOptions({
-    queryKey: [...assetKeys.owner(input.userId), 'list', input.sourceId],
+    queryKey: [...assetKeys.owner(input.userId), 'list', input.syncId],
     initialPageParam: 0,
     refetchInterval: 5000,
     queryFn: async ({ pageParam, signal }) => {
       const result = await api.api.receiver.assets.get({
-        query: { sourceId: input.sourceId, offset: pageParam },
+        query: { syncId: input.syncId, offset: pageParam },
         fetch: { signal },
       });
       if (result.error) {

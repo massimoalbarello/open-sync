@@ -33,8 +33,8 @@ export class SqliteReceiver implements ReceiverRepository {
   async record(input: ReceiverScope & RecordIdentity) {
     const [row] = await this.db<
       RecordRow[]
-    >`SELECT source_id,kind,record_id,revision,data,content,asset_ids,preview,created_at,updated_at FROM host_records
-      WHERE owner_id=${input.ownerId} AND source_id=${input.sourceId} AND kind=${input.kind}
+    >`SELECT sync_id,kind,record_id,revision,data,content,asset_ids,preview,created_at,updated_at FROM host_records
+      WHERE owner_id=${input.ownerId} AND sync_id=${input.syncId} AND kind=${input.kind}
       AND record_id=${input.id} AND deleted=0`;
     if (!row) {
       return;
@@ -63,14 +63,14 @@ export class SqliteReceiver implements ReceiverRepository {
           : file.stream(),
     };
   }
-  async records(input: ReceiverScope & { sourceId?: string; offset: number }) {
+  async records(input: ReceiverScope & { syncId?: string; offset: number }) {
     const limit = 50;
-    const sourceId = input.sourceId ?? null;
+    const syncId = input.syncId ?? null;
     const rows = await this.db<
       RecordRow[]
-    >`SELECT source_id,kind,record_id,revision,data,content,asset_ids,preview,created_at,updated_at FROM host_records
-      WHERE owner_id=${input.ownerId} AND deleted=0 AND (${sourceId} IS NULL OR source_id=${sourceId})
-      ORDER BY updated_at DESC,source_id,kind,record_id LIMIT ${limit + 1} OFFSET ${input.offset}`;
+    >`SELECT sync_id,kind,record_id,revision,data,content,asset_ids,preview,created_at,updated_at FROM host_records
+      WHERE owner_id=${input.ownerId} AND deleted=0 AND (${syncId} IS NULL OR sync_id=${syncId})
+      ORDER BY updated_at DESC,sync_id,kind,record_id LIMIT ${limit + 1} OFFSET ${input.offset}`;
     return {
       records: await relateAssets({
         ...input,
@@ -121,7 +121,7 @@ export class SqliteReceiver implements ReceiverRepository {
         await applyRecord({
           tx,
           ownerId: input.ownerId,
-          sourceId: input.delivery.sourceId,
+          syncId: input.delivery.syncId,
           record,
         });
       }
@@ -133,10 +133,10 @@ export class SqliteReceiver implements ReceiverRepository {
 async function applyRecord(input: {
   tx: TransactionSQL;
   ownerId: string;
-  sourceId: string;
+  syncId: string;
   record: DeliveredRecord;
 }): Promise<void> {
-  const { tx, ownerId, sourceId, record } = input;
+  const { tx, ownerId, syncId, record } = input;
   const data = record.operation === 'upsert' ? canonicalJson(record.data).json : null;
   const metadata = record.operation === 'upsert' ? record : undefined;
   const content =
@@ -146,14 +146,14 @@ async function applyRecord(input: {
     ? await tx<
         { id: string }[]
       >`SELECT DISTINCT a.id FROM json_each(${JSON.stringify(references)}) ref
-        JOIN host_assets a ON a.owner_id=${ownerId} AND a.source_id=${sourceId}
+        JOIN host_assets a ON a.owner_id=${ownerId} AND a.sync_id=${syncId}
         AND a.asset_id=json_extract(ref.value,'$.id') AND a.asset_version=json_extract(ref.value,'$.version')
         ORDER BY cast(ref.key AS INTEGER)`
     : [];
   const assetIds = JSON.stringify(assets.map((asset) => asset.id));
-  await tx`INSERT INTO host_records(owner_id,source_id,kind,record_id,revision,deleted,data,asset_ids,content,preview,created_at,updated_at)
-    VALUES (${ownerId},${sourceId},${record.kind},${record.id},${record.revision},${Number(record.operation === 'delete')},${data},${assetIds},${content},${metadata?.preview ?? null},${metadata?.createdAt ?? null},${metadata?.updatedAt ?? null})
-    ON CONFLICT(owner_id,source_id,kind,record_id) DO UPDATE SET revision=excluded.revision,deleted=excluded.deleted,data=excluded.data,asset_ids=excluded.asset_ids,content=excluded.content,preview=excluded.preview,created_at=excluded.created_at,updated_at=excluded.updated_at
+  await tx`INSERT INTO host_records(owner_id,sync_id,kind,record_id,revision,deleted,data,asset_ids,content,preview,created_at,updated_at)
+    VALUES (${ownerId},${syncId},${record.kind},${record.id},${record.revision},${Number(record.operation === 'delete')},${data},${assetIds},${content},${metadata?.preview ?? null},${metadata?.createdAt ?? null},${metadata?.updatedAt ?? null})
+    ON CONFLICT(owner_id,sync_id,kind,record_id) DO UPDATE SET revision=excluded.revision,deleted=excluded.deleted,data=excluded.data,asset_ids=excluded.asset_ids,content=excluded.content,preview=excluded.preview,created_at=excluded.created_at,updated_at=excluded.updated_at
     WHERE excluded.revision>host_records.revision`;
 }
 
@@ -164,7 +164,7 @@ async function isPaused(input: { db: SQL | TransactionSQL; scope: ReceiverScope 
 }
 
 interface RecordRow {
-  source_id: string;
+  sync_id: string;
   kind: string;
   record_id: string;
   revision: number;
@@ -177,7 +177,7 @@ interface RecordRow {
 }
 function recordRow(row: RecordRow) {
   return {
-    sourceId: row.source_id,
+    syncId: row.sync_id,
     kind: row.kind,
     id: row.record_id,
     revision: row.revision,

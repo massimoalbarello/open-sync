@@ -1,9 +1,4 @@
-import {
-  type DefinitionRef,
-  definitionKey,
-  type SyncDefinition,
-  type SyncRegistration,
-} from './definition';
+import type { SyncDefinition, SyncRegistration } from './definition';
 import type { DestinationType } from './delivery';
 import { fail } from './error';
 import { canonicalJson } from './json';
@@ -19,7 +14,6 @@ export class Registry {
     this.#destinations = new Map(
       Object.entries(input.destinations).map(([name, type]) => {
         identifier(name);
-        identifier(type.version);
         return [
           name,
           {
@@ -35,8 +29,6 @@ export class Registry {
     for (const registration of input.definitions) {
       const definition = canonicalJson(registration.definition).value as unknown as SyncDefinition;
       identifier(definition.id);
-      identifier(definition.version);
-      identifier(definition.artifactId);
       validate({ value: definition.initialCheckpoint, schema: definition.checkpointSchema });
       if (!Object.keys(definition.kinds).length) {
         fail('missing_record_kinds');
@@ -44,7 +36,7 @@ export class Registry {
       for (const kind of Object.keys(definition.kinds)) {
         identifier(kind);
       }
-      const key = definitionKey(definition);
+      const key = definition.id;
       if (this.#definitions.has(key)) {
         fail('definition_conflict');
       }
@@ -54,8 +46,8 @@ export class Registry {
   definitions(): SyncDefinition[] {
     return [...this.#definitions.values()].map((entry) => structuredClone(entry.definition));
   }
-  definition(ref: DefinitionRef): SyncRegistration {
-    const registration = this.#definitions.get(definitionKey(ref));
+  definition(id: string): SyncRegistration {
+    const registration = this.#definitions.get(id);
     if (!registration) {
       fail('definition_unavailable');
     }
@@ -67,10 +59,8 @@ export class Registry {
   destinationTypes() {
     return [...this.#destinations].map(([type, entry]) => ({
       type,
-      version: entry.version,
       name: entry.name,
       description: entry.description,
-      configSchema: structuredClone(entry.configSchema),
       setupSchema: structuredClone(entry.setup?.schema ?? entry.configSchema),
     }));
   }

@@ -30,9 +30,7 @@ export class DeliveryService {
     let result: DeliveryResult;
     try {
       const type = registry.destination(lease.destination.type);
-      if (type.version !== lease.destination.version) {
-        result = { status: 'rejected', code: 'destination_unavailable' };
-      } else if (lease.delivery.version === 2 && !type.acceptsAssets) {
+      if (lease.delivery.version === 2 && !type.acceptsAssets) {
         result = { status: 'rejected', code: 'destination_assets_unsupported' };
       } else {
         result = validateResult(

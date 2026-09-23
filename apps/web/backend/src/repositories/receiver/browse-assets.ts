@@ -3,7 +3,7 @@ import type { ReceivedAsset, ReceivedRecord, ReceiverScope } from './contract';
 
 interface AssetRow {
   id: string;
-  source_id: string;
+  sync_id: string;
   name: string;
   media_type: string;
   size: number;
@@ -13,7 +13,7 @@ interface AssetRow {
 function asset(row: AssetRow): ReceivedAsset {
   return {
     id: row.id,
-    sourceId: row.source_id,
+    syncId: row.sync_id,
     name: row.name,
     mediaType: row.media_type,
     size: row.size,
@@ -22,14 +22,14 @@ function asset(row: AssetRow): ReceivedAsset {
   };
 }
 export async function browseAssets(
-  input: ReceiverScope & { db: SQL; sourceId?: string; offset: number },
+  input: ReceiverScope & { db: SQL; syncId?: string; offset: number },
 ) {
   const pageSize = 50;
-  const sourceId = input.sourceId ?? null;
+  const syncId = input.syncId ?? null;
   const rows = await input.db<
     AssetRow[]
-  >`SELECT id,source_id,name,media_type,size,created_at,updated_at FROM host_assets
-    WHERE owner_id=${input.ownerId} AND (${sourceId} IS NULL OR source_id=${sourceId})
+  >`SELECT id,sync_id,name,media_type,size,created_at,updated_at FROM host_assets
+    WHERE owner_id=${input.ownerId} AND (${syncId} IS NULL OR sync_id=${syncId})
     ORDER BY updated_at DESC,id LIMIT ${pageSize + 1} OFFSET ${input.offset}`;
   return { assets: rows.slice(0, pageSize).map(asset), hasMore: rows.length > pageSize, pageSize };
 }
@@ -43,7 +43,7 @@ export async function relateAssets(
   const rows = ids.length
     ? await input.db<
         AssetRow[]
-      >`SELECT id,source_id,name,media_type,size,created_at,updated_at FROM host_assets
+      >`SELECT id,sync_id,name,media_type,size,created_at,updated_at FROM host_assets
     WHERE owner_id=${input.ownerId} AND id IN (SELECT value FROM json_each(${JSON.stringify(ids)}))`
     : [];
   const byId = new Map(rows.map((row) => [row.id, asset(row)]));
@@ -51,7 +51,7 @@ export async function relateAssets(
     ...record,
     assets: assetIds.flatMap((id) => {
       const found = byId.get(id);
-      return found?.sourceId === record.sourceId ? [found] : [];
+      return found?.syncId === record.syncId ? [found] : [];
     }),
   }));
 }
@@ -59,7 +59,7 @@ export async function relateAssets(
 export async function findAsset(input: ReceiverScope & { db: SQL; id: string }) {
   const [row] = await input.db<
     AssetRow[]
-  >`SELECT id,source_id,name,media_type,size,created_at,updated_at FROM host_assets
+  >`SELECT id,sync_id,name,media_type,size,created_at,updated_at FROM host_assets
     WHERE owner_id=${input.ownerId} AND id=${input.id}`;
   return row ? asset(row) : undefined;
 }

@@ -14,8 +14,7 @@ const owner = { actorId: 'alice', ownerId: 'alice' };
 const source: SyncRegistration = {
   definition: {
     id: 'attachment',
-    version: '1',
-    artifactId: 'attachment/1',
+
     configSchema: { type: 'object' },
     checkpointSchema: { type: 'integer' },
     initialCheckpoint: 0,
@@ -75,12 +74,12 @@ test('pausing a destination holds assets and records without consuming asset att
       },
       timing: { assetAttempts: 1 },
     });
-    const destination = runtime.api.createDestination({ ...owner, type: 'local', config: {} });
-    await runtime.api.createInstallation({
+    const destination = { type: 'local', input: {} };
+    await runtime.api.createSync({
       ...owner,
-      definition: source.definition,
+      definition: source.definition.id,
       config: {},
-      destinationId: destination.id,
+      destination,
     });
     await runtime.tick();
     const queued = runtime.api.deliveries(owner).deliveries[0]!;
@@ -115,7 +114,7 @@ test('pausing a destination holds assets and records without consuming asset att
     expect(
       await receiver.record({
         ...owner,
-        sourceId: record.sourceId,
+        syncId: record.syncId,
         kind: record.kind,
         id: record.id,
       }),

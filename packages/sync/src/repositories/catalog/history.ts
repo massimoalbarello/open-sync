@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite';
 import type { Resource } from '../../models/identity';
-import type { SyncAttempt, SyncPoll } from '../../models/installation';
+import type { SyncAttempt, SyncPoll } from '../../models/sync';
 
 const pageSize = 50;
 interface AttemptRow {
@@ -28,7 +28,7 @@ export function readPolls(input: { db: Database; scope: Resource & { offset: num
   const { db, scope } = input;
   const rows = db
     .query<PollRow, [string, string, number, number]>(`
-    SELECT * FROM polls WHERE owner_id=? AND installation_id=?
+    SELECT * FROM polls WHERE owner_id=? AND sync_id=?
     ORDER BY started_at DESC,rowid DESC LIMIT ? OFFSET ?
   `)
     .all(scope.ownerId, scope.id, pageSize + 1, scope.offset);
@@ -37,7 +37,7 @@ export function readPolls(input: { db: Database; scope: Resource & { offset: num
     attemptCount: row.attempt_count,
     attempts: db
       .query<AttemptRow, [string, string, string, number]>(
-        `SELECT * FROM runs WHERE owner_id=? AND installation_id=? AND poll_id=?
+        `SELECT * FROM runs WHERE owner_id=? AND sync_id=? AND poll_id=?
        ORDER BY started_at DESC,rowid DESC LIMIT ?`,
       )
       .all(scope.ownerId, scope.id, row.id, pageSize)

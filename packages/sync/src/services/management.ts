@@ -3,10 +3,10 @@ import type { WorkerControl } from '../execution/worker';
 import type { ConnectionRef } from '../models/definition';
 import { fail } from '../models/error';
 import type { Resource, Scope } from '../models/identity';
-import type { CreateInstallation } from '../models/installation';
-import { canonicalJson, type JsonObject } from '../models/json';
+import type { JsonObject } from '../models/json';
 import { positive, type QueueLimits } from '../models/limits';
 import type { Registry } from '../models/registry';
+import { type CreateSync, summarizeSync } from '../models/sync';
 import { identifier, validate } from '../models/validation';
 import type { CatalogRepository } from '../repositories/catalog/contract';
 import type { DeliveryRepository } from '../repositories/delivery/contract';
@@ -30,7 +30,15 @@ export class SyncManagement {
   }
   definitions(scope: Scope) {
     this.guard(scope);
-    return this.input.registry.definitions();
+    return this.input.registry
+      .definitions()
+      .map(({ id, name, description, configSchema, provider }) => ({
+        id,
+        name,
+        description,
+        configSchema,
+        provider,
+      }));
   }
   destinationTypes(scope: Scope) {
     this.guard(scope);
@@ -42,61 +50,26 @@ export class SyncManagement {
     positive(offset + 1);
     return this.input.catalog.polls({ ...input, offset });
   }
-  destinations(scope: Scope) {
-    this.guard(scope);
-    return this.input.catalog
-      .destinations(scope)
-      .map(({ id, type, version }) => ({ id, type, version }));
-  }
-  createDestination(input: Scope & { type: string; config: JsonObject }) {
-    this.guard(input);
-    const type = this.input.registry.destination(input.type);
-    const config = validate({ value: input.config, schema: type.configSchema }) as JsonObject;
-    const { id, version } = this.input.catalog.createDestination({
-      ...input,
-      config,
-      version: type.version,
-    });
-    return { id, type: input.type, version };
-  }
-  async setupDestination(input: Scope & { type: string; input: JsonObject }) {
+  private async prepareDestination(input: Scope & { destination: CreateSync['destination'] }) {
     const scope = { actorId: input.actorId, ownerId: input.ownerId };
-    this.guard(scope);
-    const type = this.input.registry.destination(input.type);
+    const type = this.input.registry.destination(input.destination.type);
     const values = validate({
-      value: input.input,
+      value: input.destination.input,
       schema: type.setup?.schema ?? type.configSchema,
     }) as JsonObject;
     let prepared = values;
     if (type.setup) {
       try {
-        prepared = await type.setup.prepare({
-          scope: { ...scope },
-          input: values,
-        });
+        prepared = await type.setup.prepare({ scope: { ...scope }, input: values });
       } catch {
-        // Destination errors can contain setup secrets. Do not expose or log them.
         fail('destination_setup_failed');
       }
     }
     this.guard(scope);
     const config = validate({ value: prepared, schema: type.configSchema }) as JsonObject;
-    // Reuse identical configuration within one owner (including destinations needing no setup).
-    // Keep comparison and creation synchronous so concurrent setup cannot create duplicates.
-    const json = canonicalJson(config).json;
-    const existing = this.input.catalog
-      .destinations(scope)
-      .find(
-        (entry) =>
-          entry.type === input.type &&
-          entry.version === type.version &&
-          canonicalJson(entry.config).json === json,
-      );
-    return existing
-      ? { id: existing.id, type: existing.type, version: existing.version }
-      : this.createDestination({ ...scope, type: input.type, config });
+    return { type: input.destination.type, config };
   }
-  async createInstallation(input: CreateInstallation) {
+  async createSync(input: CreateSync) {
     this.guard(input);
     const { definition } = this.input.registry.definition(input.definition);
     const config = validate({ value: input.config, schema: definition.configSchema }) as JsonObject;
@@ -116,29 +89,31 @@ export class SyncManagement {
       fail('unexpected_connection');
     }
     this.guard(input);
-    const installation = this.input.catalog.createInstallation({
+    const destination = await this.prepareDestination(input);
+    const sync = this.input.catalog.createSync({
       ...input,
       config,
+      destination,
       initialCheckpoint: definition.initialCheckpoint,
     });
     this.input.worker.wake();
-    return installation;
+    return summarizeSync(sync);
   }
-  installations(scope: Scope) {
+  syncs(scope: Scope) {
     this.guard(scope);
-    return this.input.catalog.installations(scope);
+    return this.input.catalog.syncs(scope).map(summarizeSync);
   }
-  installation(input: Resource) {
+  sync(input: Resource) {
     this.guard(input);
-    return this.input.catalog.installation(input);
+    return summarizeSync(this.input.catalog.sync(input));
   }
-  async connectInstallation(input: Resource & { connection: ConnectionRef }) {
+  async connectSync(input: Resource & { connection: ConnectionRef }) {
     this.guard(input);
-    const installation = this.input.catalog.installation(input);
-    if (installation.connection || installation.enabled) {
+    const sync = this.input.catalog.sync(input);
+    if (sync.connection || sync.enabled) {
       fail('already_connected');
     }
-    const { definition } = this.input.registry.definition(installation.definition);
+    const { definition } = this.input.registry.definition(sync.definition);
     if (!definition.provider) {
       fail('unexpected_connection');
     }
@@ -149,27 +124,27 @@ export class SyncManagement {
       signal: AbortSignal.timeout(this.input.timeoutMs),
     });
     this.guard(input);
-    const connected = this.input.catalog.connectInstallation(input);
+    const connected = this.input.catalog.connectSync(input);
     this.input.worker.wake();
-    return connected;
+    return summarizeSync(connected);
   }
   async setEnabled(input: Resource & { enabled: boolean }) {
     this.guard(input);
-    const installation = this.input.catalog.installation(input);
-    if (input.enabled && !installation.connection) {
-      const { definition } = this.input.registry.definition(installation.definition);
+    const sync = this.input.catalog.sync(input);
+    if (input.enabled && !sync.connection) {
+      const { definition } = this.input.registry.definition(sync.definition);
       if (definition.provider) {
         fail('connection_required');
       }
     }
     const result = this.input.catalog.setEnabled(input);
     await this.input.worker.cancel(input);
-    return result;
+    return summarizeSync(result);
   }
   queueRun(input: Resource & { backfill?: boolean }): void {
     this.guard(input);
-    const installation = this.input.catalog.installation(input);
-    const { definition } = this.input.registry.definition(installation.definition);
+    const sync = this.input.catalog.sync(input);
+    const { definition } = this.input.registry.definition(sync.definition);
     this.input.catalog.queue({
       ...input,
       checkpoint: input.backfill ? definition.initialCheckpoint : undefined,

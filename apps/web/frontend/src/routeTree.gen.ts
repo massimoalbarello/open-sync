@@ -21,7 +21,7 @@ import { Route as WorkspaceRecordsIndexRouteImport } from './routes/_workspace/r
 import { Route as WorkspaceSyncsIndexRouteImport } from './routes/_workspace/syncs.index'
 import { Route as WorkspaceSyncsIdRouteImport } from './routes/_workspace/syncs.$id'
 import { Route as WorkspaceSyncsNewRouteImport } from './routes/_workspace/syncs.new'
-import { Route as WorkspaceRecordsSourceIdKindRecordIdRouteImport } from './routes/_workspace/records.$sourceId.$kind.$recordId'
+import { Route as WorkspaceRecordsSyncIdKindRecordIdRouteImport } from './routes/_workspace/records.$syncId.$kind.$recordId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -83,10 +83,10 @@ const WorkspaceSyncsNewRoute = WorkspaceSyncsNewRouteImport.update({
   path: '/syncs/new',
   getParentRoute: () => WorkspaceRoute,
 } as any)
-const WorkspaceRecordsSourceIdKindRecordIdRoute =
-  WorkspaceRecordsSourceIdKindRecordIdRouteImport.update({
-    id: '/records/$sourceId/$kind/$recordId',
-    path: '/records/$sourceId/$kind/$recordId',
+const WorkspaceRecordsSyncIdKindRecordIdRoute =
+  WorkspaceRecordsSyncIdKindRecordIdRouteImport.update({
+    id: '/records/$syncId/$kind/$recordId',
+    path: '/records/$syncId/$kind/$recordId',
     getParentRoute: () => WorkspaceRoute,
   } as any)
 
@@ -102,7 +102,7 @@ export interface FileRoutesByFullPath {
   '/providers/': typeof WorkspaceProvidersIndexRoute
   '/records/': typeof WorkspaceRecordsIndexRoute
   '/syncs/': typeof WorkspaceSyncsIndexRoute
-  '/records/$sourceId/$kind/$recordId': typeof WorkspaceRecordsSourceIdKindRecordIdRoute
+  '/records/$syncId/$kind/$recordId': typeof WorkspaceRecordsSyncIdKindRecordIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -116,7 +116,7 @@ export interface FileRoutesByTo {
   '/providers': typeof WorkspaceProvidersIndexRoute
   '/records': typeof WorkspaceRecordsIndexRoute
   '/syncs': typeof WorkspaceSyncsIndexRoute
-  '/records/$sourceId/$kind/$recordId': typeof WorkspaceRecordsSourceIdKindRecordIdRoute
+  '/records/$syncId/$kind/$recordId': typeof WorkspaceRecordsSyncIdKindRecordIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -132,7 +132,7 @@ export interface FileRoutesById {
   '/_workspace/providers/': typeof WorkspaceProvidersIndexRoute
   '/_workspace/records/': typeof WorkspaceRecordsIndexRoute
   '/_workspace/syncs/': typeof WorkspaceSyncsIndexRoute
-  '/_workspace/records/$sourceId/$kind/$recordId': typeof WorkspaceRecordsSourceIdKindRecordIdRoute
+  '/_workspace/records/$syncId/$kind/$recordId': typeof WorkspaceRecordsSyncIdKindRecordIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -148,7 +148,7 @@ export interface FileRouteTypes {
     | '/providers/'
     | '/records/'
     | '/syncs/'
-    | '/records/$sourceId/$kind/$recordId'
+    | '/records/$syncId/$kind/$recordId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -162,7 +162,7 @@ export interface FileRouteTypes {
     | '/providers'
     | '/records'
     | '/syncs'
-    | '/records/$sourceId/$kind/$recordId'
+    | '/records/$syncId/$kind/$recordId'
   id:
     | '__root__'
     | '/'
@@ -177,7 +177,7 @@ export interface FileRouteTypes {
     | '/_workspace/providers/'
     | '/_workspace/records/'
     | '/_workspace/syncs/'
-    | '/_workspace/records/$sourceId/$kind/$recordId'
+    | '/_workspace/records/$syncId/$kind/$recordId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -272,11 +272,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkspaceSyncsNewRouteImport
       parentRoute: typeof WorkspaceRoute
     }
-    '/_workspace/records/$sourceId/$kind/$recordId': {
-      id: '/_workspace/records/$sourceId/$kind/$recordId'
-      path: '/records/$sourceId/$kind/$recordId'
-      fullPath: '/records/$sourceId/$kind/$recordId'
-      preLoaderRoute: typeof WorkspaceRecordsSourceIdKindRecordIdRouteImport
+    '/_workspace/records/$syncId/$kind/$recordId': {
+      id: '/_workspace/records/$syncId/$kind/$recordId'
+      path: '/records/$syncId/$kind/$recordId'
+      fullPath: '/records/$syncId/$kind/$recordId'
+      preLoaderRoute: typeof WorkspaceRecordsSyncIdKindRecordIdRouteImport
       parentRoute: typeof WorkspaceRoute
     }
   }
@@ -292,7 +292,7 @@ interface WorkspaceRouteChildren {
   WorkspaceProvidersIndexRoute: typeof WorkspaceProvidersIndexRoute
   WorkspaceRecordsIndexRoute: typeof WorkspaceRecordsIndexRoute
   WorkspaceSyncsIndexRoute: typeof WorkspaceSyncsIndexRoute
-  WorkspaceRecordsSourceIdKindRecordIdRoute: typeof WorkspaceRecordsSourceIdKindRecordIdRoute
+  WorkspaceRecordsSyncIdKindRecordIdRoute: typeof WorkspaceRecordsSyncIdKindRecordIdRoute
 }
 
 const WorkspaceRouteChildren: WorkspaceRouteChildren = {
@@ -305,8 +305,8 @@ const WorkspaceRouteChildren: WorkspaceRouteChildren = {
   WorkspaceProvidersIndexRoute: WorkspaceProvidersIndexRoute,
   WorkspaceRecordsIndexRoute: WorkspaceRecordsIndexRoute,
   WorkspaceSyncsIndexRoute: WorkspaceSyncsIndexRoute,
-  WorkspaceRecordsSourceIdKindRecordIdRoute:
-    WorkspaceRecordsSourceIdKindRecordIdRoute,
+  WorkspaceRecordsSyncIdKindRecordIdRoute:
+    WorkspaceRecordsSyncIdKindRecordIdRoute,
 }
 
 const WorkspaceRouteWithChildren = WorkspaceRoute._addFileChildren(

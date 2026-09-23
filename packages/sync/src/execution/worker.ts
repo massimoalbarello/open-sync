@@ -83,7 +83,7 @@ export class Worker implements WorkerControl {
       if (!lease) {
         break;
       }
-      const key = resourceKey({ ...lease, id: lease.installation.id });
+      const key = resourceKey({ ...lease, id: lease.sync.id });
       const abort = new AbortController();
       const task = acquisition
         .execute({ lease, signal: this.signal(abort.signal) })

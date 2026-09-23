@@ -87,7 +87,7 @@ function slackContext(body: { ok: boolean; error: string }): SyncContext {
   return {
     config: {},
     checkpoint: null,
-    sourceId: 'source',
+    syncId: 'source',
     signal: new AbortController().signal,
     log: () => undefined,
     assets: {

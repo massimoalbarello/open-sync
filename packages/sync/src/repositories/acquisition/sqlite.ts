@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite';
-import { definitionKey, type SyncDefinition, type SyncStep } from '../../models/definition';
+import type { SyncDefinition, SyncStep } from '../../models/definition';
 import type { DeliveredRecord } from '../../models/delivery';
 import { fail } from '../../models/error';
 import { canonicalJson } from '../../models/json';
@@ -17,9 +17,7 @@ export class SqliteAcquisition implements AcquisitionRepository {
   ) {}
   capacityReleased(): void {
     this.input.db
-      .query(
-        "UPDATE installations SET next_due_at=? WHERE enabled=1 AND status='waiting_for_capacity'",
-      )
+      .query("UPDATE syncs SET next_due_at=? WHERE enabled=1 AND status='waiting_for_capacity'")
       .run(Date.now());
   }
   nextDue(): number | undefined {
@@ -27,8 +25,8 @@ export class SqliteAcquisition implements AcquisitionRepository {
       this.input.db
         .query<{ due: number | null }, []>(`
       SELECT MIN(COALESCE((SELECT expires_at FROM runs r WHERE r.owner_id=i.owner_id
-      AND r.installation_id=i.id AND r.state='running'), i.next_due_at)) AS due
-      FROM installations i WHERE enabled=1`)
+      AND r.sync_id=i.id AND r.state='running'), i.next_due_at)) AS due
+      FROM syncs i WHERE enabled=1`)
         .get()?.due ?? undefined
     );
   }
@@ -36,27 +34,27 @@ export class SqliteAcquisition implements AcquisitionRepository {
     return claimRun({ ...this.input, leaseMs });
   }
   hasCapacity(lease?: RunLease) {
-    return hasQueueCapacity({ ...this.input, installation: lease?.installation });
+    return hasQueueCapacity({ ...this.input, sync: lease?.sync });
   }
   commit(input: { lease: RunLease; page: SyncStep; definition: SyncDefinition }): void {
     const { db, limits } = this.input;
     const page = preparePage({ ...input, limits });
     db.transaction(() => {
-      const installation = assertRun({ db, lease: input.lease });
-      if (definitionKey(input.definition) !== definitionKey(installation.definition)) {
+      const sync = assertRun({ db, lease: input.lease });
+      if (input.definition.id !== sync.definition) {
         fail('definition_conflict');
       }
       const records: DeliveredRecord[] = [];
       for (const record of page.deliverable.records) {
-        const changed = writeRecord({ db, installation, record });
+        const changed = writeRecord({ db, sync, record });
         if (changed) {
           records.push(changed);
         }
       }
-      enqueue({ db, installation, records, limits, assets: page.deliverable.assets });
+      enqueue({ db, sync, records, limits, assets: page.deliverable.assets });
       db.query(
-        'UPDATE installations SET checkpoint=?,checkpoint_revision=checkpoint_revision+1 WHERE owner_id=? AND id=?',
-      ).run(canonicalJson(page.checkpoint).json, installation.ownerId, installation.id);
+        'UPDATE syncs SET checkpoint=?,checkpoint_revision=checkpoint_revision+1 WHERE owner_id=? AND id=?',
+      ).run(canonicalJson(page.checkpoint).json, sync.ownerId, sync.id);
       db.query(
         `UPDATE runs SET records_processed=records_processed+?,records_changed=records_changed+? WHERE owner_id=? AND id=?`,
       ).run(page.deliverable.records.length, records.length, input.lease.ownerId, input.lease.id);
@@ -72,7 +70,7 @@ export class SqliteAcquisition implements AcquisitionRepository {
         db,
         lease: input.lease,
         state: page.complete ? 'succeeded' : 'yielded',
-        delay: page.complete ? installation.intervalMs : 0,
+        delay: page.complete ? sync.intervalMs : 0,
         failureCount: page.complete ? 0 : undefined,
       });
     }).immediate();

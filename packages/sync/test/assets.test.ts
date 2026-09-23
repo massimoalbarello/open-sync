@@ -8,7 +8,7 @@ import { resolveRecordAssets } from '../src/models/asset-references';
 import { SourceHttpError, type SyncRegistration } from '../src/models/definition';
 import type { Delivery, DestinationType } from '../src/models/delivery';
 import { createSyncRuntime } from '../src/runtime';
-import { alpha, beta, storage } from './support';
+import { alpha, beta, savedSync, storage } from './support';
 
 const binaryBytes = [...Buffer.from('00ff0d0a', 'hex')];
 const maxAttempts = 3;
@@ -28,8 +28,7 @@ function source(
   return {
     definition: {
       id: 'assets.test',
-      version: '1',
-      artifactId: 'assets.test/1',
+
       configSchema: { type: 'object' },
       checkpointSchema: { type: 'integer' },
       initialCheckpoint: 0,
@@ -85,16 +84,16 @@ async function setup(input: {
     },
   };
   let engine = createSyncRuntime(options);
-  const destination = engine.api.createDestination({ ...alpha, type: 'target', config: {} });
-  const installation = await engine.api.createInstallation({
+  const destination = { type: 'target', input: {} };
+  const sync = await engine.api.createSync({
     ...alpha,
-    definition: registration.definition,
+    definition: registration.definition.id,
     config: {},
-    destinationId: destination.id,
+    destination,
   });
   return {
     files,
-    installation,
+    sync,
     options,
     get engine() {
       return engine;
@@ -102,7 +101,7 @@ async function setup(input: {
     async tick() {
       const db = new Database(files.path);
       db.exec('UPDATE deliveries SET due_at=0');
-      db.exec("UPDATE installations SET next_due_at=0 WHERE status!='succeeded'");
+      db.exec("UPDATE syncs SET next_due_at=0 WHERE status!='succeeded'");
       db.close();
       await engine.tick();
     },
@@ -121,7 +120,6 @@ function separate(input: {
   deliver(delivery: Delivery): Promise<import('../src/models/delivery').DeliveryResult>;
 }): DestinationType {
   return {
-    version: '1',
     configSchema: { type: 'object' },
     acceptsAssets: true,
     deliver: assetsFirst({
@@ -160,7 +158,6 @@ test.each([false, true])(
         }),
       },
       destination: {
-        version: '1',
         configSchema: { type: 'object' },
         acceptsAssets: true,
         deliver: ({ delivery }) => {
@@ -176,19 +173,19 @@ test.each([false, true])(
       expect(received[0]).not.toHaveProperty('updatedAt');
       await fixture.restart();
       createdAt = '2020-01-01T00:00:00.000Z';
-      const resource = { ...alpha, id: fixture.installation.id };
+      const resource = { ...alpha, id: fixture.sync.id };
       fixture.engine.api.queueRun(resource);
       await fixture.tick();
       await fixture.tick();
-      expect(fixture.engine.api.installation(resource).status).toBe('succeeded');
+      expect(fixture.engine.api.sync(resource).status).toBe('succeeded');
       createdAt = '2020-01-02T00:00:00Z';
       fixture.engine.api.queueRun(resource);
       await fixture.tick();
-      expect(fixture.engine.api.installation(resource).status).toBe('asset_version_conflict');
+      expect(fixture.engine.api.sync(resource).status).toBe('asset_version_conflict');
       createdAt = '2020-02-30T00:00:00Z';
       fixture.engine.api.queueRun(resource);
       await fixture.tick();
-      expect(fixture.engine.api.installation(resource).status).toBe('invalid_input');
+      expect(fixture.engine.api.sync(resource).status).toBe('invalid_input');
     } finally {
       await fixture.close();
     }
@@ -235,7 +232,7 @@ test('asset acceptance and materialized record survive restart, preserving sourc
     expect(uploads).toBe(1);
     expect(records[1]).toEqual(records[0]);
     expect(await readdir(`${fixture.files.path}.assets`)).toEqual([]);
-    fixture.engine.api.queueRun({ ...alpha, id: fixture.installation.id });
+    fixture.engine.api.queueRun({ ...alpha, id: fixture.sync.id });
     await fixture.tick();
     await fixture.tick();
     expect(records).toHaveLength(2);
@@ -369,7 +366,6 @@ test('bundle adapters receive logical references and streams, with no requiremen
   let captured: Delivery | undefined;
   const fixture = await setup({
     destination: {
-      version: '1',
       configSchema: { type: 'object' },
       acceptsAssets: true,
       async deliver({ delivery, assets }) {
@@ -524,7 +520,7 @@ test('a failed step releases staged bytes and retries without advancing its chec
   try {
     await fixture.tick();
     expect(
-      fixture.engine.api.installation({ ...alpha, id: fixture.installation.id }).checkpoint,
+      savedSync({ path: fixture.files.path, scope: { ...alpha, id: fixture.sync.id } }).checkpoint,
     ).toBe(0);
     expect(await readdir(`${fixture.files.path}.assets`)).toHaveLength(0);
     await fixture.restart();
@@ -544,7 +540,6 @@ test('a slow destination does not hold delivery to another owner and destination
   const otherDelivered = Promise.withResolvers<void>();
   const fixture = await setup({
     destination: {
-      version: '1',
       configSchema: { type: 'object' },
       acceptsAssets: true,
       async deliver({ scope, assets, delivery }) {
@@ -566,12 +561,12 @@ test('a slow destination does not hold delivery to another owner and destination
   let second: Promise<void> | undefined;
   try {
     await fixture.tick();
-    const target = fixture.engine.api.createDestination({ ...beta, type: 'target', config: {} });
-    await fixture.engine.api.createInstallation({
+    const target = { type: 'target', input: {} };
+    await fixture.engine.api.createSync({
       ...beta,
-      definition: source().definition,
+      definition: source().definition.id,
       config: {},
-      destinationId: target.id,
+      destination: target,
     });
     fixture.engine.start();
     first = fixture.tick();

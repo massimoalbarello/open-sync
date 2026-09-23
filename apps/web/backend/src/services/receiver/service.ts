@@ -15,7 +15,7 @@ export class ReceiverService {
   asset(input: ReceiverScope & { id: string }) {
     return this.repository.asset(input);
   }
-  assets(input: ReceiverScope & { sourceId?: string; offset: number }) {
+  assets(input: ReceiverScope & { syncId?: string; offset: number }) {
     return this.repository.assets(input);
   }
   isPaused(scope: ReceiverScope) {
@@ -27,7 +27,7 @@ export class ReceiverService {
   setPaused(input: ReceiverScope & { paused: boolean }) {
     return this.repository.setPaused(input);
   }
-  records(input: ReceiverScope & { sourceId?: string; offset: number }) {
+  records(input: ReceiverScope & { syncId?: string; offset: number }) {
     return this.repository.records(input);
   }
   accept(input: ReceiverScope & { delivery: Delivery }) {

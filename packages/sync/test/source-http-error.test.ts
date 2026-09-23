@@ -2,7 +2,7 @@ import { expect, spyOn, test } from 'bun:test';
 import type { SyncEvent } from '../src/execution/diagnostics';
 import { SourceHttpError, type SyncContext } from '../src/models/definition';
 import { createSyncRuntime } from '../src/runtime';
-import { accepted, alpha, configure, fixture, page, storage } from './support';
+import { accepted, alpha, configure, fixture, page, savedSync, storage } from './support';
 
 const retryMs = 30_000;
 const rateLimited = 429;
@@ -39,9 +39,9 @@ test.each(
     onEvent: (event) => events.push(event),
   });
   try {
-    const installation = await configure(engine);
+    const sync = await configure(engine);
     await engine.tick();
-    expect(engine.api.installation({ ...alpha, id: installation.id })).toMatchObject({
+    expect(savedSync({ path: files.path, scope: { ...alpha, id: sync.id } })).toMatchObject({
       enabled: true,
       checkpoint: 0,
       status: `source_http_${status}`,
@@ -95,11 +95,11 @@ test.each(
   };
   let engine = createSyncRuntime(options);
   try {
-    const installation = await configure(engine);
-    const scope = { ...alpha, id: installation.id };
+    const sync = await configure(engine);
+    const scope = { ...alpha, id: sync.id };
     await engine.tick();
     await engine.tick();
-    expect(engine.api.installation(scope)).toMatchObject({
+    expect(savedSync({ path: files.path, scope: scope })).toMatchObject({
       enabled: false,
       checkpoint: 1,
       status: `source_http_${status}`,
@@ -113,7 +113,10 @@ test.each(
     await engine.api.setEnabled({ ...scope, enabled: true });
     await engine.tick();
     expect(seen).toEqual([0, 1, 1]);
-    expect(engine.api.installation(scope)).toMatchObject({ enabled: true, status: 'succeeded' });
+    expect(savedSync({ path: files.path, scope: scope })).toMatchObject({
+      enabled: true,
+      status: 'succeeded',
+    });
   } finally {
     await engine.close();
     files.close();
@@ -159,13 +162,13 @@ test.each([rateLimited, forbidden, unavailable])(
     };
     let engine = createSyncRuntime(options);
     try {
-      const installation = await configure(engine);
-      const scope = { ...alpha, id: installation.id };
+      const sync = await configure(engine);
+      const scope = { ...alpha, id: sync.id };
       const delays = Object.values({ first: 30_000, second: 60_000, third: 120_000 });
       await engine.tick();
       for (const [index, delay] of delays.entries()) {
         await engine.tick();
-        expect(engine.api.installation(scope)).toMatchObject({
+        expect(savedSync({ path: files.path, scope: scope })).toMatchObject({
           enabled: status !== forbidden,
           checkpoint: 1,
           status: `source_http_${status}`,
@@ -185,7 +188,10 @@ test.each([rateLimited, forbidden, unavailable])(
       }
       rejected = false;
       await engine.tick();
-      expect(engine.api.installation(scope)).toMatchObject({ enabled: true, status: 'succeeded' });
+      expect(savedSync({ path: files.path, scope: scope })).toMatchObject({
+        enabled: true,
+        status: 'succeeded',
+      });
     } finally {
       await engine.close();
       clock.mockRestore();

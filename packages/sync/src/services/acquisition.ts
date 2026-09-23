@@ -63,7 +63,7 @@ export class AcquisitionService {
     log({
       code,
       ownerId: lease.ownerId,
-      installationId: lease.installation.id,
+      syncId: lease.sync.id,
       fields: {
         ...(error instanceof SyncError ? error.diagnostics : {}),
         ...(status === undefined ? {} : { httpStatus: status }),
@@ -76,21 +76,21 @@ export class AcquisitionService {
   private async consume(input: { lease: RunLease; signal: AbortSignal }): Promise<void> {
     const { repository, registry, timing } = this.input;
     const { lease, signal } = input;
-    const entry = registry.definition(lease.installation.definition);
+    const entry = registry.definition(lease.sync.definition);
     const provider = await bindProvider({
       actorId: lease.actorId,
       ownerId: lease.ownerId,
       gateway: this.input.gateway,
-      connection: lease.installation.connection,
+      connection: lease.sync.connection,
       requirements: entry.definition.provider,
       signal,
     });
     const executable = await entry.load();
     signal.throwIfAborted();
     const page = await executable.step({
-      config: lease.installation.config,
-      checkpoint: lease.installation.checkpoint,
-      sourceId: lease.installation.sourceId,
+      config: lease.sync.config,
+      checkpoint: lease.sync.checkpoint,
+      syncId: lease.sync.id,
       signal,
       provider,
       assets: sourceAssets({
@@ -106,7 +106,7 @@ export class AcquisitionService {
           ...event,
           code: 'definition_log',
           ownerId: lease.ownerId,
-          installationId: lease.installation.id,
+          syncId: lease.sync.id,
         }),
     });
     signal.throwIfAborted();

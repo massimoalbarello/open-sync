@@ -1,10 +1,10 @@
 import type { SyncDefinition, SyncStep } from '../../models/definition';
 import type { Scope } from '../../models/identity';
-import type { Installation } from '../../models/installation';
+import type { Sync } from '../../models/sync';
 
 export interface RunLease extends Scope {
   id: string;
-  installation: Installation;
+  sync: Sync;
   workerId: string;
   generation: number;
   checkpointRevision: number;

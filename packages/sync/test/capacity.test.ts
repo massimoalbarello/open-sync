@@ -5,7 +5,7 @@ import type { SyncRegistration } from '../src/models/definition';
 import { defaultLimits } from '../src/models/limits';
 import { SqliteAssets } from '../src/repositories/assets/sqlite';
 import { createSyncRuntime } from '../src/runtime';
-import { accepted, alpha, fixture, page, repositories, storage } from './support';
+import { accepted, alpha, fixture, page, repositories, savedSync, storage } from './support';
 
 const leaseMs = 60_000;
 
@@ -21,39 +21,39 @@ test('a full sync pauses without consuming the budget of a healthy sync at the s
       local: {
         ...accepted,
         deliver: ({ delivery }) => {
-          if (delivery.sourceId === blockedSource) {
+          if (delivery.syncId === blockedSource) {
             return Promise.resolve({ status: 'rejected', code: 'blocked' });
           }
-          received.push(delivery.sourceId);
+          received.push(delivery.syncId);
           return Promise.resolve({ status: 'accepted' });
         },
       },
     },
   });
   try {
-    const destination = engine.api.createDestination({ ...alpha, type: 'local', config: {} });
-    const blocked = await engine.api.createInstallation({
+    const destination = { type: 'local', input: {} };
+    const blocked = await engine.api.createSync({
       ...alpha,
-      definition: fixture.definition,
+      definition: fixture.definition.id,
       config: { count: 5 },
-      destinationId: destination.id,
+      destination,
     });
-    blockedSource = blocked.sourceId;
-    const healthy = await engine.api.createInstallation({
+    blockedSource = blocked.id;
+    const healthy = await engine.api.createSync({
       ...alpha,
-      definition: fixture.definition,
+      definition: fixture.definition.id,
       config: { count: 5 },
-      destinationId: destination.id,
+      destination,
     });
     const rounds = 8;
     for (let i = 0; i < rounds; i++) {
       await engine.tick();
     }
-    expect(engine.api.installation({ ...alpha, id: blocked.id })).toMatchObject({
+    expect(savedSync({ path: files.path, scope: { ...alpha, id: blocked.id } })).toMatchObject({
       checkpoint: 2,
       status: 'waiting_for_capacity',
     });
-    expect(engine.api.installation({ ...alpha, id: healthy.id }).status).toBe('succeeded');
+    expect(engine.api.sync({ ...alpha, id: healthy.id }).status).toBe('succeeded');
     const expectedRecords = 5;
     expect(received).toHaveLength(expectedRecords);
     expect(engine.api.status(alpha).queue.pendingRecords).toBe(2);
@@ -67,23 +67,23 @@ test('concurrent steps cannot overcommit the global record budget or advance rej
   const f = repositories({ maxPendingRecords: 1 });
   try {
     const first = f.acquisition.claim(leaseMs)!;
-    const other = f.catalog.createInstallation({
+    const other = f.catalog.createSync({
       ...alpha,
-      definition: fixture.definition,
+      definition: fixture.definition.id,
       config: { count: 1 },
       initialCheckpoint: 0,
-      destinationId: f.installation.destinationId,
+      destination: f.sync.destination,
     });
     const second = f.acquisition.claim(leaseMs)!;
     f.acquisition.commit({ lease: first, page, definition: fixture.definition });
     expect(() =>
       f.acquisition.commit({ lease: second, page, definition: fixture.definition }),
     ).toThrow('waiting for capacity');
-    expect(f.catalog.installation({ ...alpha, id: other.id }).checkpoint).toBe(0);
+    expect(f.catalog.sync({ ...alpha, id: other.id }).checkpoint).toBe(0);
     const delivery = f.deliveries.claim(leaseMs)!;
     f.deliveries.complete({ lease: delivery, result: { status: 'accepted' }, delay: 0 });
     f.acquisition.commit({ lease: second, page, definition: fixture.definition });
-    expect(f.catalog.installation({ ...alpha, id: other.id }).checkpoint).toBe(1);
+    expect(f.catalog.sync({ ...alpha, id: other.id }).checkpoint).toBe(1);
   } finally {
     f.close();
   }
@@ -99,12 +99,12 @@ test('download reservations account for other in-flight downloads and survive re
   };
   try {
     const first = f.acquisition.claim(leaseMs)!;
-    f.catalog.createInstallation({
+    f.catalog.createSync({
       ...alpha,
-      definition: fixture.definition,
+      definition: fixture.definition.id,
       config: { count: 1 },
       initialCheckpoint: 0,
-      destinationId: f.installation.destinationId,
+      destination: f.sync.destination,
     });
     const second = f.acquisition.claim(leaseMs)!;
     const assets = new SqliteAssets({ db: f.db, ...limits });
@@ -176,19 +176,19 @@ test('a step larger than its budget preserves pending assets and resumes after c
   };
   let engine = createSyncRuntime({ ...options, limits: { maxSyncAssetBytes: 2 } });
   try {
-    const destination = engine.api.createDestination({ ...alpha, type: 'local', config: {} });
-    const installation = await engine.api.createInstallation({
+    const destination = { type: 'local', input: {} };
+    const sync = await engine.api.createSync({
       ...alpha,
-      definition: fixture.definition,
+      definition: fixture.definition.id,
       config: { count: 1 },
-      destinationId: destination.id,
+      destination,
     });
-    const resource = { ...alpha, id: installation.id };
+    const resource = { ...alpha, id: sync.id };
     const waits = 4;
     for (let i = 0; i < waits; i++) {
       engine.api.queueRun(resource);
       await engine.tick();
-      expect(engine.api.installation(resource)).toMatchObject({
+      expect(savedSync({ path: files.path, scope: resource })).toMatchObject({
         checkpoint: 0,
         status: 'step_exceeds_asset_capacity',
       });
@@ -204,7 +204,10 @@ test('a step larger than its budget preserves pending assets and resumes after c
     engine = createSyncRuntime(options);
     engine.api.queueRun(resource);
     await engine.tick();
-    expect(engine.api.installation(resource)).toMatchObject({ checkpoint: 1, status: 'succeeded' });
+    expect(savedSync({ path: files.path, scope: resource })).toMatchObject({
+      checkpoint: 1,
+      status: 'succeeded',
+    });
     expect(engine.api.status(alpha).queue.pendingRecords).toBe(1);
     await engine.close();
     const reopened = openDatabase(files.path);
@@ -240,35 +243,35 @@ test('one destination cannot materialize a body larger than its sync budget', as
                 ...record,
                 content: {
                   format: 'markdown',
-                  body: delivery.sourceId === oversizedSource ? 'x'.repeat(syncBytes) : 'small',
+                  body: delivery.syncId === oversizedSource ? 'x'.repeat(syncBytes) : 'small',
                 },
               })),
             },
           }));
-          delivered.push(delivery.sourceId);
+          delivered.push(delivery.syncId);
           return Promise.resolve({ status: 'accepted' });
         },
       },
     },
   });
   try {
-    const destination = engine.api.createDestination({ ...alpha, type: 'local', config: {} });
-    const oversized = await engine.api.createInstallation({
+    const destination = { type: 'local', input: {} };
+    const oversized = await engine.api.createSync({
       ...alpha,
-      definition: fixture.definition,
+      definition: fixture.definition.id,
       config: { count: 1 },
-      destinationId: destination.id,
+      destination,
     });
-    oversizedSource = oversized.sourceId;
-    const healthy = await engine.api.createInstallation({
+    oversizedSource = oversized.id;
+    const healthy = await engine.api.createSync({
       ...alpha,
-      definition: fixture.definition,
+      definition: fixture.definition.id,
       config: { count: 1 },
-      destinationId: destination.id,
+      destination,
     });
     await engine.tick();
     await engine.tick();
-    expect(delivered).toEqual([healthy.sourceId]);
+    expect(delivered).toEqual([healthy.id]);
     expect(engine.api.status(alpha).queue.pendingRecords).toBe(1);
     const db = new Database(files.path);
     try {

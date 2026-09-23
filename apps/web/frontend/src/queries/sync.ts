@@ -9,7 +9,7 @@ export function syncOptions(userId: string) {
     refetchInterval: refreshMs,
     queryFn: async () => {
       const [result, connections] = await Promise.all([
-        syncApi.sync.installations.get(),
+        syncApi.sync.syncs.get(),
         syncApi.providers.connections.get(),
       ]);
       if (result.error || connections.error) {
@@ -20,17 +20,13 @@ export function syncOptions(userId: string) {
   });
 }
 export async function setEnabled(input: { id: string; enabled: boolean }) {
-  const result = await syncApi.sync
-    .installations({ id: input.id })
-    .patch({ enabled: input.enabled });
+  const result = await syncApi.sync.syncs({ id: input.id }).patch({ enabled: input.enabled });
   if (result.error) {
     throw new Error('Could not update this sync.');
   }
 }
 export async function runSync(input: { id: string; backfill: boolean }) {
-  const result = await syncApi.sync
-    .installations({ id: input.id })
-    .run.post({ backfill: input.backfill });
+  const result = await syncApi.sync.syncs({ id: input.id }).run.post({ backfill: input.backfill });
   if (result.error) {
     throw new Error('Could not queue this sync.');
   }
@@ -40,16 +36,16 @@ export function syncDetailOptions(input: { userId: string; id: string; offset: n
     queryKey: [...syncKeys.owner(input.userId), input.id, 'polls', input.offset],
     refetchInterval: refreshMs,
     queryFn: async () => {
-      const resource = syncApi.sync.installations({ id: input.id });
-      const [installation, history, connections] = await Promise.all([
+      const resource = syncApi.sync.syncs({ id: input.id });
+      const [sync, history, connections] = await Promise.all([
         resource.get(),
         resource.polls.get({ query: { offset: input.offset } }),
         syncApi.providers.connections.get(),
       ]);
-      if (installation.error || history.error || connections.error) {
+      if (sync.error || history.error || connections.error) {
         throw new Error('Could not load this sync.');
       }
-      return { installation: installation.data, ...history.data, connections: connections.data };
+      return { sync: sync.data, ...history.data, connections: connections.data };
     },
   });
 }

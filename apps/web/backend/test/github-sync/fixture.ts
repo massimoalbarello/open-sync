@@ -1,3 +1,4 @@
+import { Database } from 'bun:sqlite';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -122,15 +123,32 @@ export async function fixture(config: JsonObject = {}) {
     },
   };
   let engine = createSyncRuntime(options);
-  const destination = engine.api.createDestination({ ...owner, type: 'local', config: {} });
-  const installation = await engine.api.createInstallation({
+  const destination = { type: 'local', input: {} };
+  const sync = await engine.api.createSync({
     ...owner,
-    destinationId: destination.id,
-    definition: githubPullRequests.definition,
+    destination,
+    definition: githubPullRequests.definition.id,
     connection: { id: 'github-connection', service: 'github' },
     config,
   });
   return {
+    savedState() {
+      const db = new Database(options.databasePath, { readonly: true });
+      try {
+        const row = db
+          .query<{ checkpoint: string; checkpoint_revision: number }, string[]>(
+            'SELECT checkpoint, checkpoint_revision FROM syncs WHERE owner_id=? AND id=?',
+          )
+          .get(owner.ownerId, sync.id)!;
+        return {
+          ...engine.api.sync({ ...owner, id: sync.id }),
+          checkpoint: JSON.parse(row.checkpoint),
+          checkpointRevision: row.checkpoint_revision,
+        };
+      } finally {
+        db.close();
+      }
+    },
     get engine() {
       return engine;
     },
@@ -139,7 +157,7 @@ export async function fixture(config: JsonObject = {}) {
     requests,
     provider,
     pulls,
-    installation,
+    sync,
     async restart() {
       await engine.close();
       engine = createSyncRuntime(options);

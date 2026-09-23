@@ -5,13 +5,13 @@ export function claimPoll(input: { db: Database; scope: Resource }): string {
   const { db, scope } = input;
   const existing = db
     .query<{ id: string }, [string, string]>(
-      'SELECT id FROM polls WHERE owner_id=? AND installation_id=? AND completed_at IS NULL',
+      'SELECT id FROM polls WHERE owner_id=? AND sync_id=? AND completed_at IS NULL',
     )
     .get(scope.ownerId, scope.id);
   const id = existing?.id ?? `poll_${crypto.randomUUID()}`;
   if (!existing) {
     db.query(
-      "INSERT INTO polls(owner_id,id,installation_id,state,started_at) VALUES (?,?,?,'syncing',?)",
+      "INSERT INTO polls(owner_id,id,sync_id,state,started_at) VALUES (?,?,?,'syncing',?)",
     ).run(scope.ownerId, id, scope.id, Date.now());
   }
   db.query(

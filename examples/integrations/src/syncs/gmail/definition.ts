@@ -10,8 +10,6 @@ export const gmailThreads = {
     name: 'Gmail threads',
     description:
       'Complete email threads with activity within the selected history range, including older messages in each conversation. Rechecks for changes; does not infer deleted threads.',
-    version: '2',
-    artifactId: 'open-sync/gmail-threads/2',
     provider: {
       service: 'gmail',
       actions: ['gmail.get_profile', 'gmail.list_threads', 'gmail.download_attachment'],
