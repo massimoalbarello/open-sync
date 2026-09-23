@@ -59,6 +59,14 @@ test('committed pages survive step failure and restart resumes from their checkp
     await f.engine.tick();
     expect(savedSync({ path: f.files.path, scope: { ...alpha, id: sync.id } }).checkpoint).toBe(1);
     expect(f.engine.api.sync({ ...alpha, id: sync.id }).errorCode).toBe('execution_failed');
+    const [poll] = f.engine.api.polls({ ...alpha, id: sync.id });
+    expect(poll).toMatchObject({
+      state: 'retrying',
+      errorCode: 'execution_failed',
+      completedAt: null,
+      recordsProcessed: 1,
+      recordsQueued: 1,
+    });
     await f.engine.close();
     const resumed = createSyncRuntime({ ...f.options, definitions: [fixture] });
     try {
@@ -68,6 +76,16 @@ test('committed pages survive step failure and restart resumes from their checkp
       expect(savedSync({ path: f.files.path, scope: { ...alpha, id: sync.id } }).checkpoint).toBe(
         count,
       );
+      expect(resumed.api.polls({ ...alpha, id: sync.id })).toEqual([
+        {
+          ...poll!,
+          state: 'succeeded',
+          errorCode: null,
+          completedAt: expect.any(Number),
+          recordsProcessed: count,
+          recordsQueued: count,
+        },
+      ]);
     } finally {
       await resumed.close();
     }

@@ -3,7 +3,7 @@ import type { ConnectionRef } from '../../models/definition';
 import { fail } from '../../models/error';
 import type { Resource, Scope } from '../../models/identity';
 import { canonicalJson, type JsonObject, type JsonValue } from '../../models/json';
-import type { CreateSync } from '../../models/sync';
+import type { CreateSync, SyncPoll } from '../../models/sync';
 import { readSync } from '../rows';
 import type { CatalogRepository } from './contract';
 
@@ -46,6 +46,17 @@ export class SqliteCatalog implements CatalogRepository {
       .all(scope.ownerId)
       .map(({ id }) => this.sync({ ...scope, id }));
   }
+  polls(input: Resource): SyncPoll[] {
+    this.sync(input);
+    return this.db
+      .query<
+        SyncPoll,
+        [string, string]
+      >(`SELECT id,started_at AS startedAt,completed_at AS completedAt,
+        state,error_code AS errorCode,records_processed AS recordsProcessed,records_queued AS recordsQueued
+        FROM sync_polls WHERE owner_id=? AND sync_id=? ORDER BY id DESC`)
+      .all(input.ownerId, input.id);
+  }
   connectSync(input: Resource & { connection: ConnectionRef }) {
     return this.db
       .transaction(() => {
@@ -68,6 +79,10 @@ export class SqliteCatalog implements CatalogRepository {
         if (sync.enabled === input.enabled) {
           return sync;
         }
+        this.db
+          .query(`UPDATE sync_polls SET state=?,error_code=NULL
+          WHERE owner_id=? AND sync_id=? AND completed_at IS NULL`)
+          .run(input.enabled ? 'ready' : 'disabled', input.ownerId, input.id);
         this.db
           .query(
             `UPDATE syncs SET enabled=?,status=?,error_code=NULL,next_due_at=?,generation=generation+1,expires_at=NULL WHERE owner_id=? AND id=?`,
@@ -108,6 +123,10 @@ export class SqliteCatalog implements CatalogRepository {
         if (!this.sync(input).enabled) {
           fail('disabled');
         }
+        this.db
+          .query(`UPDATE sync_polls SET state='interrupted',error_code='resync_requested',completed_at=?
+          WHERE owner_id=? AND sync_id=? AND completed_at IS NULL`)
+          .run(Date.now(), input.ownerId, input.id);
         this.db
           .query(
             `UPDATE syncs SET checkpoint=?,status='ready',error_code=NULL,next_due_at=?,resync=1,failure_count=0,generation=generation+1,expires_at=NULL WHERE owner_id=? AND id=?`,

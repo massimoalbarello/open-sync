@@ -11,6 +11,7 @@ test.each([false, true])(
     try {
       const lease = f.acquisition.claim(leaseMs)!;
       const before = f.catalog.sync({ ...alpha, id: f.sync.id });
+      const pollsBefore = f.catalog.polls({ ...alpha, id: f.sync.id });
       f.db.exec(
         "CREATE TRIGGER fail_checkpoint BEFORE UPDATE OF next_due_at ON syncs BEGIN SELECT RAISE(ABORT,'injected'); END;",
       );
@@ -24,6 +25,7 @@ test.each([false, true])(
       expect(f.db.query('SELECT * FROM record_state').all()).toEqual([]);
       expect(f.deliveries.status(alpha).pendingRecords).toBe(0);
       expect(f.catalog.sync({ ...alpha, id: f.sync.id })).toEqual(before);
+      expect(f.catalog.polls({ ...alpha, id: f.sync.id })).toEqual(pollsBefore);
       f.db.exec('DROP TRIGGER fail_checkpoint');
       f.acquisition.commit({ lease, page, definition: fixture.definition });
       expect(f.catalog.sync({ ...alpha, id: f.sync.id }).checkpoint).toBe(1);

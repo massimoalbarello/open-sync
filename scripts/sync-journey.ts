@@ -19,6 +19,7 @@ import { granolaFixtureMeetingCount } from './example-provider-fixtures';
 import { assetsEmptyJourney, assetsJourney, previewsJourney } from './receiver-journey';
 
 const successStatus = 200;
+const githubRecordCount = 100;
 const sources = [
   {
     service: 'gmail',
@@ -276,6 +277,14 @@ export async function syncLifecycleJourney(input: Journey & { syncId: string }) 
   await page.getByRole('button', { name: 'Resync', exact: true }).click();
   assert.ok((await queued).ok());
   await waitForSync({ ...input, id: syncId });
+  await page
+    .getByRole('list', { name: 'Polling iterations' })
+    .getByRole('listitem')
+    .first()
+    .getByText(`${githubRecordCount} processed · ${githubRecordCount} queued`, {
+      exact: true,
+    })
+    .waitFor();
   await capture({ page, name: 'resync-status' });
   await drainDeliveries(input);
   const replayed = await readRecords({ ...input, syncId });
@@ -304,7 +313,6 @@ export async function githubSyncJourney(
   input: Journey & { app: { restartServer(): Promise<void> } },
 ) {
   const { page, origin, app } = input;
-  const fixtureRecordCount = 100;
   const drainTimeoutMs = 120_000;
   await page.goto(`${origin}/syncs/new?source=github.pull-requests`);
   await page.getByRole('button', { name: 'Create sync', exact: true }).click();
@@ -372,7 +380,7 @@ export async function githubSyncJourney(
   await capture({ page, name: 'sync-detail' });
   await page.getByRole('link', { name: 'Queue', exact: true }).click();
   await page
-    .getByText(`${fixtureRecordCount} records waiting · 0 deliveries blocked · Delivery paused`, {
+    .getByText(`${githubRecordCount} records waiting · 0 deliveries blocked · Delivery paused`, {
       exact: true,
     })
     .waitFor();
@@ -381,12 +389,12 @@ export async function githubSyncJourney(
   await deliveries.nth(dataPageSize - 1).waitFor();
   assert.equal(await deliveries.count(), dataPageSize);
   await deliveries.last().scrollIntoViewIfNeeded();
-  await deliveries.nth(fixtureRecordCount - 1).waitFor();
-  assert.equal(await deliveries.count(), fixtureRecordCount);
+  await deliveries.nth(githubRecordCount - 1).waitFor();
+  assert.equal(await deliveries.count(), githubRecordCount);
   await capture({ page, name: 'queue' });
   await page.getByRole('button', { name: 'Resume delivery', exact: true }).click();
   await page
-    .getByText(`${fixtureRecordCount} records received`, { exact: true })
+    .getByText(`${githubRecordCount} records received`, { exact: true })
     .waitFor({ timeout: 2 * drainTimeoutMs });
   await page.getByText('Nothing waiting for delivery', { exact: true }).waitFor();
   await page.getByRole('link', { name: 'Records', exact: true }).click();
@@ -400,8 +408,8 @@ export async function githubSyncJourney(
   );
   assert.equal(await records.count(), dataPageSize);
   await records.last().scrollIntoViewIfNeeded();
-  await records.nth(fixtureRecordCount - 1).waitFor();
-  assert.equal(await records.count(), fixtureRecordCount);
+  await records.nth(githubRecordCount - 1).waitFor();
+  assert.equal(await records.count(), githubRecordCount);
   await page.getByRole('link', { name: 'PR 000', exact: true }).click();
   await page.locator('pre').getByText('"title": "PR 000"', { exact: false }).waitFor();
   await capture({ page, name: 'received-records' });

@@ -44,6 +44,13 @@ export class SqliteAcquisition implements AcquisitionRepository {
       }
       const { records, assets } = changedRecords({ db, lease: input.lease, sync, page });
       enqueue({ db, sync, records, limits, assets, lease: input.lease });
+      db.query(`UPDATE sync_polls SET records_processed=records_processed+?,records_queued=records_queued+?
+        WHERE owner_id=? AND sync_id=? AND completed_at IS NULL`).run(
+        page.records.length,
+        records.length,
+        sync.ownerId,
+        sync.id,
+      );
       db.query('UPDATE syncs SET checkpoint=? WHERE owner_id=? AND id=?').run(
         canonicalJson(page.checkpoint).json,
         sync.ownerId,

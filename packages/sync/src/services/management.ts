@@ -101,6 +101,11 @@ export class SyncManagement {
     this.guard(input);
     return summarizeSync(this.input.catalog.sync(input));
   }
+  /** Latest 20 polling iterations, newest first, including the current scan. */
+  polls(input: Resource) {
+    this.guard(input);
+    return this.input.catalog.polls(input);
+  }
   async connectSync(input: Resource & { connection: ConnectionRef }) {
     this.guard(input);
     const sync = this.input.catalog.sync(input);

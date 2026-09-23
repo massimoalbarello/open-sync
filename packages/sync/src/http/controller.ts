@@ -58,6 +58,11 @@ export function createSyncController(input: {
         input.api.setEnabled({ ...scope, id: params.id, enabled: body.enabled }),
       { ...resourceParams, body: t.Object({ enabled: t.Boolean() }) },
     )
+    .get(
+      '/syncs/:id/polls',
+      ({ scope, params }) => input.api.polls({ ...scope, id: params.id }),
+      resourceParams,
+    )
     .post(
       '/syncs/:id/run',
       ({ scope, params }) => {

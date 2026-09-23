@@ -33,6 +33,17 @@ export type SyncStatus =
   | 'disabled'
   | 'succeeded'
   | 'interrupted';
+
+/** One scan through complete=true, including retries. Counts cover committed pages, not delivery acceptance. */
+export interface SyncPoll {
+  id: number;
+  startedAt: number;
+  completedAt: number | null;
+  state: SyncStatus;
+  errorCode: string | null;
+  recordsProcessed: number;
+  recordsQueued: number;
+}
 /** Host-visible status; configuration, checkpoints and execution fencing remain private. */
 export interface SyncSummary {
   id: string;

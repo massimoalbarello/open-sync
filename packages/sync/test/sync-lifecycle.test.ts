@@ -120,11 +120,22 @@ test('resync replays all pages and assets across capacity, retry, pause and rest
       ['1', 2],
     ]);
     expect(new Set(received.map(({ id }) => id)).size).toBe(initialTicks);
+    expect(engine.api.polls(scope)).toHaveLength(2);
+    expect(engine.api.polls(scope)[0]).toMatchObject({
+      state: 'succeeded',
+      recordsProcessed: 2,
+      recordsQueued: 2,
+    });
     expect(received.every(({ bytes }) => bytes === 'content')).toBe(true);
     engine.api.runNow(scope);
     await engine.tick();
     await engine.tick();
     expect(received).toHaveLength(initialTicks);
+    expect(engine.api.polls(scope)[0]).toMatchObject({
+      state: 'succeeded',
+      recordsProcessed: 2,
+      recordsQueued: 0,
+    });
     expect(await readdir(`${files.path}.assets`)).toEqual([]);
     expect(events).toContain('execution_failed');
   } finally {
@@ -153,7 +164,16 @@ test('resync fences old captures, keeps pending FIFO and replays explicit tombst
       delay: 0,
     });
     const stale = f.acquisition.claim(leaseMs)!;
+    const [poll] = f.catalog.polls(scope);
     f.catalog.resync({ ...scope, checkpoint: 0 });
+    expect(f.catalog.polls(scope)).toEqual([
+      {
+        ...poll!,
+        state: 'interrupted',
+        errorCode: 'resync_requested',
+        completedAt: expect.any(Number),
+      },
+    ]);
     expect(() =>
       f.acquisition.commit({ lease: stale, page, definition: fixture.definition }),
     ).toThrow('lease lost');
@@ -287,7 +307,7 @@ test('removal is owner-scoped and fences both durable leases without deleting pr
     expect(() =>
       f.deliveries.complete({ lease: delivery, result: { status: 'accepted' }, delay: 0 }),
     ).toThrow('lease lost');
-    for (const table of ['syncs', 'record_state', 'deliveries']) {
+    for (const table of ['syncs', 'record_state', 'deliveries', 'sync_polls']) {
       expect(f.db.query(`SELECT * FROM ${table}`).all()).toEqual([]);
     }
     expect(f.db.query('SELECT id FROM provider_connections').all()).toEqual([{ id: 'account' }]);

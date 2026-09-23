@@ -13,6 +13,7 @@ import {
   syncDetailOptions,
   syncKeys,
 } from '../../queries/sync';
+import { PollStats } from './-syncs/poll-stats';
 import { SyncAccount } from './-syncs/sync-account';
 
 const millisecondsPerMinute = 60_000;
@@ -145,6 +146,7 @@ function SyncDetail() {
             >
               View records
             </Link>
+            {query.data && <PollStats polls={query.data.polls} />}
           </div>
         </div>
       )}
