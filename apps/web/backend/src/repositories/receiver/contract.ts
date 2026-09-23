@@ -1,59 +1,30 @@
-import type { AssetMetadata, DeliveryAsset } from '@context-use/open-sync/assets';
 import type { Deliverable } from '@context-use/open-sync/delivery';
-import type { JsonObject } from '@context-use/open-sync/json';
-import type { RecordContent, SyncRecord } from '@context-use/open-sync/record';
+
 export interface ReceiverScope {
   actorId: string;
   ownerId: string;
 }
-export interface ReceiverStatus {
-  paused: boolean;
-  records: number;
-  receipts: number;
-}
-export interface ReceivedRecord
-  extends Pick<
-    Extract<SyncRecord, { operation: 'upsert' }>,
-    'preview' | 'createdAt' | 'updatedAt'
-  > {
-  syncId: string;
-  kind: string;
-  id: string;
-  revision: number;
-  data: JsonObject;
-  content?: RecordContent;
-  assets: ReceivedAsset[];
-}
-export interface ReceivedAsset extends Pick<AssetMetadata, 'createdAt' | 'updatedAt'> {
-  id: string;
-  syncId: string;
-  name: string;
-  mediaType: string;
-  size: number;
-}
-export interface RecordIdentity {
-  syncId: string;
-  kind: string;
-  id: string;
+export interface ReceivedDeliverable {
+  deliverable: Omit<Deliverable, 'openAsset'>;
+  receivedAt: number;
 }
 export interface ReceiverRepository {
-  record(input: ReceiverScope & RecordIdentity): Promise<ReceivedRecord | undefined>;
-  assetInfo(input: ReceiverScope & { id: string }): Promise<ReceivedAsset | undefined>;
-  assets(input: ReceiverScope & { syncId?: string; offset: number }): Promise<{
-    assets: ReceivedAsset[];
-    hasMore: boolean;
-    pageSize: number;
-  }>;
-  acceptAsset(
-    input: ReceiverScope & {
-      asset: DeliveryAsset;
-
-      open(): Promise<ReadableStream<Uint8Array>>;
+  deliverables(input: { scope: ReceiverScope; syncId: string; before?: number }): Promise<{
+    deliverables: {
+      id: string;
       syncId: string;
-      signal: AbortSignal;
-    },
-  ): Promise<string>;
-  asset(input: ReceiverScope & { id: string }): Promise<
+      receivedAt: number;
+      recordCount: number;
+      assetCount: number;
+    }[];
+    nextCursor: number | null;
+  }>;
+  deliverable(input: {
+    scope: ReceiverScope;
+    syncId: string;
+    id: string;
+  }): Promise<ReceivedDeliverable | undefined>;
+  asset(input: { scope: ReceiverScope; syncId: string; id: string; index: number }): Promise<
     | {
         name: string;
         mediaType: string;
@@ -62,11 +33,9 @@ export interface ReceiverRepository {
       }
     | undefined
   >;
-  records(
-    input: ReceiverScope & { syncId?: string; offset: number },
-  ): Promise<{ records: ReceivedRecord[]; hasMore: boolean; pageSize: number }>;
-  isPaused(scope: ReceiverScope): Promise<boolean>;
-  status(scope: ReceiverScope): Promise<ReceiverStatus>;
-  setPaused(input: ReceiverScope & { paused: boolean }): Promise<void>;
-  accept(input: ReceiverScope & { delivery: Omit<Deliverable, 'openAsset'> }): Promise<boolean>;
+  accept(input: {
+    scope: ReceiverScope;
+    deliverable: Deliverable;
+    signal: AbortSignal;
+  }): Promise<void>;
 }

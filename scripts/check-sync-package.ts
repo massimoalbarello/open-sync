@@ -62,7 +62,7 @@ for (const source of [githubPullRequests, gmailThreads, slackThreads, granolaMee
   const definition = await source.load();
   if (typeof definition.step !== 'function') throw new Error('Missing source implementation');
 }
-const local = localDestination({ isPaused: async () => false, accept: async () => true, acceptAsset: async () => "asset_1" });
+const local = localDestination({ accept: async () => {} });
 if (typeof local.deliver !== 'function') throw new Error('Missing destination implementation');
 `,
   );

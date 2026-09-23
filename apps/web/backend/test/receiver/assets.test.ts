@@ -1,86 +1,72 @@
 import { expect, test } from 'bun:test';
-import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { SQL } from 'bun';
-import { runMigrations } from '#backend/db/migrate.ts';
 import { SqliteReceiver } from '#backend/repositories/receiver/sqlite.ts';
+import { assetResponse } from '#backend/routes/receiver/asset-response.ts';
+import { bundle, fixture, scope, signal } from './fixture';
 
-const owner = { actorId: 'alice', ownerId: 'alice' };
-test('receiver owns its bytes and stable asset IDs, checks integrity, and isolates owners', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'receiver-assets-'));
-  const db = new SQL({ adapter: 'sqlite', filename: join(dir, 'host.db') });
-  const assetDirectory = join(dir, 'assets');
+test('assets are verified and copied before acceptance; failures clean up and restart removes only orphan files', async () => {
+  const f = await fixture();
   try {
-    await runMigrations({ db });
-    let receiver = await SqliteReceiver.open({ db, assetDirectory });
-    const bytes = Buffer.from('00ff0d0a', 'hex');
-    const input = {
-      ...owner,
-      syncId: 'source',
-
-      signal: new AbortController().signal,
-      asset: {
-        id: 'file',
-        version: '1',
-        name: '../untrusted.bin',
-        mediaType: 'application/octet-stream',
-        size: bytes.length,
-        sha256: new Bun.CryptoHasher('sha256').update(bytes).digest('hex'),
-      },
-      open: () => Promise.resolve(new Blob([bytes]).stream()),
-    };
-    const id = await receiver.acceptAsset(input);
-    const committedFiles = await readdir(assetDirectory);
-    const orphan = crypto.randomUUID();
-    await writeFile(join(assetDirectory, orphan), 'interrupted upload');
-    await writeFile(join(assetDirectory, 'keep.txt'), 'unmanaged file');
-    receiver = await SqliteReceiver.open({ db, assetDirectory });
-    expect((await readdir(assetDirectory)).sort()).toEqual([...committedFiles, 'keep.txt'].sort());
-    await rm(join(assetDirectory, 'keep.txt'));
-    expect(
-      await receiver.acceptAsset({
-        ...input,
-        open: () => Promise.reject(new Error('Must reuse receipt')),
-      }),
-    ).toBe(id);
-    const asset = await receiver.asset({ ...owner, id });
-    expect(Buffer.from(await new Response(asset!.open()).arrayBuffer())).toEqual(bytes);
-    const range = { start: 1, end: 3 };
-    expect(Buffer.from(await new Response(asset!.open(range)).arrayBuffer())).toEqual(
-      bytes.subarray(range.start, range.end),
-    );
-    expect(await receiver.assetInfo({ ...owner, id })).toMatchObject({
-      id,
-      name: '../untrusted.bin',
-      size: bytes.length,
-    });
-    expect(await receiver.assetInfo({ actorId: 'bob', ownerId: 'bob', id })).toBeUndefined();
-    expect(await receiver.asset({ actorId: 'bob', ownerId: 'bob', id })).toBeUndefined();
-    expect(await readdir(assetDirectory)).toHaveLength(1);
+    const deliverable = bundle();
+    const identity = { scope, syncId: 'sync', id: deliverable.id, index: 0 };
+    const available = deliverable.assets[0]!;
+    if ('unavailable' in available) {
+      throw new Error('Expected available asset');
+    }
+    for (const broken of [
+      { ...available, id: 'oversized', size: 1 },
+      { ...available, id: 'corrupt', sha256: 'wrong' },
+    ]) {
+      await expect(
+        f.receiver.accept({
+          scope,
+          signal,
+          deliverable: { ...deliverable, assets: [available, broken] },
+        }),
+      ).rejects.toThrow();
+      expect(await readdir(f.assetDirectory)).toEqual([]);
+      expect(await f.receiver.deliverable(identity)).toBeUndefined();
+    }
+    const controller = new AbortController();
     await expect(
-      receiver.acceptAsset({
-        ...input,
-
-        asset: { ...input.asset, id: 'corrupt', sha256: 'wrong' },
+      f.receiver.accept({
+        scope,
+        signal: controller.signal,
+        deliverable: {
+          ...deliverable,
+          openAsset: () => {
+            controller.abort(new Error('cancelled'));
+            return Promise.resolve(new Blob(['file']).stream());
+          },
+        },
       }),
-    ).rejects.toThrow('content mismatch');
-    expect(await readdir(assetDirectory)).toHaveLength(1);
-    expect(
-      await receiver.acceptAsset({ ...input, asset: { ...input.asset, name: 'changed.bin' } }),
-    ).toBe(id);
-    expect(await receiver.assetInfo({ ...owner, id })).toHaveProperty('name', 'changed.bin');
-    const other = await receiver.acceptAsset({ ...input, syncId: 'other-sync' });
-    expect(other).not.toBe(id);
-    expect(await receiver.assetInfo({ ...owner, id: other })).toHaveProperty(
-      'syncId',
-      'other-sync',
+    ).rejects.toThrow('cancelled');
+    expect(await readdir(f.assetDirectory)).toEqual([]);
+    await f.receiver.accept({ scope, signal, deliverable });
+    const committed = await readdir(f.assetDirectory);
+    await writeFile(join(f.assetDirectory, crypto.randomUUID()), 'uncommitted');
+    await writeFile(join(f.assetDirectory, 'unmanaged.txt'), 'leave alone');
+    const receiver = await SqliteReceiver.open({ db: f.db, assetDirectory: f.assetDirectory });
+    expect((await readdir(f.assetDirectory)).sort()).toEqual(
+      [...committed, 'unmanaged.txt'].sort(),
     );
-    await expect(
-      receiver.acceptAsset({ ...input, asset: { ...input.asset, sha256: 'changed-bytes' } }),
-    ).rejects.toThrow('identity reused');
+    const asset = (await receiver.asset(identity))!;
+    expect(await new Response(asset.open()).text()).toBe('file');
+    const response = assetResponse({ asset, range: 'bytes=1-2' });
+    const partialContent = 206;
+    expect(response.status).toBe(partialContent);
+    expect(response.headers.get('content-range')).toBe('bytes 1-2/4');
+    expect(await response.text()).toBe('il');
+    for (const inaccessible of [
+      { ...identity, scope: { actorId: 'bob', ownerId: 'bob' } },
+      { ...identity, syncId: 'other' },
+      { ...identity, id: 'other' },
+      { ...identity, index: 1 },
+    ]) {
+      expect(await receiver.asset(inaccessible)).toBeUndefined();
+    }
   } finally {
-    await db.close();
-    await rm(dir, { recursive: true, force: true });
+    await f.close();
   }
 });

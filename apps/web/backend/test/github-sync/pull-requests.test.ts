@@ -29,7 +29,7 @@ test.each([
         await f.engine.tick();
       }
       expect(f.engine.api.sync({ ...owner, id: f.sync.id }).status).toBe('succeeded');
-      expect((await f.receiver.status(owner)).records).toBe(count);
+      expect(f.delivered.flatMap((batch) => batch.records).length).toBe(count);
       expect(f.requests.filter((request) => request.query.includes(summary))).toHaveLength(count);
     } finally {
       await f.close();
@@ -74,8 +74,8 @@ test('GitHub resumes committed pages after restart, then polls only updates sinc
       watermark: (partial as { cycleStartedAt: string }).cycleStartedAt,
     });
     const allRecords = 3;
-    expect((await f.receiver.status(owner)).records).toBe(allRecords);
-    expect((await f.receiver.records({ ...owner, offset: 0 })).records[0]).toMatchObject({
+    expect(f.delivered.flatMap((batch) => batch.records).length).toBe(allRecords);
+    expect(f.delivered.flatMap((batch) => batch.records)[0]).toMatchObject({
       preview: 'PR a',
       createdAt: '2020-01-01T00:00:00.000Z',
       updatedAt: new Date(f.pulls[0]!.updatedAt).toISOString(),
@@ -161,7 +161,7 @@ test('partial results, repeated cursors and changed accounts cannot advance GitH
       status: 'retrying',
       errorCode: 'execution_failed',
     });
-    expect((await f.receiver.status(owner)).records).toBe(2);
+    expect(f.delivered.flatMap((batch) => batch.records).length).toBe(2);
   } finally {
     await f.close();
   }
@@ -269,7 +269,7 @@ test('GitHub commits no partial page when a later record fails, then retries the
       checkpoint,
     });
     expect(f.engine.api.status(owner).queue.pendingRecords).toBe(0);
-    expect((await f.receiver.status(owner)).records).toBe(0);
+    expect(f.delivered.flatMap((batch) => batch.records).length).toBe(0);
     await f.restart();
     f.provider.respond = respond;
     f.requests.length = 0;

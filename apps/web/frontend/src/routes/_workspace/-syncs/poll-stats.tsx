@@ -1,9 +1,9 @@
 import type { SyncApi } from '@context-use/open-sync';
 
-export function PollStats({ polls }: { polls: ReturnType<SyncApi['polls']> }) {
+export function PollStats({ polls }: { polls: ReturnType<SyncApi['polls']>['polls'] }) {
   return (
-    <section aria-label="Recent polls" className="space-y-3">
-      <h2 className="font-medium">Recent polls</h2>
+    <section aria-label="Polling iterations" className="space-y-3">
+      <h2 className="font-medium">Polling iterations</h2>
       {polls.length === 0 ? (
         <p className="text-muted-foreground text-sm">No polls yet.</p>
       ) : (
@@ -33,8 +33,8 @@ export function PollStats({ polls }: { polls: ReturnType<SyncApi['polls']> }) {
         </ul>
       )}
       <p className="text-muted-foreground text-xs">
-        Latest 20 polls, including all pages and retries. Processed includes unchanged records;
-        queued counts records added to the delivery queue.
+        Each iteration includes all pages and retries. Processed includes unchanged records; queued
+        counts records added to the delivery queue.
       </p>
     </section>
   );

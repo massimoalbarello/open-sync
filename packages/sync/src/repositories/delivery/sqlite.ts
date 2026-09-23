@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite';
-import type { DeliveryResult, PendingDelivery } from '../../models/delivery';
+import type { Deliverable, DeliveryResult, PendingDelivery } from '../../models/delivery';
 import { fail } from '../../models/error';
 import { type Resource, type Scope, workerScope } from '../../models/identity';
 import { queueUsage } from '../queue-usage';
@@ -90,13 +90,33 @@ export class SqliteDeliveries implements DeliveryRepository {
   status(scope: Scope) {
     return queueUsage({ db: this.db, ownerId: scope.ownerId });
   }
-  pending(input: Scope & { offset: number }) {
-    const limit = 50;
+  pending(input: Scope & { syncId: string; before?: number }) {
+    const pageSize = 20;
     const rows = this.db
-      .query<PendingDelivery, [string, number, number]>(`SELECT id,sync_id AS syncId,state,bytes,
-      record_count AS recordCount,attempt,due_at AS nextAttemptAt,error_code AS errorCode FROM deliveries WHERE owner_id=? ORDER BY sequence LIMIT ? OFFSET ?`)
-      .all(input.ownerId, limit + 1, input.offset);
-    return { deliveries: rows.slice(0, limit), hasMore: rows.length > limit, pageSize: limit };
+      .query<
+        PendingDelivery & { sequence: number },
+        [string, string, number, number]
+      >(`SELECT sequence,id,sync_id AS syncId,state,bytes,
+        record_count AS recordCount,json_array_length(body,'$.assets') AS assetCount,
+        attempt,due_at AS nextAttemptAt,error_code AS errorCode FROM deliveries
+        WHERE owner_id=? AND sync_id=? AND sequence<? ORDER BY sequence DESC LIMIT ?`)
+      .all(input.ownerId, input.syncId, input.before ?? Number.MAX_SAFE_INTEGER, pageSize + 1);
+    const page = rows.slice(0, pageSize);
+    return {
+      deliveries: page.map(({ sequence: _, ...delivery }) => delivery),
+      nextCursor: rows.length > pageSize ? page.at(-1)!.sequence : null,
+    };
+  }
+  deliverable(input: Resource & { syncId: string }): Omit<Deliverable, 'openAsset'> {
+    const row = this.db
+      .query<{ body: string }, [string, string, string]>(
+        'SELECT body FROM deliveries WHERE owner_id=? AND sync_id=? AND id=?',
+      )
+      .get(input.ownerId, input.syncId, input.id);
+    if (!row) {
+      fail('not_found');
+    }
+    return JSON.parse(row.body);
   }
   retry(input: Resource): void {
     const updated = this.db

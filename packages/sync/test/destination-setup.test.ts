@@ -154,7 +154,10 @@ test('queued deliveries retain their own prepared destination config across rest
     accepting = true;
     const reopened = createSyncRuntime(f.options);
     try {
-      for (const scope of [alpha, beta]) {
+      for (const scope of [
+        { ...alpha, syncId: first.id },
+        { ...beta, syncId: second.id },
+      ]) {
         for (const pending of reopened.api.deliveries(scope).deliveries) {
           reopened.api.retryDelivery({ ...scope, id: pending.id });
         }

@@ -1,4 +1,4 @@
-import { queryOptions } from '@tanstack/react-query';
+import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query';
 import { syncApi } from '../lib/api';
 
 const refreshMs = 1000;
@@ -49,15 +49,33 @@ export function syncDetailOptions(input: { userId: string; id: string }) {
     refetchInterval: refreshMs,
     queryFn: async () => {
       const resource = syncApi.sync.syncs({ id: input.id });
-      const [sync, connections, polls] = await Promise.all([
+      const [sync, connections] = await Promise.all([
         resource.get(),
         syncApi.providers.connections.get(),
-        resource.polls.get(),
       ]);
-      if (sync.error || connections.error || polls.error) {
+      if (sync.error || connections.error) {
         throw new Error('Could not load this sync.');
       }
-      return { sync: sync.data, connections: connections.data, polls: polls.data };
+      return { sync: sync.data, connections: connections.data };
     },
+  });
+}
+
+export function pollOptions(input: { userId: string; id: string }) {
+  return infiniteQueryOptions({
+    queryKey: [...syncKeys.owner(input.userId), input.id, 'polls'],
+    initialPageParam: undefined as number | undefined,
+    refetchInterval: refreshMs,
+    queryFn: async ({ pageParam, signal }) => {
+      const result = await syncApi.sync.syncs({ id: input.id }).polls.get({
+        query: { before: pageParam },
+        fetch: { signal },
+      });
+      if (result.error) {
+        throw new Error('Could not load polling iterations.');
+      }
+      return result.data;
+    },
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
 }

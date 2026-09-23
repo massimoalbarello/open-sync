@@ -165,8 +165,8 @@ test('lost acknowledgement and restart replay the original ID, records, descript
     await f.engine.tick();
     expect(f.ledger().bytes).toBe(10);
     await f.restart();
-    const queued = f.engine.api.deliveries(alpha).deliveries[0]!;
-    f.engine.api.retryDelivery({ ...alpha, id: queued.id });
+    const queued = f.engine.api.deliveries({ ...alpha, syncId: f.scope.id }).deliveries[0]!;
+    f.engine.api.retryDelivery({ ...alpha, syncId: f.scope.id, id: queued.id });
     await f.engine.tick();
     expect(received).toHaveLength(2);
     expect(received[0]).toBe(received[1]);
@@ -473,7 +473,7 @@ test('asset streams are scoped to the queued delivery owner', async () => {
   });
   try {
     await f.engine.tick();
-    expect(f.engine.api.deliveries(beta).deliveries).toEqual([]);
+    expect(() => f.engine.api.deliveries({ ...beta, syncId: f.scope.id })).toThrow('not found');
     const db = new Database(f.files.path);
     try {
       const { SqliteDeliveries } = await import('../src/repositories/delivery/sqlite');

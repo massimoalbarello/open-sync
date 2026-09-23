@@ -268,7 +268,7 @@ test('releasing partial captures does not spin a capacity retry; acceptance wake
   });
   try {
     const destination = { type: 'local', input: {} };
-    await engine.api.createSync({
+    const queuedSync = await engine.api.createSync({
       ...alpha,
       definition: fixture.definition.id,
       config: { count: 1 },
@@ -294,7 +294,11 @@ test('releasing partial captures does not spin a capacity retry; acceptance wake
     expect(reads).toBe(before);
     expect(savedSync({ path: files.path, scope: scope }).checkpoint).toBe(0);
     accept = true;
-    engine.api.retryDelivery({ ...alpha, id: engine.api.deliveries(alpha).deliveries[0]!.id });
+    engine.api.retryDelivery({
+      ...alpha,
+      syncId: queuedSync.id,
+      id: engine.api.deliveries({ ...alpha, syncId: queuedSync.id }).deliveries[0]!.id,
+    });
     await until(
       () =>
         engine.api.sync(scope).status === 'succeeded' &&
