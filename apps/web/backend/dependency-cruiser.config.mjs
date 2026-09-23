@@ -1,5 +1,10 @@
+import syncPackage from '../../../packages/sync/package.json' with { type: 'json' };
+
 const backend = '^apps/web/backend/src/';
 const core = '^packages/sync/src/';
+const publicEngineFiles = Object.values(syncPackage.exports).map(
+  (entry) => `^packages/sync/${entry.slice(2).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`,
+);
 
 export default {
   forbidden: [
@@ -8,8 +13,14 @@ export default {
       severity: 'error',
       from: { path: '^examples/.*/src/' },
       to: {
-        path: '^(apps/|packages/ui/|packages/sync/src/(db|repositories|services|execution|connector)/|node_modules/@oomol-lab/open-connector/)',
+        path: '(^apps/|^packages/ui/|node_modules/@oomol-lab/open-connector/)',
       },
+    },
+    {
+      name: 'hosts-consume-public-engine-exports',
+      severity: 'error',
+      from: { path: '^(apps/|examples/)' },
+      to: { path: '^packages/sync/', pathNot: publicEngineFiles },
     },
     {
       name: 'only-open-sync-composition-loads-connector',
@@ -68,11 +79,14 @@ export default {
     },
 
     {
-      name: 'resolve-backend-imports',
+      name: 'resolve-internal-imports',
       severity: 'error',
       comment: 'Fix the internal import so architecture checks can resolve its owner.',
-      from: { path: backend },
-      to: { path: '^(#backend/|\\.)', couldNotResolve: true },
+      from: { path: ['^apps/web/(backend|frontend)/src/', core, '^examples/.*/src/'] },
+      to: {
+        path: '^(#(?:backend|frontend)/|@context-use/open-sync(?:/|$)|\\.)',
+        couldNotResolve: true,
+      },
     },
     {
       name: 'inner-layers-stay-independent',
@@ -162,7 +176,7 @@ export default {
     doNotFollow: { path: 'node_modules' },
     tsPreCompilationDeps: true,
     enhancedResolveOptions: {
-      conditionNames: ['import', 'node', 'default'],
+      conditionNames: ['bun', 'import', 'node', 'default'],
       exportsFields: ['exports'],
     },
   },
