@@ -113,13 +113,6 @@ export class AcquisitionService {
         signal,
         maxBytes: this.input.maxAssetBytes,
       }),
-      log: (event) =>
-        this.input.log({
-          ...event,
-          code: 'definition_log',
-          ownerId: lease.ownerId,
-          syncId: lease.sync.id,
-        }),
     });
     signal.throwIfAborted();
     repository.commit({ lease, page, definition: entry.definition });

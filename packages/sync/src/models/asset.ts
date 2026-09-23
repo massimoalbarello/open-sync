@@ -1,5 +1,4 @@
 import { fail } from './error';
-import type { JsonValue } from './json';
 import type { SourceTimestamps } from './metadata';
 
 /** Identity is scoped to one owner and configured sync. A version must identify immutable content. */
@@ -22,14 +21,6 @@ export interface SourceAssets {
   capture(input: AssetCapture): Promise<AssetRef>;
   /** Declare a known permanent source limitation without downloading or discarding the attachment. */
   unavailable(input: AssetMetadata & { code: string }): AssetRef;
-}
-export type AssetOutcome =
-  | { status: 'accepted'; reference: string }
-  | { status: 'failed'; code: string };
-export interface AssetRendering {
-  structured(input: { asset: DeliveryAsset; outcome: AssetOutcome }): JsonValue;
-  /** Return a destination URL for success, or plain explanatory text for failure. */
-  markdown(input: { asset: DeliveryAsset; outcome: AssetOutcome }): string;
 }
 export function assetKey(asset: AssetRef): string {
   return JSON.stringify([asset.id, asset.version]);

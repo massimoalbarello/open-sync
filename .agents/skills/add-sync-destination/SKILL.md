@@ -29,8 +29,8 @@ in the destination; follow the repository's engineering and compatibility guidan
   and `openAsset(ref)` function. Read bytes only through that function; never depend on engine
   storage paths, source credentials, or a later call back to the source.
 - Choose the receiver's natural contract: accept the whole deliverable together, or upload its
-  assets first and then send records with receiver references. The pure `resolveAssetReference()`
-  and `resolveRecordAssets()` helpers resolve declared placeholders when needed. The engine does
+  assets first and then send records with receiver references. Use `resolveAssetReference()`
+  to read a declared placeholder; the destination owns any JSON or content rewriting. The engine does
   not persist upload receipts or rewritten records; a retry receives the original deliverable and
   may repeat uploads. The destination owns upload idempotency, reference mapping, and any durable
   representation it needs. Handle explicit unavailable descriptors deliberately.

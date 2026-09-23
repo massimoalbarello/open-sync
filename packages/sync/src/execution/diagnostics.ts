@@ -3,7 +3,6 @@ export interface SyncEvent {
   code: string;
   ownerId?: string;
   syncId?: string;
-  message?: string;
   fields?: JsonObject;
 }
 export type Logger = (event: SyncEvent) => void;
