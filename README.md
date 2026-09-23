@@ -39,10 +39,6 @@ sources for GitHub pull requests, Gmail and Slack threads, and Granola meetings.
 | **Record** | A structured item, such as an email thread. | Set `operation` (`upsert` or `delete`), `kind`, and a stable `id`. Upserts include `data` matching the source's `kinds` schema. |
 | **Asset** | Binary content, such as an attachment or image. | Capture it with `assets.capture()` and include its reference in a record's `assetRefs` or the deliverable's `assets`. |
 | **Deliverable** | A batch of records and optional assets produced by a source. | Return it from `step()` alongside a `checkpoint` (where to resume) and `complete` (whether this poll finished). |
-| **Delivery** | A queued message sent to a destination, with an ID that stays the same on retries. | Open Sync creates it automatically; your delivery logic receives it in `deliver()`. |
-
-Your delivery logic must handle retries safely and return `{ status: 'accepted' }` only after saving
-the whole delivery.
 
 ## Embed in your host
 
