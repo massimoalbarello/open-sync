@@ -28,7 +28,7 @@
     "check:all": "bun run --parallel check:types check:codestyle check:frontend check:backend",
     "check:commit-message": "bun run --bun commitlint",
     "fix:codestyle": "bun run --bun biome check --write",
-    "test": "bun test scripts/check-backend.test.ts && bun run --bun turbo test",
+    "test": "bun test scripts/check-backend.test.ts scripts/publish-sync-package.test.ts && bun run --bun turbo test",
     "test:browser": "bun run scripts/test-browser.ts",
     "test:binary": "bun --filter @repo/web test:binary",
     "check:package": "bun run scripts/check-sync-package.ts"
