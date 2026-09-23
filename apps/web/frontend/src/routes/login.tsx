@@ -41,7 +41,9 @@ function Login() {
         <div className="flex w-full max-w-sm flex-col gap-8">
           <div className="space-y-4">
             <h1 className="font-semibold text-4xl tracking-tight sm:text-5xl">Open Sync</h1>
-            <p className="text-lg text-muted-foreground">Your data. Kept in sync.</p>
+            <p className="text-lg text-muted-foreground">
+              Data sync from any source to any destination.
+            </p>
           </div>
           <div className="flex flex-col items-start gap-3">
             {registration.ownerRegistered ? (

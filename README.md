@@ -1,6 +1,6 @@
 <div align="center">
   <h1><img src="apps/web/frontend/src/assets/open-sync.svg" alt="" width="32" height="32" align="absmiddle" /> Open Sync</h1>
-  <p><em>Your data. Kept in sync.</em></p>
+  <p><em>Data sync from any source to any destination.</em></p>
   <img src=".github/assets/open-sync-logo.gif" alt="Open Sync's two arrows illuminated by moving warm light" width="640" height="360" />
 </div>
 
