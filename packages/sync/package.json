@@ -11,8 +11,7 @@
     "./http": "./src/http/index.ts",
     "./engine": "./src/runtime.ts",
     "./build": "./src/build.ts",
-    "./assets": "./src/models/asset.ts",
-    "./assets/references": "./src/models/asset-references.ts"
+    "./assets": "./src/models/asset.ts"
   },
   "files": [
     "src"
@@ -26,12 +25,7 @@
   "dependencies": {
     "@cfworker/json-schema": "4.1.1",
     "@oomol-lab/open-connector": "1.6.5",
-    "@types/mdast": "4.0.4",
     "elysia": "^1.4.30",
-    "mdast-util-from-markdown": "2.0.3",
-    "mdast-util-gfm": "3.1.0",
-    "mdast-util-to-markdown": "2.1.2",
-    "micromark-extension-gfm": "3.0.0",
     "minisearch": "^7.2.0"
   },
   "devDependencies": {

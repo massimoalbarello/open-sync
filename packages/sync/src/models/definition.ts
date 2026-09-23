@@ -61,7 +61,6 @@ export interface SyncContext {
   signal: AbortSignal;
   provider: ProviderOperations;
   assets: SourceAssets;
-  log(input: { message: string; fields?: JsonObject }): void;
 }
 export interface SyncExecutable {
   step(context: SyncContext): Promise<SyncStep>;
