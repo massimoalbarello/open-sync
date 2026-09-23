@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="180" viewBox="0 0 1024 180" role="img" aria-labelledby="title description">
+  <title id="title">Open Sync data flow</title>
+  <desc id="description">Your source produces a deliverable containing records and assets. Open Sync saves checkpoints and queues a delivery for your destination, retrying when needed.</desc>
+  <style>
+    text { fill: #24292f; font: 18px system-ui, sans-serif; text-anchor: middle; }
+    .node { fill: #f6f8fa; stroke: #8c959f; stroke-width: 1.5; }
+    .edge { fill: none; stroke: #57606a; stroke-width: 1.5; marker-end: url(#arrow); }
+    .arrow { fill: #57606a; }
+    .label { font-size: 16px; }
+    @media (prefers-color-scheme: dark) {
+      text { fill: #e6edf3; }
+      .node { fill: #161b22; stroke: #8b949e; }
+      .edge { stroke: #8b949e; }
+      .arrow { fill: #8b949e; }
+    }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="arrow" d="M0 0 10 5 0 10Z" />
+    </marker>
+  </defs>
+  <rect class="node" x="6" y="48" width="154" height="84" />
+  <rect class="node" x="220" y="32" width="212" height="116" />
+  <rect class="node" x="492" y="32" width="244" height="116" />
+  <rect class="node" x="828" y="48" width="188" height="84" />
+  <path class="edge" d="M160 90H218" />
+  <path class="edge" d="M432 90H490" />
+  <path class="edge" d="M736 72H826" />
+  <path class="edge" d="M828 110H738" stroke-dasharray="4 4" />
+  <text x="83" y="96">Your source</text>
+  <text x="326" y="82">Deliverable</text>
+  <text x="326" y="108">records + assets</text>
+  <text x="614" y="82">Open Sync</text>
+  <text x="614" y="108">checkpoints + queue</text>
+  <text x="922" y="96">Your destination</text>
+  <text class="label" x="782" y="56">Delivery</text>
+  <text class="label" x="782" y="134">retry</text>
+</svg>

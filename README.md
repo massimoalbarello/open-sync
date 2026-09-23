@@ -19,13 +19,7 @@ sources for GitHub pull requests, Gmail and Slack threads, and Granola meetings.
 
 ## How it works
 
-```mermaid
-flowchart LR
-    S[Your source] --> B["Deliverable<br/>records + assets"]
-    B --> Q["Open Sync<br/>checkpoints + queue"]
-    Q -->|Delivery| D[Your destination]
-    D -. retry .-> Q
-```
+![Sources produce records and assets; Open Sync checkpoints, queues, and retries delivery to your destination.](.github/assets/open-sync-flow.svg)
 
 | Concept | What it is | How to configure it |
 | --- | --- | --- |
