@@ -8,6 +8,12 @@ body {
   font-family: var(--font-sans);
 }
 
+.logo-flare {
+  /* The shader emits light over black, independently of the application's theme. */
+  background: #000;
+  container-type: size;
+}
+
 .readable-content {
   overflow-wrap: anywhere;
   line-height: 1.75;

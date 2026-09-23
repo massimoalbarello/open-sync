@@ -1,4 +1,8 @@
-# Open Sync
+<div align="center">
+  <h1><img src="apps/web/frontend/src/assets/open-sync.svg" alt="" width="32" height="32" align="absmiddle" /> Open Sync</h1>
+  <p><em>Your data. Kept in sync.</em></p>
+  <img src=".github/assets/open-sync-logo.gif" alt="Open Sync's two arrows illuminated by moving warm light" width="640" height="360" />
+</div>
 
 Open Sync provides a headless Bun sync engine and a default web host with separate Providers,
 Syncs and Delivery queue sections. The host uses Elysia, Better Auth passkeys, React and TanStack Router/Query.

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { virtualPasskeyBrowser } from '@repo/browser-testing/browser';
+import { brandFallbackJourney } from './brand-fallback-journey';
 import { exampleSyncsJourney } from './example-syncs-journey';
 import {
   githubOAuthJourney,
@@ -35,6 +36,7 @@ try {
   const { page } = browser;
   page.setDefaultTimeout(interactionTimeoutMs);
   await mkdir('artifacts', { recursive: true });
+  await brandFallbackJourney({ origin: app.origin });
   await ownerRegistrationJourney({ page, app });
   const requests: string[] = [];
   page.on('request', (request) => requests.push(request.url()));

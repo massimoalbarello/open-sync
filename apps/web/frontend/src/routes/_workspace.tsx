@@ -2,17 +2,9 @@ import { Button } from '@repo/ui/button';
 import { cn } from '@repo/ui/class-names';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, Link, Outlet, redirect, useNavigate } from '@tanstack/react-router';
-import {
-  ArrowRightLeft,
-  Database,
-  Files,
-  ListChecks,
-  LogOut,
-  Menu,
-  Plug,
-  RefreshCw,
-} from 'lucide-react';
+import { Database, Files, ListChecks, LogOut, Menu, Plug, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
+import { OpenSyncLogo } from '../components/brand/open-sync-logo';
 import { sessionOptions, signOut } from '../queries/session';
 
 export const Route = createFileRoute('/_workspace')({
@@ -50,7 +42,7 @@ function Workspace() {
       <aside className="flex flex-col md:sticky md:top-0 md:h-dvh">
         <div className="flex h-16 items-center justify-between px-4">
           <Link to="/syncs" className="flex items-center gap-3 font-semibold text-lg">
-            <ArrowRightLeft aria-hidden="true" className="size-6" />
+            <OpenSyncLogo className="size-6" />
             Open Sync
           </Link>
           <Button
