@@ -12,6 +12,7 @@ export interface ProviderGateway {
 }
 export const noProvider: ProviderOperations = {
   action: () => Promise.reject(new Error('operation_denied')),
+  download: () => Promise.reject(new Error('operation_denied')),
   get: () => Promise.reject(new Error('operation_denied')),
   post: () => Promise.reject(new Error('operation_denied')),
 };
