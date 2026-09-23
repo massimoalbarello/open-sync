@@ -56,12 +56,14 @@ export function assetKey(asset: AssetRef): string {
 
 const prefix = 'open-sync-asset:';
 const keyPattern = /^[A-Za-z0-9_-]+$/;
+/** Create a record-local asset reference for an exact JSON value or a content link target. */
 export function assetPlaceholder(key: string): string {
   if (!keyPattern.test(key)) {
     fail('invalid_asset_placeholder');
   }
   return `${prefix}${key}`;
 }
+/** Parse an exact placeholder; ordinary strings return undefined, malformed placeholders throw. */
 export function assetPlaceholderKey(value: string): string | undefined {
   if (!value.startsWith(prefix)) {
     return;
@@ -69,4 +71,19 @@ export function assetPlaceholderKey(value: string): string | undefined {
   const key = value.slice(prefix.length);
   assetPlaceholder(key);
   return key;
+}
+
+/** Resolve an exact placeholder through the record's declared references. Does not inspect content. */
+export function resolveAssetReference(input: {
+  value: string;
+  assetRefs: Readonly<Record<string, AssetRef>>;
+}): AssetRef | undefined {
+  const key = assetPlaceholderKey(input.value);
+  if (key === undefined) {
+    return;
+  }
+  if (!Object.hasOwn(input.assetRefs, key)) {
+    return fail('unknown_asset_reference');
+  }
+  return input.assetRefs[key];
 }

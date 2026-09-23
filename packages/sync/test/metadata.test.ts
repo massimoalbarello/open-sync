@@ -1,5 +1,4 @@
 import { expect, test } from 'bun:test';
-import { canonicalJson } from '../src/models/json';
 import { defaultLimits } from '../src/models/limits';
 import { preparePage } from '../src/models/page';
 import type { SyncRecord } from '../src/models/record';
@@ -36,11 +35,6 @@ test.each([false, true])(
         const record = delivery.delivery.deliverable.records[0]!;
         expect(record).toMatchObject({ ...metadata, revision: ++revision });
         expect(record.contentHash).not.toBe(previousHash);
-        if (Object.keys(metadata).length === 0) {
-          expect(record.contentHash).toBe(
-            canonicalJson(withContent ? [original.data, content, {}, []] : original.data).sha256,
-          );
-        }
         previousHash = record.contentHash;
         f.deliveries.complete({ lease: delivery, result: { status: 'accepted' }, delay: 0 });
         // UTC normalization happens before hashing, including timezone and whitespace differences.

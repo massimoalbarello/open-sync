@@ -37,36 +37,14 @@ export function writeRecord(input: {
 }
 
 function hashRecord(record: Extract<SyncRecord, { operation: 'upsert' }>) {
-  const {
-    operation: _operation,
-    kind: _kind,
-    id: _id,
-    data,
-    content,
-    assetRefs,
-    markdownFields,
-    ...metadata
-  } = record;
-  if (Object.keys(metadata).length) {
-    return canonicalJson([data, content ?? null, assetRefs ?? {}, markdownFields ?? [], metadata])
-      .sha256;
-  }
-  // A tuple cannot collide with a legacy record's arbitrary JSON object.
-  if (record.content) {
-    return canonicalJson([
-      record.data,
-      record.content,
-      record.assetRefs ?? {},
-      record.markdownFields ?? [],
-    ]).sha256;
-  }
-  return canonicalJson(
-    record.assetRefs || record.markdownFields
-      ? {
-          data: record.data,
-          assetRefs: record.assetRefs ?? {},
-          markdownFields: record.markdownFields ?? [],
-        }
-      : record.data,
-  ).sha256;
+  return canonicalJson({
+    id: record.id,
+    kind: record.kind,
+    data: record.data,
+    content: record.content ?? null,
+    assetRefs: record.assetRefs ?? {},
+    preview: record.preview ?? null,
+    createdAt: record.createdAt ?? null,
+    updatedAt: record.updatedAt ?? null,
+  }).sha256;
 }

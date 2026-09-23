@@ -4,7 +4,7 @@ import { readdir } from 'node:fs/promises';
 import { assetsFirst } from '../src/delivery/assets-first';
 import type { AssetRendering, AssetUpload, DeliveryAsset } from '../src/models/asset';
 import { assetKey, assetPlaceholder } from '../src/models/asset';
-import { resolveRecordAssets, validateAssetReferences } from '../src/models/asset-references';
+import { resolveRecordAssets } from '../src/models/asset-references';
 import { SourceHttpError, type SyncRegistration } from '../src/models/definition';
 import type { Delivery, DestinationType } from '../src/models/delivery';
 import { createSyncRuntime } from '../src/runtime';
@@ -52,9 +52,9 @@ function source(
                 operation: 'upsert',
                 kind: 'note',
                 id: 'first',
-                data: { file: assetPlaceholder('first'), body: '[file](open-sync-asset:first)' },
+                data: { file: assetPlaceholder('first') },
+                content: { format: 'markdown', body: `[file](${assetPlaceholder('first')})` },
                 assetRefs: { first: asset },
-                markdownFields: ['body'],
               },
             ],
           },
@@ -226,7 +226,8 @@ test('asset acceptance and materialized record survive restart, preserving sourc
       data: { file: 'open-sync-asset:first' },
     });
     expect(records[0]!.deliverable.records[0]).toMatchObject({
-      data: { file: '42', body: '[file](https://destination.example/files/42)\n' },
+      data: { file: '42' },
+      content: { format: 'markdown', body: '[file](https://destination.example/files/42)\n' },
       contentHash: logical.deliverable.records[0]!.contentHash,
     });
     await fixture.restart();
@@ -303,8 +304,8 @@ test('bounded upload failures become explicit record outcomes, including Markdow
     expect(delivered?.deliverable.records[0]).toMatchObject({
       data: {
         file: { status: 'failed', code: 'remote_unavailable' },
-        body: 'Attachment unavailable\n',
       },
+      content: { format: 'markdown', body: 'Attachment unavailable\n' },
     });
     expect(fixture.engine.api.status(alpha).queue.pendingRecords).toBe(0);
   } finally {
@@ -410,13 +411,11 @@ test('placeholder protocol resolves repeated and distinct assets while preservin
       format: 'markdown' as const,
       body: '| File | Status |\n| --- | --- |\n| [first](open-sync-asset:a) | ~~pending~~ |\n\n- [x] Read the file',
     },
-    markdownFields: ['body'],
     data: {
       files: ['open-sync-asset:b', 'open-sync-asset:a', 'open-sync-asset:a'],
       body: '[first][ref] ![second](open-sync-asset:b) `open-sync-asset:a`\n\n[ref]: open-sync-asset:a',
     },
   };
-  validateAssetReferences(record);
   const resolved = resolveRecordAssets({
     record,
     assets: Object.values(refs).map((ref) => ({
@@ -442,7 +441,12 @@ test('placeholder protocol resolves repeated and distinct assets while preservin
   expect(resolved.operation === 'upsert' && resolved.content?.body).toContain(
     '* [x] Read the file',
   );
-  expect(() => validateAssetReferences({ ...record, assetRefs: { a: refs.a } })).toThrow();
+  expect(resolved.operation === 'upsert' && resolved.data.body).toBe(record.data.body);
+  expect(record.data.files).toEqual([
+    'open-sync-asset:b',
+    'open-sync-asset:a',
+    'open-sync-asset:a',
+  ]);
 });
 
 test.each([
@@ -461,10 +465,9 @@ test.each([
       revision: 1,
       contentHash: 'source',
       assetRefs: { a: ref },
-      markdownFields: ['body'],
-      data: { body },
+      data: {},
+      content: { format: 'markdown' as const, body },
     };
-    validateAssetReferences(record);
     for (const outcome of [
       { status: 'accepted' as const, reference: 'A' },
       { status: 'failed' as const, code: 'unavailable' },
@@ -475,12 +478,12 @@ test.each([
         outcomes: new Map([[assetKey(ref), outcome]]),
         rendering,
       });
-      expect(resolved.operation === 'upsert' && resolved.data.body).toContain(
+      expect(resolved.operation === 'upsert' && resolved.content?.body).toContain(
         outcome.status === 'accepted'
           ? '[file](https://destination.example/files/A)'
           : 'Attachment unavailable',
       );
-      expect(resolved.operation === 'upsert' && resolved.data.body).not.toContain(
+      expect(resolved.operation === 'upsert' && resolved.content?.body).not.toContain(
         'open-sync-asset:',
       );
     }
