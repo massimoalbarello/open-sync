@@ -4,8 +4,55 @@
   <img src=".github/assets/open-sync-logo.gif" alt="Open Sync's two arrows illuminated by moving warm light" width="640" height="360" />
 </div>
 
-Use the included dashboard or embed the headless engine in your own Bun app. Open Sync handles
-provider connections, incremental syncing, retries, and delivery of records and assets.
+Open Sync is a headless sync engine for Bun, designed to run inside your own host application.
+Your host supplies the UI and user authentication; Open Sync handles provider connections,
+sync progress, retries, and delivery of records and assets.
+
+This repository also includes a default host implementation as a sample app: a dashboard with
+sources for GitHub pull requests, Gmail and Slack threads, and Granola meetings.
+
+## How it works
+
+```mermaid
+flowchart LR
+    S[Source] --> B["Deliverable<br/>records + assets"]
+    B --> Q["Open Sync<br/>saved queue"]
+    Q -->|Delivery| D[Destination]
+    D -. retry .-> Q
+```
+
+| Concept | What it is | How to configure it |
+| --- | --- | --- |
+| **Source** | Code that reads data from a provider. | Register it in `definitions`; declare inputs in `configSchema` and read data in `step()`. |
+| **Record** | A structured item, such as an email thread. | Set `operation` (`upsert` or `delete`), `kind`, and a stable `id`. Upserts include `data` matching the source's `kinds` schema. |
+| **Asset** | Binary content, such as an attachment or image. | Capture it with `assets.capture()` and include its reference in a record's `assetRefs` or the deliverable's `assets`. |
+| **Deliverable** | A batch of records and optional assets produced by a source. | Return it from `step()` alongside a `checkpoint` (where to resume) and `complete` (whether this poll finished). |
+| **Delivery** | A queued message sent to a destination, with an ID that stays the same on retries. | Open Sync creates it automatically; the destination receives it in `deliver()`. |
+| **Destination** | Code that stores or forwards the data. | Register it in `destinationTypes` with a `configSchema` and `deliver()` handler. Set `acceptsAssets: true` to receive assets. |
+
+A destination must handle retries safely and return `{ status: 'accepted' }` only after saving
+the whole delivery.
+
+## Embed in your host
+
+```sh
+bun add @context-use/open-sync
+```
+
+1. Call `await createOpenSync()` with a data directory, your sources and destinations,
+   and your host's authorization functions.
+2. Route requests to `sync.fetch(request)` and set `publicUrl` to that route's full URL
+   (for example, `https://your-app.com/api/open-sync`). This also handles provider authorization callbacks.
+3. Call `sync.start()` when your server starts and `await sync.close()` when it shuts down.
+
+Use `sync.providers` to connect accounts. Create a destination with `sync.api.createDestination()`,
+then link a source to it with `sync.api.createInstallation()`. Supply their `config` values,
+a provider `connection` when needed, and `intervalMs` for the sync schedule. Pass the acting user's
+`actorId` and data owner's `ownerId` from your host's authentication.
+
+See the [host integration](apps/web/backend/src/main.ts),
+[configuration options](packages/sync/src/open-sync.ts), and
+[source and destination examples](examples/integrations/src).
 
 ## Deploy on nibrun
 
@@ -24,35 +71,13 @@ bun run deploy --app YOUR_APP_SLUG
 
 Replace `YOUR_APP_SLUG` with the slug from `nib apps list`. The command builds and deploys the update.
 
-## Run locally
+## Run the sample app locally
 
 Clone this repository and install Bun 1.4 and Node 24, then:
 
 ```sh
-bun install --frozen-lockfile
+bun install
 bun run dev
 ```
 
 Open [localhost:5173](http://localhost:5173) and create an account.
-
-## Use the headless engine
-
-Headless means the same sync engine, without the dashboard. It runs inside your Bun server;
-your app keeps its own UI, login, and user permissions.
-
-```sh
-bun add @context-use/open-sync
-```
-
-1. Call `await createOpenSync()` with a data directory, your source definitions and destination handlers,
-   and your app's authorization functions.
-2. Route requests to `sync.fetch(request)` and set `publicUrl` to that route's full URL
-   (for example, `https://your-app.com/api/open-sync`). This includes provider authorization callbacks.
-3. Call `sync.start()` when your server starts and `await sync.close()` when it shuts down.
-   Use `sync.providers` to manage connections and `sync.api` to manage syncs.
-
-See the [working host integration](apps/web/backend/src/main.ts),
-[configuration options](packages/sync/src/open-sync.ts), and
-[source and destination examples](examples/integrations/src).
-
-[MIT license](LICENSE).
