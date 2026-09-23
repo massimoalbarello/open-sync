@@ -1,8 +1,9 @@
 import { abortable } from '../execution/abortable';
 import type { Logger } from '../execution/diagnostics';
 import { bindProvider, type ProviderGateway } from '../execution/provider';
-import type { SourceAssets } from '../models/asset';
+import { assetKey, type SourceAssets } from '../models/asset';
 import { SyncError } from '../models/error';
+import { canonicalJson } from '../models/json';
 import { retryDelay, type Timing } from '../models/limits';
 import type { Registry } from '../models/registry';
 import { retryableStatus } from '../models/source-http-error';
@@ -74,7 +75,7 @@ export class AcquisitionService {
     this.finish({ lease, state: code, delay, failureCount, pause });
   }
   private async consume(input: { lease: RunLease; signal: AbortSignal }): Promise<void> {
-    const { repository, registry, timing } = this.input;
+    const { repository, registry } = this.input;
     const { lease, signal } = input;
     const entry = registry.definition(lease.sync.definition);
     const provider = await bindProvider({
@@ -99,7 +100,6 @@ export class AcquisitionService {
         lease,
         signal,
         maxBytes: this.input.maxAssetBytes,
-        attempts: timing.assetAttempts,
       }),
       log: (event) =>
         this.input.log({
@@ -145,77 +145,74 @@ function sourceAssets(input: {
   lease: RunLease;
   signal: AbortSignal;
   maxBytes: number;
-  attempts: number;
 }): SourceAssets {
+  const captures = new Map<
+    string,
+    {
+      metadata: string;
+      ref: import('../models/asset').AssetRef;
+      pending?: Promise<import('../models/asset').AssetRef>;
+    }
+  >();
+  const stage = ({
+    capture,
+    unavailable,
+  }: {
+    capture: import('../models/asset').AssetMetadata;
+    unavailable?: string;
+  }) => {
+    input.signal.throwIfAborted();
+    const asset = assetMetadata(capture);
+    const metadata = canonicalJson({ ...asset, unavailable: unavailable ?? null }).json;
+    const previous = captures.get(assetKey(asset));
+    if (previous) {
+      if (previous.metadata !== metadata) {
+        throw new SyncError({
+          code: 'asset_version_conflict',
+          message: 'Conflicting asset within one step.',
+        });
+      }
+      return { previous, asset, metadata };
+    }
+    const id = input.repository.stage({ lease: input.lease, asset, unavailable });
+    return { id, asset, metadata };
+  };
   return {
     unavailable(capture) {
-      input.signal.throwIfAborted();
       identifier(capture.code);
-      const { id, version } = capture;
-      const asset = assetMetadata(capture);
-      const previous = input.repository.capture({ lease: input.lease, asset });
-      if (previous.state === 'pending') {
-        input.repository.captureFailed({
-          lease: input.lease,
-          asset,
-          code: capture.code,
-          terminal: true,
-        });
+      const result = stage({ capture, unavailable: capture.code });
+      if (result.previous) {
+        return result.previous.ref;
       }
-      return { id, version };
+      const ref = { id: capture.id, version: capture.version };
+      captures.set(assetKey(ref), { ref, metadata: result.metadata });
+      return ref;
     },
-    async capture(capture) {
-      input.signal.throwIfAborted();
-      const { read } = capture;
-      const asset = assetMetadata(capture);
-      const ref = { id: asset.id, version: asset.version };
-      const previous = input.repository.capture({ lease: input.lease, asset });
-      if (previous.state !== 'pending') {
-        return ref;
+    capture(capture) {
+      const result = stage({ capture });
+      if (result.previous) {
+        return result.previous.pending!;
       }
-      if (previous.attempt > input.attempts) {
-        input.repository.captureFailed({
-          lease: input.lease,
-          asset,
-          code: 'asset_fetch_exhausted',
-          terminal: true,
-        });
-        return ref;
-      }
-      let file: Awaited<ReturnType<AssetFiles['write']>> | undefined;
-      let reservedId: string | undefined;
-      try {
-        const body = await read();
+      const ref = { id: capture.id, version: capture.version };
+      const pending = (async () => {
+        const body = await capture.read();
         input.signal.throwIfAborted();
-        file = await input.files.write({
+        const file = await input.files.write({
+          id: result.id!,
           body,
           maxBytes: input.maxBytes,
-          reserve(reservation) {
+          signal: input.signal,
+          reserve: (reservation) => {
             input.signal.throwIfAborted();
             input.repository.reserve({ lease: input.lease, ...reservation });
-            reservedId = reservation.id;
           },
-          signal: input.signal,
         });
         input.signal.throwIfAborted();
-        input.repository.captured({ lease: input.lease, asset, file });
+        input.repository.captured({ lease: input.lease, ...file });
         return ref;
-      } catch (error) {
-        if (reservedId) {
-          await input.files.remove(reservedId);
-        }
-        input.signal.throwIfAborted();
-        if (reservedId) {
-          input.repository.discarded(reservedId);
-        }
-        captureFailure({
-          ...input,
-          asset,
-          error,
-          attempt: previous.attempt,
-        });
-        return ref;
-      }
+      })();
+      captures.set(assetKey(ref), { ref, metadata: result.metadata, pending });
+      return pending;
     },
   };
 }
@@ -229,55 +226,4 @@ function assetMetadata(input: import('../models/asset').AssetMetadata) {
     ...(input.createdAt !== undefined ? { createdAt: input.createdAt } : {}),
     ...(input.updatedAt !== undefined ? { updatedAt: input.updatedAt } : {}),
   };
-}
-
-function captureFailure(input: {
-  repository: AssetRepository;
-  lease: RunLease;
-  asset: import('../models/asset').AssetMetadata;
-  error: unknown;
-  attempt: number;
-  attempts: number;
-}) {
-  const { error } = input;
-  if (
-    error instanceof SyncError &&
-    ['lease_lost', 'checkpoint_conflict', 'asset_version_conflict'].includes(error.code)
-  ) {
-    throw error;
-  }
-  if (
-    error instanceof SyncError &&
-    ['waiting_for_capacity', 'step_exceeds_asset_capacity'].includes(error.code)
-  ) {
-    input.repository.captureDeferred({ lease: input.lease, asset: input.asset, code: error.code });
-    throw error;
-  }
-  if (error instanceof SyncError && error.status !== undefined) {
-    const tooLarge = 413;
-    if (error.status === tooLarge) {
-      input.repository.captureFailed({
-        lease: input.lease,
-        asset: input.asset,
-        code: 'asset_too_large',
-        terminal: true,
-      });
-      return;
-    }
-    input.repository.captureDeferred({ lease: input.lease, asset: input.asset, code: error.code });
-    throw error;
-  }
-  const code =
-    error instanceof SyncError && error.code === 'asset_too_large'
-      ? error.code
-      : 'asset_fetch_failed';
-  const terminal = code === 'asset_too_large' || input.attempt >= input.attempts;
-  input.repository.captureFailed({ lease: input.lease, asset: input.asset, code, terminal });
-  if (!terminal) {
-    throw new SyncError({
-      code: 'asset_fetch_failed',
-      message: 'Asset fetch failed.',
-      diagnostics: error instanceof SyncError ? error.diagnostics : undefined,
-    });
-  }
 }

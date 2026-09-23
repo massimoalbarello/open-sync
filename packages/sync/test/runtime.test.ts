@@ -12,7 +12,7 @@ test('local delivery drains independently and unblocks bounded acquisition', asy
     maxPendingRecords: 1,
     destination: {
       ...accepted,
-      deliver: ({ delivery }) => {
+      deliver: ({ deliverable: delivery }) => {
         if (!accept) {
           return Promise.resolve({ status: 'retry', retryAfterMs: 0 });
         }

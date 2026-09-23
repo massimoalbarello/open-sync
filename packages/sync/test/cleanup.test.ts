@@ -53,7 +53,7 @@ test('accepted files disappear while another source is still writing, and live f
         return {
           ...page,
           complete: true,
-          deliverable: { records: page.deliverable.records, assets: [asset] },
+          records: page.records.map((record) => ({ ...record, assetRefs: { file: asset } })),
         };
       },
     }),
@@ -64,11 +64,9 @@ test('accepted files disappear while another source is still writing, and live f
     destinationTypes: {
       local: {
         ...accepted,
-        acceptsAssets: true,
-        async deliver({ delivery, assets }: Parameters<typeof accepted.deliver>[0]) {
-          const text = await new Response(
-            await assets!.open(delivery.deliverable.assets![0]!),
-          ).text();
+
+        async deliver({ deliverable: delivery }: Parameters<typeof accepted.deliver>[0]) {
+          const text = await new Response(await delivery.openAsset(delivery.assets![0]!)).text();
           expect(text).toBe(delivery.syncId === slow ? 'held' : 'fast');
           delivered.push(delivery.syncId);
           return { status: 'accepted' as const };
@@ -99,7 +97,7 @@ test('accepted files disappear while another source is still writing, and live f
         () =>
           staged &&
           delivered.includes(first.id) &&
-          db.query<{ count: number }, []>('SELECT count(*) AS count FROM asset_files').get()!
+          db.query<{ count: number }, []>('SELECT count(*) AS count FROM delivery_assets').get()!
             .count === 1,
       );
       expect(await readdir(`${files.path}.assets`)).toHaveLength(1);
@@ -110,7 +108,7 @@ test('accepted files disappear while another source is still writing, and live f
       await until(
         () =>
           delivered.length === 2 &&
-          db.query<{ count: number }, []>('SELECT count(*) AS count FROM asset_files').get()!
+          db.query<{ count: number }, []>('SELECT count(*) AS count FROM delivery_assets').get()!
             .count === 0,
       );
       expect(await readdir(`${files.path}.assets`)).toHaveLength(0);
@@ -175,7 +173,7 @@ test('a crash after releasing an asset reference retains its charge until recove
         return {
           ...page,
           complete: true,
-          deliverable: { records: page.deliverable.records, assets: [ref] },
+          records: page.records.map((record) => ({ ...record, assetRefs: { file: ref } })),
         };
       },
     }),
@@ -183,7 +181,7 @@ test('a crash after releasing an asset reference retains its charge until recove
   const options = {
     databasePath: files.path,
     definitions: [source],
-    destinationTypes: { local: { ...accepted, acceptsAssets: true } },
+    destinationTypes: { local: { ...accepted } },
   };
   const engine = createSyncRuntime(options);
   try {
@@ -198,15 +196,15 @@ test('a crash after releasing an asset reference retains its charge until recove
     await engine.close();
     const db = new Database(files.path);
     // Persist the state at the crash boundary between reference release and unlink.
-    db.exec('PRAGMA foreign_keys=ON; DELETE FROM deliveries; UPDATE assets SET file_id=NULL;');
-    expect(db.query('SELECT bytes FROM asset_files').get()).toEqual({ bytes: 4 });
+    db.exec('DELETE FROM deliveries;');
+    expect(db.query('SELECT bytes FROM delivery_assets').get()).toEqual({ bytes: 4 });
     expect(await readdir(`${files.path}.assets`)).toHaveLength(1);
     const restarted = createSyncRuntime(options);
     try {
       restarted.start();
       await until(
         () =>
-          db.query<{ count: number }, []>('SELECT count(*) AS count FROM asset_files').get()!
+          db.query<{ count: number }, []>('SELECT count(*) AS count FROM delivery_assets').get()!
             .count === 0,
       );
       expect(await readdir(`${files.path}.assets`)).toHaveLength(0);
@@ -229,7 +227,7 @@ test('releasing partial captures does not spin a capacity retry; acceptance wake
     load: () => ({
       async step(context) {
         const ids = context.config.count === 1 ? ['large'] : ['left', 'right'];
-        const assets = [];
+        const assets: import('../src/models/asset').AssetRef[] = [];
         for (const id of ids) {
           assets.push(
             await context.assets.capture({
@@ -247,7 +245,10 @@ test('releasing partial captures does not spin a capacity retry; acceptance wake
         return {
           ...page,
           complete: true,
-          deliverable: { records: page.deliverable.records, assets },
+          records: page.records.map((record) => ({
+            ...record,
+            assetRefs: Object.fromEntries(assets.map((asset) => [asset.id, asset])),
+          })),
         };
       },
     }),
@@ -259,7 +260,7 @@ test('releasing partial captures does not spin a capacity retry; acceptance wake
     destinationTypes: {
       local: {
         ...accepted,
-        acceptsAssets: true,
+
         deliver: () =>
           Promise.resolve(accept ? { status: 'accepted' } : { status: 'rejected', code: 'hold' }),
       },

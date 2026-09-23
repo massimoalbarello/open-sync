@@ -35,12 +35,18 @@ export async function acceptAsset(
   if ('unavailable' in asset) {
     throw new Error('Asset has no content');
   }
-  const hash = canonicalJson(asset).sha256;
+  const hash = canonicalJson({
+    id: asset.id,
+    version: asset.version,
+    size: asset.size,
+    sha256: asset.sha256,
+  }).sha256;
   const existing = await findAsset(input);
   if (existing) {
-    if (existing.metadata_hash !== hash) {
+    if (existing.content_hash !== hash) {
       throw new Error('Asset identity reused with different content');
     }
+    await updateMetadata({ db, asset, ownerId: input.ownerId, id: existing.id });
     return existing.id;
   }
   const fileId = crypto.randomUUID();
@@ -79,12 +85,12 @@ export async function acceptAsset(
     input.signal.throwIfAborted();
     const id = `asset_${crypto.randomUUID()}`;
     const result = await db.begin(async (tx) => {
-      await tx`INSERT INTO host_assets(owner_id,id,sync_id,asset_id,asset_version,idempotency_key,metadata_hash,file_id,name,media_type,size,created_at,updated_at)
-        VALUES (${input.ownerId},${id},${input.syncId},${asset.id},${asset.version},${input.idempotencyKey},${hash},${fileId},${asset.name},${asset.mediaType},${asset.size},${asset.createdAt ?? null},${asset.updatedAt ?? null}) ON CONFLICT DO NOTHING`;
+      await tx`INSERT INTO host_assets(owner_id,id,sync_id,asset_id,asset_version,content_hash,file_id,name,media_type,size,created_at,updated_at)
+        VALUES (${input.ownerId},${id},${input.syncId},${asset.id},${asset.version},${hash},${fileId},${asset.name},${asset.mediaType},${asset.size},${asset.createdAt ?? null},${asset.updatedAt ?? null}) ON CONFLICT DO NOTHING`;
       const [row] = await tx<
-        { id: string; file_id: string; metadata_hash: string }[]
-      >`SELECT id,file_id,metadata_hash FROM host_assets WHERE owner_id=${input.ownerId} AND sync_id=${input.syncId} AND asset_id=${asset.id} AND asset_version=${asset.version}`;
-      if (!row || row.metadata_hash !== hash) {
+        { id: string; file_id: string; content_hash: string }[]
+      >`SELECT id,file_id,content_hash FROM host_assets WHERE owner_id=${input.ownerId} AND sync_id=${input.syncId} AND asset_id=${asset.id} AND asset_version=${asset.version}`;
+      if (!row || row.content_hash !== hash) {
         throw new Error('Asset identity conflict');
       }
       return row;
@@ -100,7 +106,18 @@ export async function acceptAsset(
 }
 async function findAsset(input: Parameters<ReceiverRepository['acceptAsset']>[0] & { db: SQL }) {
   const [row] = await input.db<
-    { id: string; metadata_hash: string }[]
-  >`SELECT id,metadata_hash FROM host_assets WHERE owner_id=${input.ownerId} AND (idempotency_key=${input.idempotencyKey} OR (sync_id=${input.syncId} AND asset_id=${input.asset.id} AND asset_version=${input.asset.version}))`;
+    { id: string; content_hash: string }[]
+  >`SELECT id,content_hash FROM host_assets WHERE owner_id=${input.ownerId} AND sync_id=${input.syncId} AND asset_id=${input.asset.id} AND asset_version=${input.asset.version}`;
   return row;
+}
+
+function updateMetadata(input: {
+  db: SQL;
+  asset: import('@context-use/open-sync/assets').DeliveryAsset;
+  ownerId: string;
+  id: string;
+}) {
+  const { db, asset } = input;
+  return db`UPDATE host_assets SET name=${asset.name},media_type=${asset.mediaType},created_at=${asset.createdAt ?? null},updated_at=${asset.updatedAt ?? null}
+    WHERE owner_id=${input.ownerId} AND id=${input.id}`;
 }

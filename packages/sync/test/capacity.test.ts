@@ -2,7 +2,6 @@ import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 import { openDatabase } from '../src/db/client';
 import type { SyncRegistration } from '../src/models/definition';
-import { defaultLimits } from '../src/models/limits';
 import { SqliteAssets } from '../src/repositories/assets/sqlite';
 import { createSyncRuntime } from '../src/runtime';
 import { accepted, alpha, fixture, page, repositories, savedSync, storage } from './support';
@@ -20,7 +19,7 @@ test('a full sync pauses without consuming the budget of a healthy sync at the s
     destinationTypes: {
       local: {
         ...accepted,
-        deliver: ({ delivery }) => {
+        deliver: ({ deliverable: delivery }) => {
           if (delivery.syncId === blockedSource) {
             return Promise.resolve({ status: 'rejected', code: 'blocked' });
           }
@@ -94,8 +93,6 @@ test('download reservations account for other in-flight downloads and survive re
   const limits = {
     maxBytes: 8,
     maxSyncBytes: 6,
-    maxDeliveryBytes: defaultLimits.maxPendingBytes,
-    maxMaterializedBytes: defaultLimits.maxMaterializedBytes,
   };
   try {
     const first = f.acquisition.claim(leaseMs)!;
@@ -108,8 +105,14 @@ test('download reservations account for other in-flight downloads and survive re
     });
     const second = f.acquisition.claim(leaseMs)!;
     const assets = new SqliteAssets({ db: f.db, ...limits });
-    const left = crypto.randomUUID();
-    const right = crypto.randomUUID();
+    const left = assets.stage({
+      lease: first,
+      asset: { id: 'file', version: '1', name: 'file', mediaType: 'text/plain' },
+    });
+    const right = assets.stage({
+      lease: second,
+      asset: { id: 'file', version: '1', name: 'file', mediaType: 'text/plain' },
+    });
     assets.reserve({ lease: first, id: left, bytes: 4 });
     assets.reserve({ lease: second, id: right, bytes: 4 });
     expect(() => assets.reserve({ lease: first, id: left, bytes: 5 })).toThrow(
@@ -154,7 +157,7 @@ function assetSource(): SyncRegistration {
         return {
           ...page,
           complete: true,
-          deliverable: { records: page.deliverable.records, assets: [asset] },
+          records: page.records.map((record) => ({ ...record, assetRefs: { file: asset } })),
         };
       },
     }),
@@ -169,7 +172,7 @@ test('a step larger than its budget preserves pending assets and resumes after c
     destinationTypes: {
       local: {
         ...accepted,
-        acceptsAssets: true,
+
         deliver: () => Promise.resolve({ status: 'rejected' as const, code: 'hold' }),
       },
     },
@@ -195,11 +198,7 @@ test('a step larger than its budget preserves pending assets and resumes after c
     }
     await engine.close();
     const db = new Database(files.path);
-    expect(db.query('SELECT attempt,state FROM assets').get()).toEqual({
-      attempt: 0,
-      state: 'pending',
-    });
-    expect(db.query('SELECT COUNT(*) AS count FROM asset_files').get()).toEqual({ count: 0 });
+    expect(db.query('SELECT COUNT(*) AS count FROM delivery_assets').get()).toEqual({ count: 0 });
     db.close();
     engine = createSyncRuntime(options);
     engine.api.queueRun(resource);
@@ -212,74 +211,9 @@ test('a step larger than its budget preserves pending assets and resumes after c
     await engine.close();
     const reopened = openDatabase(files.path);
     try {
-      expect(reopened.query('SELECT bytes FROM asset_files').all()).toEqual([{ bytes: 4 }]);
+      expect(reopened.query('SELECT bytes FROM delivery_assets').all()).toEqual([{ bytes: 4 }]);
     } finally {
       reopened.close();
-    }
-  } finally {
-    await engine.close();
-    files.close();
-  }
-});
-
-test('one destination cannot materialize a body larger than its sync budget', async () => {
-  const files = storage();
-  const syncBytes = 1024;
-  const globalBytes = 4096;
-  let oversizedSource = '';
-  const delivered: string[] = [];
-  const engine = createSyncRuntime({
-    databasePath: files.path,
-    definitions: [fixture],
-    limits: { maxSyncPendingBytes: syncBytes, maxPendingBytes: globalBytes },
-    destinationTypes: {
-      local: {
-        ...accepted,
-        deliver({ delivery, assets }) {
-          assets!.materialize(() => ({
-            ...delivery,
-            deliverable: {
-              records: delivery.deliverable.records.map((record) => ({
-                ...record,
-                content: {
-                  format: 'markdown',
-                  body: delivery.syncId === oversizedSource ? 'x'.repeat(syncBytes) : 'small',
-                },
-              })),
-            },
-          }));
-          delivered.push(delivery.syncId);
-          return Promise.resolve({ status: 'accepted' });
-        },
-      },
-    },
-  });
-  try {
-    const destination = { type: 'local', input: {} };
-    const oversized = await engine.api.createSync({
-      ...alpha,
-      definition: fixture.definition.id,
-      config: { count: 1 },
-      destination,
-    });
-    oversizedSource = oversized.id;
-    const healthy = await engine.api.createSync({
-      ...alpha,
-      definition: fixture.definition.id,
-      config: { count: 1 },
-      destination,
-    });
-    await engine.tick();
-    await engine.tick();
-    expect(delivered).toEqual([healthy.id]);
-    expect(engine.api.status(alpha).queue.pendingRecords).toBe(1);
-    const db = new Database(files.path);
-    try {
-      expect(db.query('SELECT materialized FROM deliveries').get()).toEqual({
-        materialized: null,
-      });
-    } finally {
-      db.close();
     }
   } finally {
     await engine.close();

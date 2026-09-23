@@ -84,7 +84,7 @@ test('Gmail retries a whole thread after a later attachment fails without commit
       { id: 'first:file', version: '1' },
       { id: 'second:file', version: '1' },
     ]);
-    expect(f.deliveries[0]?.deliverable.assets).toEqual([
+    expect(f.deliveries[0]!.assets).toEqual([
       expect.objectContaining({
         id: 'first:file',
         size: expect.any(Number),

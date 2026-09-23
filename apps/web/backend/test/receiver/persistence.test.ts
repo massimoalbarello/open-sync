@@ -2,32 +2,29 @@ import { expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Delivery } from '@context-use/open-sync/delivery';
+import type { Deliverable } from '@context-use/open-sync/delivery';
 import { SQL } from 'bun';
 import { runMigrations } from '#backend/db/migrate.ts';
 import { SqliteReceiver } from '#backend/repositories/receiver/sqlite.ts';
 
 const scope = { actorId: 'alice', ownerId: 'alpha' };
-const delivery: Delivery = {
-  version: 1,
+const delivery: Omit<Deliverable, 'openAsset'> = {
+  assets: [],
   id: 'delivery_1',
   ownerId: scope.ownerId,
   syncId: 'source_1',
   definition: 'test',
-  deliverable: {
-    records: [
-      {
-        operation: 'upsert',
-        kind: 'item',
-        id: 'a',
-        data: { value: 1 },
-        content: { format: 'markdown', body: '# Hello' },
-        revision: 1,
-        contentHash: 'hash_1',
-        eventId: 'event_1',
-      },
-    ],
-  },
+
+  records: [
+    {
+      operation: 'upsert',
+      kind: 'item',
+      id: 'a',
+      data: { value: 1 },
+      content: { format: 'markdown', body: '# Hello' },
+      revision: 1,
+    },
+  ],
 };
 
 test('local receiver atomically deduplicates whole deliveries and keeps owner data isolated', async () => {
@@ -65,7 +62,7 @@ test('local receiver atomically deduplicates whole deliveries and keeps owner da
     expect(await receiver.record({ ...identity, syncId: 'other' })).toBeUndefined();
     expect(await receiver.record({ ...identity, kind: 'other' })).toBeUndefined();
     const changed = structuredClone(delivery);
-    changed.deliverable.records[0]!.revision++;
+    changed.records[0]!.revision++;
     await expect(receiver.accept({ ...scope, delivery: changed })).rejects.toThrow(
       'different content',
     );
@@ -96,15 +93,13 @@ test('record browsing preserves unrelated JSON schemas, pagination and deletions
         ? { createdAt: '2026-09-01T00:00:00.000Z' }
         : { updatedAt: '2026-01-01T00:00:00.000Z' }),
       revision: 1,
-      contentHash: `hash_${index}`,
-      eventId: `event_${index}`,
     }));
-    await receiver.accept({ ...scope, delivery: { ...delivery, deliverable: { records } } });
+    await receiver.accept({ ...scope, delivery: { ...delivery, records } });
     const updatedAt = '2026-01-02T00:00:00.000Z';
     const updated = {
       ...delivery,
       id: 'updated',
-      deliverable: { records: [{ ...records.at(-1)!, revision: 2, updatedAt }] },
+      records: [{ ...records.at(-1)!, revision: 2, updatedAt }],
     };
     await receiver.accept({ ...scope, delivery: updated });
     const first = await receiver.records({ ...scope, offset: 0 });
@@ -125,7 +120,7 @@ test('record browsing preserves unrelated JSON schemas, pagination and deletions
     await receiver.accept({ ...scope, delivery: updated });
     await receiver.accept({
       ...scope,
-      delivery: { ...delivery, id: 'stale', deliverable: { records: [records.at(-1)!] } },
+      delivery: { ...delivery, id: 'stale', records: [records.at(-1)!] },
     });
     expect(
       (await receiver.record({ ...scope, syncId: 'source_1', kind: 'measurement', id: '50' }))!
@@ -136,18 +131,15 @@ test('record browsing preserves unrelated JSON schemas, pagination and deletions
       delivery: {
         ...delivery,
         id: 'deletion',
-        deliverable: {
-          records: [
-            {
-              operation: 'delete',
-              kind: 'measurement',
-              id: '00',
-              revision: 2,
-              contentHash: 'deleted',
-              eventId: 'delete_1',
-            },
-          ],
-        },
+
+        records: [
+          {
+            operation: 'delete',
+            kind: 'measurement',
+            id: '00',
+            revision: 2,
+          },
+        ],
       },
     });
     expect((await receiver.records({ ...scope, offset: 0 })).records[0]!.id).toBe('50');

@@ -1,4 +1,4 @@
-import type { Delivery } from '@context-use/open-sync/delivery';
+import type { Deliverable } from '@context-use/open-sync/delivery';
 import type { ReceiverRepository, ReceiverScope } from '#backend/repositories/receiver/contract.ts';
 
 export class ReceiverService {
@@ -30,7 +30,7 @@ export class ReceiverService {
   records(input: ReceiverScope & { syncId?: string; offset: number }) {
     return this.repository.records(input);
   }
-  accept(input: ReceiverScope & { delivery: Delivery }) {
+  accept(input: ReceiverScope & { delivery: Omit<Deliverable, 'openAsset'> }) {
     return this.repository.accept(input);
   }
 }

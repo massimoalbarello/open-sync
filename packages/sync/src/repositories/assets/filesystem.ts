@@ -11,7 +11,7 @@ export class DirectoryAssets implements AssetFiles {
   constructor(private readonly directory: string) {}
   async write(input: Parameters<AssetFiles['write']>[0]) {
     const reader = input.body.getReader();
-    const id = crypto.randomUUID();
+    const { id } = input;
     let file: Awaited<ReturnType<typeof open>> | undefined;
     const hash = createHash('sha256');
     let size = 0;

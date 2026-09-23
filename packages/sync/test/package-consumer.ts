@@ -1,8 +1,9 @@
 // Copied into an isolated consumer by the package check; imports must resolve from the tarball.
 
 import { createOpenSync, type OpenSyncOptions } from '@context-use/open-sync';
+import { assetPlaceholder, resolveAssetReference } from '@context-use/open-sync/assets';
 import type { SyncRegistration } from '@context-use/open-sync/definition';
-import type { Delivery } from '@context-use/open-sync/delivery';
+import type { Deliverable } from '@context-use/open-sync/delivery';
 
 // Keep the installed provider runtime and credential persistence real; simulate only GitHub.
 const providerFetch = globalThis.fetch;
@@ -37,25 +38,37 @@ const definition: SyncRegistration = {
     provider: { service: 'github', actions: ['github.get_current_user'], proxyPaths: ['/user'] },
   },
   load: () => ({
-    async step({ provider }) {
+    async step({ provider, assets }) {
       const user = await provider.get({ path: '/user' });
       if (user.status !== okStatus) {
         throw new Error('Provider request failed');
       }
       const profile = await provider.action({ id: 'github.get_current_user', input: {} });
+      const file = await assets.capture({
+        id: 'file',
+        version: '1',
+        name: 'file.txt',
+        mediaType: 'text/plain',
+        read: () => Promise.resolve(new Blob(['packaged asset']).stream()),
+      });
       return {
         checkpoint: 1,
         complete: true,
-        deliverable: {
-          records: [
-            { operation: 'upsert', kind: 'item', id: 'one', data: { user: user.body, profile } },
-          ],
-        },
+
+        records: [
+          {
+            operation: 'upsert',
+            kind: 'item',
+            id: 'one',
+            data: { user: user.body, profile, file: assetPlaceholder('file') },
+            assetRefs: { file },
+          },
+        ],
       };
     },
   }),
 };
-const received: Delivery[] = [];
+const received: Deliverable[] = [];
 const scope = { actorId: 'consumer', ownerId: 'consumer' };
 const options: OpenSyncOptions = {
   dataDirectory: './consumer-state',
@@ -66,7 +79,18 @@ const options: OpenSyncOptions = {
   destinationTypes: {
     local: {
       configSchema: { type: 'object' },
-      deliver: ({ delivery }) => {
+      async deliver({ deliverable: delivery }) {
+        const record = delivery.records[0]!;
+        if (record.operation !== 'upsert') {
+          throw new Error('Expected upsert');
+        }
+        const ref = resolveAssetReference({
+          value: String(record.data.file),
+          assetRefs: record.assetRefs!,
+        })!;
+        if ((await new Response(await delivery.openAsset(ref)).text()) !== 'packaged asset') {
+          throw new Error('Asset stream contract failed');
+        }
         received.push(delivery);
         return Promise.resolve({ status: 'accepted' });
       },

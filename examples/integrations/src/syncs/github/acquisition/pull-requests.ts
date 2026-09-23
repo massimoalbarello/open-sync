@@ -34,7 +34,7 @@ export async function acquire(input: Acquisition): Promise<SyncStep> {
       checkpoint = { ...checkpoint, cursor: edge.cursor };
     }
     return {
-      deliverable: { records },
+      records,
       checkpoint: page.more ? checkpoint : finishCycle(checkpoint),
       complete: !page.more,
     };
@@ -43,7 +43,7 @@ export async function acquire(input: Acquisition): Promise<SyncStep> {
       throw error;
     }
     return {
-      deliverable: { records: [] },
+      records: [],
       complete: false,
       checkpoint: { ...checkpointSchema.parse(context.checkpoint), cursor: null },
     };

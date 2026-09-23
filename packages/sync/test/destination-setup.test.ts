@@ -133,7 +133,7 @@ test('queued deliveries retain their own prepared destination config across rest
         },
         prepare: ({ scope, input }) => ({ secret: `${scope.ownerId}/${input.name}` }),
       },
-      deliver: ({ scope, config, delivery }) => {
+      deliver: ({ scope, config, deliverable: delivery }) => {
         if (!accepting) {
           return Promise.resolve({ status: 'retry', retryAfterMs: 0 });
         }

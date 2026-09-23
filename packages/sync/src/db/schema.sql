@@ -39,38 +39,21 @@ CREATE TABLE IF NOT EXISTS deliveries (
   sync_id TEXT NOT NULL, body TEXT NOT NULL,
   bytes INTEGER NOT NULL, record_count INTEGER NOT NULL, state TEXT NOT NULL DEFAULT 'pending',
   due_at INTEGER NOT NULL, worker_id TEXT, generation INTEGER NOT NULL DEFAULT 0,
-  expires_at INTEGER, attempt INTEGER NOT NULL DEFAULT 0, error_code TEXT, materialized TEXT,
+  expires_at INTEGER, attempt INTEGER NOT NULL DEFAULT 0, error_code TEXT,
   UNIQUE(owner_id, id),
   FOREIGN KEY(owner_id, sync_id) REFERENCES syncs(owner_id, id)
 );
 CREATE INDEX IF NOT EXISTS delivery_order ON deliveries(owner_id,sync_id,sequence);
 CREATE INDEX IF NOT EXISTS deliveries_due ON deliveries(state, due_at);
-CREATE TABLE IF NOT EXISTS assets (
-  owner_id TEXT NOT NULL, sync_id TEXT NOT NULL, id TEXT NOT NULL, version TEXT NOT NULL,
-  metadata TEXT NOT NULL, file_id TEXT, size INTEGER NOT NULL DEFAULT 0, sha256 TEXT,
-  attempt INTEGER NOT NULL DEFAULT 0, error_code TEXT, state TEXT NOT NULL DEFAULT 'pending',
-  PRIMARY KEY(owner_id, sync_id, id, version)
-);
-CREATE INDEX IF NOT EXISTS assets_with_files ON assets(file_id) WHERE file_id IS NOT NULL;
+-- Staging, queued bytes, and pending cleanup share one delivery-owned ledger.
+-- No foreign keys: cleanup must survive deletion of the delivery, run, or sync.
 CREATE TABLE IF NOT EXISTS delivery_assets (
-  owner_id TEXT NOT NULL, delivery_id TEXT NOT NULL, sync_id TEXT NOT NULL,
-  asset_id TEXT NOT NULL, asset_version TEXT NOT NULL,
-  PRIMARY KEY(owner_id, delivery_id, asset_id, asset_version),
-  FOREIGN KEY(owner_id, delivery_id) REFERENCES deliveries(owner_id, id) ON DELETE CASCADE,
-  FOREIGN KEY(owner_id, sync_id, asset_id, asset_version) REFERENCES assets(owner_id, sync_id, id, version)
-);
-CREATE INDEX IF NOT EXISTS delivery_asset_references ON delivery_assets(owner_id,sync_id,asset_id,asset_version);
-CREATE TABLE IF NOT EXISTS asset_receipts (
-  owner_id TEXT NOT NULL, sync_id TEXT NOT NULL,
-  asset_id TEXT NOT NULL, asset_version TEXT NOT NULL, idempotency_key TEXT NOT NULL,
-  attempt INTEGER NOT NULL DEFAULT 0, outcome TEXT,
-  PRIMARY KEY(owner_id, sync_id, asset_id, asset_version),
-  FOREIGN KEY(owner_id, sync_id) REFERENCES syncs(owner_id, id)
-);
-
-CREATE TABLE IF NOT EXISTS asset_files (
   id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, sync_id TEXT NOT NULL,
-  run_id TEXT, bytes INTEGER NOT NULL CHECK(bytes>=0),
-  FOREIGN KEY(owner_id,sync_id) REFERENCES syncs(owner_id,id)
+  run_id TEXT NOT NULL, generation INTEGER NOT NULL,
+  asset_id TEXT NOT NULL, asset_version TEXT NOT NULL,
+  descriptor TEXT NOT NULL, ready INTEGER NOT NULL DEFAULT 0,
+  bytes INTEGER NOT NULL DEFAULT 0 CHECK(bytes>=0), delivery_id TEXT,
+  UNIQUE(owner_id,run_id,generation,asset_id,asset_version)
 );
-CREATE INDEX IF NOT EXISTS asset_file_source ON asset_files(owner_id,sync_id);
+CREATE INDEX IF NOT EXISTS delivery_asset_queue ON delivery_assets(owner_id,delivery_id);
+CREATE INDEX IF NOT EXISTS delivery_asset_sync ON delivery_assets(owner_id,sync_id);

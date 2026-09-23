@@ -48,7 +48,7 @@ export async function step(context: SyncContext): Promise<SyncStep> {
   checkpoint = next
     ? { ...checkpoint, pageToken: next }
     : { ...initialCheckpoint, account: profile.emailAddress };
-  return { deliverable: { records }, checkpoint, complete: !next };
+  return { records, checkpoint, complete: !next };
 }
 
 function checkCursor(input: { next: string | null; previous: string | null }) {

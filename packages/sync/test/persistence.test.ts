@@ -40,7 +40,7 @@ test('queue capacity counts blocked and leased work and rejects whole pages atom
     expect(f.acquisition.hasCapacity()).toBe(false);
     const next = {
       ...page,
-      deliverable: { records: [{ ...page.deliverable.records[0]!, id: 'second' }] },
+      records: [{ ...page.records[0]!, id: 'second' }],
       checkpoint: 2,
     };
     expect(() =>
@@ -134,7 +134,7 @@ test('hashes suppress repeats and tombstones retain monotonic revisions', () => 
       page,
       {
         ...page,
-        deliverable: { records: [{ operation: 'delete' as const, kind: 'item', id: 'first' }] },
+        records: [{ operation: 'delete' as const, kind: 'item', id: 'first' }],
       },
       page,
     ]) {

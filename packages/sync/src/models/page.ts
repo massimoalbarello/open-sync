@@ -19,22 +19,18 @@ export function preparePage(input: {
     }
     const page = json.value as unknown as SyncStep;
     if (
-      Object.keys(page).some((key) => !['deliverable', 'checkpoint', 'complete'].includes(key)) ||
+      Object.keys(page).some((key) => !['records', 'checkpoint', 'complete'].includes(key)) ||
       typeof page.complete !== 'boolean'
     ) {
       fail('invalid_page');
     }
-    if (
-      Object.keys(page.deliverable).some((key) => !['records', 'assets'].includes(key)) ||
-      !Array.isArray(page.deliverable.records) ||
-      page.deliverable.records.length > input.limits.maxPageRecords
-    ) {
+    if (!Array.isArray(page.records) || page.records.length > input.limits.maxPageRecords) {
       fail('invalid_page');
     }
     validatePageAssets({ page, limits: input.limits });
     validate({ value: page.checkpoint, schema: input.definition.checkpointSchema });
     const identities = new Set<string>();
-    for (const record of page.deliverable.records) {
+    for (const record of page.records) {
       validateRecord({ record, definition: input.definition });
       const key = JSON.stringify([record.kind, record.id]);
       if (identities.has(key)) {
@@ -95,23 +91,8 @@ function validateRecord(input: { record: SyncRecord; definition: SyncDefinition 
 }
 
 function validatePageAssets(input: { page: SyncStep; limits: QueueLimits }) {
-  const assets = input.page.deliverable.assets ?? [];
-  if (!Array.isArray(assets) || assets.length > input.limits.maxPageAssets) {
-    fail('invalid_assets');
-  }
   const keys = new Set<string>();
-  for (const asset of assets) {
-    identifier(asset.id);
-    identifier(asset.version);
-    if (
-      Object.keys(asset).some((key) => !['id', 'version'].includes(key)) ||
-      keys.has(assetKey(asset))
-    ) {
-      fail('invalid_asset');
-    }
-    keys.add(assetKey(asset));
-  }
-  for (const record of input.page.deliverable.records) {
+  for (const record of input.page.records) {
     if (record.operation === 'upsert') {
       for (const ref of Object.values(record.assetRefs ?? {})) {
         keys.add(assetKey(ref));

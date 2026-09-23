@@ -42,8 +42,6 @@ test.each(['paused', 'interrupted', 'timed_out', 'waiting_for_capacity'])(
         db: f.db,
         maxBytes: defaultLimits.maxPendingAssetBytes,
         maxSyncBytes: defaultLimits.maxSyncAssetBytes,
-        maxDeliveryBytes: defaultLimits.maxPendingBytes,
-        maxMaterializedBytes: defaultLimits.maxMaterializedBytes,
       }),
       files: new DirectoryAssets(`${f.files.path}.assets`),
       maxAssetBytes: defaultLimits.maxAssetBytes,
@@ -220,7 +218,7 @@ test.each(['records', 'assets'])(
         },
       ],
       destinationTypes: { local: accepted },
-      timing: { retryMs, assetAttempts: 4 },
+      timing: { retryMs },
       onEvent: (event: SyncEvent) => events.push(event),
     };
     let engine = createSyncRuntime(options);

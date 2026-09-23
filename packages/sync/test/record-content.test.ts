@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import type { SyncStep } from '../src/models/definition';
-import type { Delivery } from '../src/models/delivery';
+import type { Deliverable } from '../src/models/delivery';
 import { defaultLimits } from '../src/models/limits';
 import { preparePage } from '../src/models/page';
 import type { RecordContent } from '../src/models/record';
@@ -9,16 +9,14 @@ import { accepted, alpha, configure, fixture, runtime } from './support';
 test('content is independent of the data schema and invalid content rejects the entire page', () => {
   const page = (content: unknown) =>
     ({
-      deliverable: {
-        records: [{ operation: 'upsert', kind: 'item', id: 'one', data: { value: 1 }, content }],
-      },
+      records: [{ operation: 'upsert', kind: 'item', id: 'one', data: { value: 1 }, content }],
       checkpoint: 1,
       complete: true,
     }) as SyncStep;
   const valid = { format: 'markdown', body: '# Full record\n\nNo copy in data.' };
   expect(
     preparePage({ page: page(valid), definition: fixture.definition, limits: defaultLimits })
-      .deliverable.records[0],
+      .records[0],
   ).toMatchObject({ content: valid });
   for (const invalid of [
     null,
@@ -36,7 +34,7 @@ test('content is independent of the data schema and invalid content rejects the 
 
 test('content-only changes and removal advance revisions, and deduplicate unchanged records', async () => {
   let content: RecordContent | undefined;
-  const received: Delivery[] = [];
+  const received: Deliverable[] = [];
   const f = runtime({
     registration: {
       ...fixture,
@@ -44,17 +42,15 @@ test('content-only changes and removal advance revisions, and deduplicate unchan
         // biome-ignore lint/suspicious/useAwait: The fixture implements the asynchronous source boundary.
         async step() {
           return {
-            deliverable: {
-              records: [
-                {
-                  operation: 'upsert',
-                  kind: 'item',
-                  id: 'one',
-                  data: { value: 1 },
-                  ...(content ? { content } : {}),
-                },
-              ],
-            },
+            records: [
+              {
+                operation: 'upsert',
+                kind: 'item',
+                id: 'one',
+                data: { value: 1 },
+                ...(content ? { content } : {}),
+              },
+            ],
             checkpoint: 1,
             complete: true,
           };
@@ -63,7 +59,7 @@ test('content-only changes and removal advance revisions, and deduplicate unchan
     },
     destination: {
       ...accepted,
-      deliver: ({ delivery }) => {
+      deliver: ({ deliverable: delivery }) => {
         received.push(delivery);
         return Promise.resolve({ status: 'accepted' });
       },
@@ -91,13 +87,11 @@ test('content-only changes and removal advance revisions, and deduplicate unchan
     );
     const expectedDeliveries = 4;
     expect(received).toHaveLength(expectedDeliveries);
-    expect(received.map((delivery) => delivery.deliverable.records[0]!.revision)).toEqual(
-      expectedRevisions,
-    );
-    expect(received[1]!.deliverable.records[0]).toMatchObject({
+    expect(received.map((delivery) => delivery.records[0]!.revision)).toEqual(expectedRevisions);
+    expect(received[1]!.records[0]).toMatchObject({
       content: { format: 'markdown', body: '# New content' },
     });
-    expect(received[3]!.deliverable.records[0]).not.toHaveProperty('content');
+    expect(received[3]!.records[0]).not.toHaveProperty('content');
   } finally {
     await f.close();
   }

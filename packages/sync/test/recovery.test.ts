@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 import { join } from 'node:path';
-import type { Delivery } from '../src/models/delivery';
+import type { Deliverable } from '../src/models/delivery';
 import { createSyncRuntime } from '../src/runtime';
 import { accepted, alpha, fixture, savedSync, storage } from './support';
 
@@ -21,14 +21,14 @@ test('SIGKILL recovery reclaims expired acquisition and delivery without changin
     // Expire durable leases deterministically; the process actually died with both leases held.
     db.exec('UPDATE runs SET expires_at=0; UPDATE deliveries SET expires_at=0');
     db.close();
-    const delivered: Delivery[] = [];
+    const delivered: Deliverable[] = [];
     const engine = createSyncRuntime({
       databasePath: files.path,
       definitions: [fixture],
       destinationTypes: {
         local: {
           ...accepted,
-          deliver: ({ delivery }) => {
+          deliver: ({ deliverable: delivery }) => {
             delivered.push(delivery);
             return Promise.resolve({ status: 'accepted' });
           },
@@ -43,7 +43,7 @@ test('SIGKILL recovery reclaims expired acquisition and delivery without changin
       await engine.tick();
       await engine.tick();
       await engine.tick();
-      expect(delivered[0]).toEqual(JSON.parse(original));
+      expect(JSON.parse(JSON.stringify(delivered[0]))).toEqual(JSON.parse(original));
       expect(
         savedSync({ path: files.path, scope: { ...alpha, id: engine.api.syncs(alpha)[0]!.id } })
           .checkpoint,

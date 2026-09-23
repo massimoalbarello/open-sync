@@ -32,7 +32,7 @@ export async function step(context: SyncContext): Promise<SyncStep> {
       : { records: [], cursor: null };
     const complete = !page.cursor && checkpoint.directoryComplete;
     return {
-      deliverable: { records: page.records },
+      records: page.records,
       checkpoint: complete
         ? { ...initialCheckpoint, account }
         : {
@@ -44,7 +44,7 @@ export async function step(context: SyncContext): Promise<SyncStep> {
     };
   } catch (error) {
     return {
-      deliverable: { records: [] },
+      records: [],
       checkpoint: recover({ checkpoint: saved, error }),
       complete: false,
     };

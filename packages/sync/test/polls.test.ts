@@ -218,7 +218,7 @@ test('empty completion batches do not inflate record totals', () => {
     f.acquisition.commit({ lease, page, definition: fixture.definition });
     f.acquisition.commit({
       lease: f.acquisition.claim(leaseMs)!,
-      page: { ...page, deliverable: { records: [] }, complete: true },
+      page: { ...page, records: [], complete: true },
       definition: fixture.definition,
     });
     const history = f.catalog.polls({ ...alpha, id: f.sync.id, offset: 0 });

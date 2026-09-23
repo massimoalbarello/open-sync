@@ -39,7 +39,7 @@ function receiveAsset(input: {
   return input.receiver.acceptAsset({
     ...(input.scope ?? owner),
     syncId: input.syncId ?? 'source',
-    idempotencyKey: input.id,
+
     signal: new AbortController().signal,
     asset: {
       id: input.id,
@@ -66,26 +66,23 @@ function receiveRecord(input: {
   return input.receiver.accept({
     ...owner,
     delivery: {
-      version: 1,
+      assets: [],
       id: input.deliveryId ?? `delivery_${input.revision}`,
       ownerId: owner.ownerId,
       syncId: 'source',
       definition: 'test',
-      deliverable: {
-        records: [
-          {
-            operation: 'upsert',
-            kind: 'document',
-            id: 'record',
-            data: input.data,
-            ...(input.content ? { content: input.content } : {}),
-            ...(input.assetRefs ? { assetRefs: input.assetRefs } : {}),
-            revision: input.revision,
-            contentHash: `hash_${input.revision}`,
-            eventId: `event_${input.revision}`,
-          },
-        ],
-      },
+
+      records: [
+        {
+          operation: 'upsert',
+          kind: 'document',
+          id: 'record',
+          data: input.data,
+          ...(input.content ? { content: input.content } : {}),
+          ...(input.assetRefs ? { assetRefs: input.assetRefs } : {}),
+          revision: input.revision,
+        },
+      ],
     },
   });
 }

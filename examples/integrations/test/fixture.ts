@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ProviderOperations, SyncRegistration } from '@context-use/open-sync/definition';
-import type { Delivery } from '@context-use/open-sync/delivery';
+import type { Deliverable } from '@context-use/open-sync/delivery';
 import { createSyncRuntime } from '@context-use/open-sync/engine';
 import type { JsonObject } from '@context-use/open-sync/json';
 
@@ -16,16 +16,15 @@ export async function fixture(input: {
   config?: JsonObject;
 }) {
   const directory = await mkdtemp(join(tmpdir(), 'example-sync-'));
-  const deliveries: Delivery[] = [];
+  const deliveries: Deliverable[] = [];
   const options = {
     databasePath: join(directory, 'sync.db'),
     definitions: [input.registration],
     connector: { bind: () => Promise.resolve(input.provider) },
     destinationTypes: {
       test: {
-        acceptsAssets: true,
         configSchema: { type: 'object' as const },
-        deliver: ({ delivery }: { delivery: Delivery }) => {
+        deliver: ({ deliverable: delivery }: { deliverable: Deliverable }) => {
           deliveries.push(delivery);
           return Promise.resolve({ status: 'accepted' as const });
         },
@@ -65,7 +64,7 @@ export async function fixture(input: {
       }
     },
     get records() {
-      return deliveries.flatMap((delivery) => delivery.deliverable.records);
+      return deliveries.flatMap((delivery) => delivery.records);
     },
     queue() {
       engine.api.queueRun(resource);

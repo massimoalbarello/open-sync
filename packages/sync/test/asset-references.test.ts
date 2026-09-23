@@ -48,7 +48,7 @@ const record = {
   content: { format: 'markdown' as const, body: '[literal](open-sync-asset:undeclared)' },
   assetRefs: { attachment: { id: 'file', version: '1' } },
 };
-const page = { deliverable: { records: [record] }, checkpoint: 1, complete: true };
+const page = { records: [record], checkpoint: 1, complete: true };
 const definition: SyncDefinition = { ...fixture.definition, kinds: { item: { type: 'object' } } };
 
 test('acquisition validates declarations without interpreting data/content or requiring placeholder usage', () => {
@@ -66,7 +66,7 @@ test.each([
     preparePage({
       page: {
         ...page,
-        deliverable: { records: [{ ...record, assetRefs }] },
+        records: [{ ...record, assetRefs }],
       } as unknown as SyncStep,
       definition,
       limits: defaultLimits,
@@ -79,8 +79,7 @@ test('optional destination resolution requires explicit declarations, descriptor
   const input = {
     record: {
       ...record,
-      eventId: 'event',
-      contentHash: 'hash',
+
       revision: 1,
       data: { file: assetPlaceholder('attachment') },
       content: undefined,
@@ -106,3 +105,105 @@ test('optional destination resolution requires explicit declarations, descriptor
     resolveRecordAssets({ ...input, record: { ...input.record, assetRefs: undefined } }),
   ).toThrow('unknown asset reference');
 });
+
+const rendering: import('../src/models/asset').AssetRendering = {
+  structured: ({ outcome }) =>
+    outcome.status === 'accepted' ? outcome.reference : { status: 'failed', code: outcome.code },
+  markdown: ({ outcome }) =>
+    outcome.status === 'accepted'
+      ? `https://destination.example/files/${outcome.reference}`
+      : 'Attachment unavailable',
+};
+
+test('placeholder protocol resolves repeated and distinct assets while preserving literal code and link formatting', () => {
+  const refs = { a: { id: 'first', version: '1' }, b: { id: 'second', version: '1' } };
+  const record = {
+    operation: 'upsert' as const,
+    kind: 'note',
+    id: '1',
+
+    revision: 1,
+
+    assetRefs: refs,
+    content: {
+      format: 'markdown' as const,
+      body: '| File | Status |\n| --- | --- |\n| [first](open-sync-asset:a) | ~~pending~~ |\n\n- [x] Read the file',
+    },
+    data: {
+      files: ['open-sync-asset:b', 'open-sync-asset:a', 'open-sync-asset:a'],
+      body: '[first][ref] ![second](open-sync-asset:b) `open-sync-asset:a`\n\n[ref]: open-sync-asset:a',
+    },
+  };
+  const resolved = resolveRecordAssets({
+    record,
+    assets: Object.values(refs).map((ref) => ({
+      ...ref,
+      name: ref.id,
+      mediaType: 'text/plain',
+      size: 1,
+      sha256: 'hash',
+    })),
+    outcomes: new Map([
+      [assetKey(refs.a), { status: 'accepted', reference: 'A' }],
+      [assetKey(refs.b), { status: 'accepted', reference: 'B' }],
+    ]),
+    rendering,
+  });
+  expect(resolved).toMatchObject({ revision: 1, data: { files: ['B', 'A', 'A'] } });
+  expect(resolved.operation === 'upsert' && resolved.data.body).toContain('`open-sync-asset:a`');
+  expect(resolved.operation === 'upsert' && resolved.content?.body).toMatch(/^\| File\s+\|/m);
+  expect(resolved.operation === 'upsert' && resolved.content?.body).toContain(
+    '[first](https://destination.example/files/A)',
+  );
+  expect(resolved.operation === 'upsert' && resolved.content?.body).toContain('~~pending~~');
+  expect(resolved.operation === 'upsert' && resolved.content?.body).toContain(
+    '* [x] Read the file',
+  );
+  expect(resolved.operation === 'upsert' && resolved.data.body).toBe(record.data.body);
+  expect(record.data.files).toEqual([
+    'open-sync-asset:b',
+    'open-sync-asset:a',
+    'open-sync-asset:a',
+  ]);
+});
+
+test.each([
+  '[file][ref]\n\n> [ref]: open-sync-asset:a',
+  '[file][ref]\n\n- [ref]: open-sync-asset:a',
+  '[file][ref]\n\n[ref]: open-sync-asset:a\n[ref]: https://wrong.example/file',
+])(
+  'Markdown asset references follow nested definitions and first-definition precedence: %s',
+  (body) => {
+    const ref = { id: 'first', version: '1' };
+    const record = {
+      operation: 'upsert' as const,
+      kind: 'note',
+      id: '1',
+
+      revision: 1,
+
+      assetRefs: { a: ref },
+      data: {},
+      content: { format: 'markdown' as const, body },
+    };
+    for (const outcome of [
+      { status: 'accepted' as const, reference: 'A' },
+      { status: 'failed' as const, code: 'unavailable' },
+    ]) {
+      const resolved = resolveRecordAssets({
+        record,
+        assets: [{ ...ref, name: 'file', mediaType: 'text/plain', size: 1, sha256: 'hash' }],
+        outcomes: new Map([[assetKey(ref), outcome]]),
+        rendering,
+      });
+      expect(resolved.operation === 'upsert' && resolved.content?.body).toContain(
+        outcome.status === 'accepted'
+          ? '[file](https://destination.example/files/A)'
+          : 'Attachment unavailable',
+      );
+      expect(resolved.operation === 'upsert' && resolved.content?.body).not.toContain(
+        'open-sync-asset:',
+      );
+    }
+  },
+);

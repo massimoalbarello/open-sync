@@ -1,5 +1,5 @@
 import type { Schema } from '@cfworker/json-schema';
-import type { AssetRef, SourceAssets } from './asset';
+import type { SourceAssets } from './asset';
 import type { JsonObject, JsonValue } from './json';
 import type { SyncRecord } from './record';
 
@@ -45,16 +45,11 @@ export interface SyncDefinition {
   kinds: Readonly<Record<string, Schema>>;
   provider?: ProviderRequirements;
 }
-/** Complete source output. Assets are captured through SyncContext.assets before returning. */
-export interface SourceDeliverable {
-  records: readonly SyncRecord[];
-  assets?: readonly AssetRef[];
-}
 /** One complete source-defined unit: fetch its records and assets before returning.
  * The engine commits the output with its resume position; checkpoints do not carry unfinished records.
  */
 export interface SyncStep {
-  deliverable: SourceDeliverable;
+  records: readonly SyncRecord[];
   checkpoint: JsonValue;
   complete: boolean;
 }

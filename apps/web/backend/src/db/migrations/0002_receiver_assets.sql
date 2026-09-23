@@ -4,8 +4,7 @@ CREATE TABLE host_assets (
   sync_id TEXT NOT NULL,
   asset_id TEXT NOT NULL,
   asset_version TEXT NOT NULL,
-  idempotency_key TEXT NOT NULL,
-  metadata_hash TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
   file_id TEXT NOT NULL,
   name TEXT NOT NULL,
   media_type TEXT NOT NULL,
@@ -13,7 +12,6 @@ CREATE TABLE host_assets (
   created_at TEXT,
   updated_at TEXT,
   PRIMARY KEY(owner_id, id),
-  UNIQUE(owner_id, idempotency_key),
   UNIQUE(owner_id, sync_id, asset_id, asset_version)
 );
 

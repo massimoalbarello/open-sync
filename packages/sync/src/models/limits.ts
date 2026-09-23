@@ -10,7 +10,6 @@ export interface QueueLimits {
   maxPageAssets: number;
   maxAssetBytes: number;
   maxPendingAssetBytes: number;
-  maxMaterializedBytes: number;
 }
 export const defaultLimits: QueueLimits = {
   maxPendingBytes: 67_108_864,
@@ -23,14 +22,12 @@ export const defaultLimits: QueueLimits = {
   maxPageAssets: 1000,
   maxAssetBytes: 104_857_600,
   maxPendingAssetBytes: 1_073_741_824,
-  maxMaterializedBytes: 67_108_864,
 };
 export const defaultTiming = {
   leaseMs: 60_000,
   timeoutMs: 30_000,
   retryMs: 30_000,
   historyLimit: 1000,
-  assetAttempts: 3,
   sourceConcurrency: 4,
   deliveryConcurrency: 4,
 };

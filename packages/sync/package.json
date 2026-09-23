@@ -12,7 +12,6 @@
     "./engine": "./src/runtime.ts",
     "./build": "./src/build.ts",
     "./assets": "./src/models/asset.ts",
-    "./assets/delivery": "./src/delivery/assets-first.ts",
     "./assets/references": "./src/models/asset-references.ts"
   },
   "files": [
