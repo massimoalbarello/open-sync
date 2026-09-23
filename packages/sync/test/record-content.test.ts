@@ -70,9 +70,9 @@ test('content-only changes and removal advance revisions, and deduplicate unchan
     },
   });
   try {
-    const installation = await configure(f.engine);
+    const sync = await configure(f.engine);
     const run = async () => {
-      f.engine.api.queueRun({ ...alpha, id: installation.id });
+      f.engine.api.queueRun({ ...alpha, id: sync.id });
       await f.engine.tick();
       await f.engine.tick();
     };

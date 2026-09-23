@@ -11,7 +11,7 @@ export function localDestination(input: {
     input: AssetUpload & {
       actorId: string;
       ownerId: string;
-      sourceId: string;
+      syncId: string;
       signal: AbortSignal;
     },
   ): Promise<string>;
@@ -23,7 +23,7 @@ export function localDestination(input: {
         status: 'accepted',
         reference: await input.acceptAsset({
           ...scope,
-          sourceId: delivery.sourceId,
+          syncId: delivery.syncId,
           signal,
           asset,
           idempotencyKey,
@@ -51,7 +51,6 @@ export function localDestination(input: {
   return {
     name: 'Local SQLite',
     description: 'Stores records and attachments in this application.',
-    version: '1',
     acceptsAssets: true,
     configSchema: { type: 'object', additionalProperties: false },
     async deliver(context) {

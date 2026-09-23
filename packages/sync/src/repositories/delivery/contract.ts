@@ -1,15 +1,10 @@
-import type {
-  Delivery,
-  DeliveryPage,
-  DeliveryResult,
-  Destination,
-  QueueStatus,
-} from '../../models/delivery';
+import type { Delivery, DeliveryPage, DeliveryResult, QueueStatus } from '../../models/delivery';
 import type { Resource, Scope } from '../../models/identity';
+import type { Sync } from '../../models/sync';
 
 export interface DeliveryLease extends Scope {
   delivery: Delivery;
-  destination: Destination;
+  destination: Sync['destination'];
   workerId: string;
   generation: number;
   attempt: number;

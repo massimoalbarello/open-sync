@@ -79,11 +79,11 @@ export async function acceptAsset(
     input.signal.throwIfAborted();
     const id = `asset_${crypto.randomUUID()}`;
     const result = await db.begin(async (tx) => {
-      await tx`INSERT INTO host_assets(owner_id,id,source_id,asset_id,asset_version,idempotency_key,metadata_hash,file_id,name,media_type,size,created_at,updated_at)
-        VALUES (${input.ownerId},${id},${input.sourceId},${asset.id},${asset.version},${input.idempotencyKey},${hash},${fileId},${asset.name},${asset.mediaType},${asset.size},${asset.createdAt ?? null},${asset.updatedAt ?? null}) ON CONFLICT DO NOTHING`;
+      await tx`INSERT INTO host_assets(owner_id,id,sync_id,asset_id,asset_version,idempotency_key,metadata_hash,file_id,name,media_type,size,created_at,updated_at)
+        VALUES (${input.ownerId},${id},${input.syncId},${asset.id},${asset.version},${input.idempotencyKey},${hash},${fileId},${asset.name},${asset.mediaType},${asset.size},${asset.createdAt ?? null},${asset.updatedAt ?? null}) ON CONFLICT DO NOTHING`;
       const [row] = await tx<
         { id: string; file_id: string; metadata_hash: string }[]
-      >`SELECT id,file_id,metadata_hash FROM host_assets WHERE owner_id=${input.ownerId} AND source_id=${input.sourceId} AND asset_id=${asset.id} AND asset_version=${asset.version}`;
+      >`SELECT id,file_id,metadata_hash FROM host_assets WHERE owner_id=${input.ownerId} AND sync_id=${input.syncId} AND asset_id=${asset.id} AND asset_version=${asset.version}`;
       if (!row || row.metadata_hash !== hash) {
         throw new Error('Asset identity conflict');
       }
@@ -101,6 +101,6 @@ export async function acceptAsset(
 async function findAsset(input: Parameters<ReceiverRepository['acceptAsset']>[0] & { db: SQL }) {
   const [row] = await input.db<
     { id: string; metadata_hash: string }[]
-  >`SELECT id,metadata_hash FROM host_assets WHERE owner_id=${input.ownerId} AND (idempotency_key=${input.idempotencyKey} OR (source_id=${input.sourceId} AND asset_id=${input.asset.id} AND asset_version=${input.asset.version}))`;
+  >`SELECT id,metadata_hash FROM host_assets WHERE owner_id=${input.ownerId} AND (idempotency_key=${input.idempotencyKey} OR (sync_id=${input.syncId} AND asset_id=${input.asset.id} AND asset_version=${input.asset.version}))`;
   return row;
 }

@@ -133,13 +133,15 @@ async function connectSource(input: {
   if (source.service === 'granola') {
     await page.getByRole('cell', { name: 'Retrying', exact: true }).waitFor();
     const incomplete = await (
-      await page.request.get(`${origin}/api/open-sync/sync/installations/${syncId}`)
+      await page.request.get(`${origin}/api/open-sync/sync/syncs/${syncId}`)
     ).json();
-    assert.deepEqual(incomplete.checkpoint, {});
-    assert.equal(incomplete.checkpointRevision, 0);
+    const history = await (
+      await page.request.get(`${origin}/api/open-sync/sync/syncs/${syncId}/polls`)
+    ).json();
+    assert.equal(history.polls[0].recordsProcessed, 0);
     const received = await (
       await page.request.get(
-        `${origin}/api/receiver/records?offset=0&sourceId=${encodeURIComponent(incomplete.sourceId)}`,
+        `${origin}/api/receiver/records?offset=0&syncId=${encodeURIComponent(incomplete.id)}`,
       )
     ).json();
     assert.equal(received.records.length, 0);
@@ -149,17 +151,13 @@ async function connectSource(input: {
   }
   await page.getByRole('cell', { name: 'Completed', exact: true }).first().waitFor();
   await page.getByRole('link', { name: 'Overview', exact: true }).click();
-  const installation = await (
-    await page.request.get(`${origin}/api/open-sync/sync/installations/${syncId}`)
+  const sync = await (
+    await page.request.get(`${origin}/api/open-sync/sync/syncs/${syncId}`)
   ).json();
-  if (source.service === 'granola') {
-    assert.deepEqual(installation.checkpoint, {});
-    assert.equal(installation.checkpointRevision, 1);
-  }
   if (source.service === 'gmail') {
-    await resumeAssetDelivery({ page, origin, sourceId: installation.sourceId });
+    await resumeAssetDelivery({ page, origin, syncId: sync.id });
   }
-  await verifyRecords({ ...input, sourceId: installation.sourceId });
+  await verifyRecords({ ...input, syncId: sync.id });
   console.log(`${source.name}: OAuth and local delivery passed.`);
 }
 
@@ -167,10 +165,10 @@ async function verifyRecords(input: {
   page: Page;
   origin: string;
   source: (typeof sources)[number];
-  sourceId: string;
+  syncId: string;
 }) {
-  const { page, origin, source, sourceId } = input;
-  await page.goto(`${origin}/records?sourceId=${encodeURIComponent(sourceId)}`);
+  const { page, origin, source, syncId } = input;
+  await page.goto(`${origin}/records?syncId=${encodeURIComponent(syncId)}`);
   await page
     .getByRole('list', { name: 'Received records' })
     .getByRole('listitem')
@@ -178,7 +176,7 @@ async function verifyRecords(input: {
     .waitFor({ timeout: 180_000 });
   const records = await (
     await page.request.get(
-      `${origin}/api/receiver/records?offset=0&sourceId=${encodeURIComponent(sourceId)}`,
+      `${origin}/api/receiver/records?offset=0&syncId=${encodeURIComponent(syncId)}`,
     )
   ).json();
   assert.equal(records.records[0].kind, source.kind);
@@ -227,7 +225,7 @@ async function verifyRecords(input: {
         .filter((file: unknown): file is string => typeof file === 'string')
         .sort(),
     );
-    await assetsJourney({ page, origin, sourceId, attachments });
+    await assetsJourney({ page, origin, syncId, attachments });
     await previewsJourney({ page, origin, record: records.records[0] });
     const expected = ['inline attachment', 'external attachment'];
     for (const [index, attachment] of attachments.entries()) {
@@ -266,7 +264,7 @@ async function verifyRecords(input: {
     if (source.service === 'slack') {
       assert.equal(records.records[0].data.messages[0].sentAt, '2020-01-01T12:00:00.000Z');
     }
-    await page.goto(`${origin}/records?sourceId=${encodeURIComponent(sourceId)}`);
+    await page.goto(`${origin}/records?syncId=${encodeURIComponent(syncId)}`);
     await page
       .getByRole('list', { name: 'Received records' })
       .getByRole('link', { name: records.records[0].preview, exact: true })

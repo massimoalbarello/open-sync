@@ -98,7 +98,7 @@ test.each([
     ).toThrow('invalid page');
     expect(f.deliveries.status(alpha).pendingRecords).toBe(0);
     expect(f.db.query('SELECT * FROM records').all()).toEqual([]);
-    expect(f.catalog.installation({ ...alpha, id: f.installation.id }).checkpoint).toBe(0);
+    expect(f.catalog.sync({ ...alpha, id: f.sync.id }).checkpoint).toBe(0);
   } finally {
     f.close();
   }

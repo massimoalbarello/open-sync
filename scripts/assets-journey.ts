@@ -8,10 +8,10 @@ type Attachment = { name: string; file: string };
 export async function assetsJourney(input: {
   page: Page;
   origin: string;
-  sourceId: string;
+  syncId: string;
   attachments: Attachment[];
 }) {
-  const { page, origin, sourceId, attachments } = input;
+  const { page, origin, syncId, attachments } = input;
   const recordsUrl = page.url();
   const expected = ['inline attachment', 'external attachment'];
   const related = page.getByRole('list', { name: /^Assets for / });
@@ -40,7 +40,7 @@ export async function assetsJourney(input: {
   });
   await page.getByRole('link', { name: 'Assets', exact: true }).click();
   await page.getByRole('heading', { name: 'Assets', exact: true }).waitFor();
-  await page.goto(`${origin}/assets?sourceId=${encodeURIComponent(sourceId)}`);
+  await page.goto(`${origin}/assets?syncId=${encodeURIComponent(syncId)}`);
   const assets = page.getByRole('list', { name: 'Received assets' });
   await assets.getByRole('listitem').first().waitFor();
   assert.ok((await assets.getByRole('listitem').count()) >= attachments.length);
@@ -69,7 +69,7 @@ export async function assetsJourney(input: {
 
 export async function assetsEmptyJourney(input: { page: Page; origin: string }) {
   const { page, origin } = input;
-  await page.goto(`${origin}/assets?sourceId=empty-source`);
+  await page.goto(`${origin}/assets?syncId=empty-source`);
   await page.getByText('No assets received yet.', { exact: false }).waitFor();
   await page.getByRole('link', { name: 'Go to syncs', exact: true }).click();
   await page.getByRole('heading', { name: 'Syncs', exact: true }).waitFor();
@@ -88,13 +88,13 @@ export async function assetsEmptyJourney(input: { page: Page; origin: string }) 
   await page.getByText('No assets received yet.', { exact: false }).waitFor();
 }
 
-export async function resumeAssetDelivery(input: { page: Page; origin: string; sourceId: string }) {
-  const { page, origin, sourceId } = input;
+export async function resumeAssetDelivery(input: { page: Page; origin: string; syncId: string }) {
+  const { page, origin, syncId } = input;
   await page.goto(`${origin}/delivery`);
   await page.getByText('pending · receiver paused', { exact: true }).first().waitFor();
   for (const section of ['assets', 'records']) {
     const response = await page.request.get(
-      `${origin}/api/receiver/${section}?sourceId=${encodeURIComponent(sourceId)}`,
+      `${origin}/api/receiver/${section}?syncId=${encodeURIComponent(syncId)}`,
     );
     assert.ok(response.ok());
     assert.deepEqual((await response.json())[section], []);

@@ -47,38 +47,33 @@ export class DashboardService {
     if (selection.ambiguous || (input.connectionId && !connection)) {
       throw new BadRequestError('Select a connected account for this source.');
     }
-    const destination = await this.sync.api.setupDestination({
+    let sync = await this.sync.api.createSync({
       ...scope,
-      type: input.destination.type,
-      input: input.destination.input,
-    });
-    let installation = await this.sync.api.createInstallation({
-      ...scope,
-      definition,
-      destinationId: destination.id,
+      definition: definition.id,
+      destination: input.destination,
       config,
       connection,
       intervalMs: pollIntervalMs,
       enabled: !definition.provider || !!connection,
     });
     // Authorization may finish in another tab between the status check and persistence.
-    if (definition.provider && !installation.connection) {
+    if (definition.provider && !sync.connection) {
       const latest = await this.selectAccount({
         ...scope,
         service: definition.provider.service,
       });
       // Multiple newly connected accounts require an explicit authorization choice.
       if (latest.connection) {
-        installation = await this.connect({
+        sync = await this.connect({
           ...scope,
-          id: installation.id,
+          id: sync.id,
           connection: latest.connection,
         });
       }
     }
     return {
-      id: installation.id,
-      authorizeService: !installation.connection ? definition.provider?.service : undefined,
+      id: sync.id,
+      authorizeService: !sync.connection ? definition.provider?.service : undefined,
     };
   }
 
@@ -113,18 +108,14 @@ export class DashboardService {
       return;
     }
     const definitions = this.sync.api.definitions(input);
-    for (const installation of this.sync.api.installations(input)) {
-      const definition = definitions.find(
-        (entry) =>
-          entry.id === installation.definition.id &&
-          entry.version === installation.definition.version,
-      );
+    for (const sync of this.sync.api.syncs(input)) {
+      const definition = definitions.find((entry) => entry.id === sync.definition);
       if (
-        !installation.enabled &&
-        !installation.connection &&
+        !sync.enabled &&
+        !sync.connection &&
         definition?.provider?.service === input.connection.service
       ) {
-        await this.connect({ ...input, id: installation.id });
+        await this.connect({ ...input, id: sync.id });
       }
     }
   }
@@ -132,9 +123,9 @@ export class DashboardService {
     input: Scope & { id: string; connection: { id: string; service: string } },
   ) {
     try {
-      return await this.sync.api.connectInstallation(input);
+      return await this.sync.api.connectSync(input);
     } catch (error) {
-      const saved = this.sync.api.installation(input);
+      const saved = this.sync.api.sync(input);
       // Concurrent authorization callbacks must never replace an already bound account.
       if (saved.connection) {
         return saved;

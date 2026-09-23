@@ -33,11 +33,11 @@ test('reopening the current schema preserves checkpoints, queued bodies and leas
     f.acquisition.claim(leaseMs);
     f.deliveries.claim(leaseMs);
     const deliveries = f.db.query('SELECT * FROM deliveries').all();
-    const before = f.db.query('SELECT * FROM installations').all();
+    const before = f.db.query('SELECT * FROM syncs').all();
     const runs = f.db.query('SELECT * FROM runs').all();
     const reopened = openDatabase(f.files.path);
     try {
-      expect(reopened.query('SELECT * FROM installations').all()).toEqual(before);
+      expect(reopened.query('SELECT * FROM syncs').all()).toEqual(before);
       expect(reopened.query('SELECT * FROM runs').all()).toEqual(runs);
       expect(reopened.query('SELECT * FROM deliveries').all()).toEqual(deliveries);
       expect(reopened.query('PRAGMA integrity_check').get()).toEqual({ integrity_check: 'ok' });

@@ -2,7 +2,7 @@ import type { JsonObject } from '../models/json';
 export interface SyncEvent {
   code: string;
   ownerId?: string;
-  installationId?: string;
+  syncId?: string;
   message?: string;
   fields?: JsonObject;
 }

@@ -56,7 +56,7 @@ async function timelineList(input: { page: Page; origin: string; resource: 'reco
   // Exercise presentation at the typed HTTP boundary; SQLite tests own timestamp ordering.
   await page.route(endpoint, async (route) => {
     const url = new URL(route.request().url());
-    assert.equal(url.searchParams.get('sourceId'), 'timeline');
+    assert.equal(url.searchParams.get('syncId'), 'timeline');
     const offset = Number(url.searchParams.get('offset'));
     offsets.push(offset);
     if (offset === pageSize && failNextPage) {
@@ -70,7 +70,7 @@ async function timelineList(input: { page: Page; origin: string; resource: 'reco
     );
     const records: RecordPage = {
       records: indexes.map((index) => ({
-        sourceId: 'timeline',
+        syncId: 'timeline',
         kind: 'note',
         id: `daily-${String(index).padStart(idWidth, '0')}`,
         revision: 1,
@@ -84,7 +84,7 @@ async function timelineList(input: { page: Page; origin: string; resource: 'reco
     };
     const assets: AssetPage = {
       assets: indexes.map((index) => ({
-        sourceId: 'timeline',
+        syncId: 'timeline',
         id: `asset_00000000-0000-0000-0000-${String(index).padStart(uuidSuffixWidth, '0')}`,
         name: `Meeting notes ${String(index).padStart(idWidth, '0')}.txt`,
         mediaType: 'text/plain',
@@ -98,7 +98,7 @@ async function timelineList(input: { page: Page; origin: string; resource: 'reco
     await route.fulfill({ json: resource === 'records' ? records : assets });
   });
   try {
-    await page.goto(`${origin}/${resource}?sourceId=timeline`);
+    await page.goto(`${origin}/${resource}?syncId=timeline`);
     const rows = page
       .getByRole('list', { name: `Received ${resource}`, exact: true })
       .getByRole('listitem');

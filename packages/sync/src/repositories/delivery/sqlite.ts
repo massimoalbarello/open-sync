@@ -3,13 +3,13 @@ import type { DeliveryResult, PendingDelivery } from '../../models/delivery';
 import { fail } from '../../models/error';
 import { type Resource, type Scope, workerScope } from '../../models/identity';
 import { queueUsage } from '../queue-usage';
-import { type Row, readDestination } from '../rows';
+import { type Row, readSync } from '../rows';
 import type { DeliveryLease, DeliveryRepository } from './contract';
 import { assertDelivery } from './lease';
 
 const headOfQueue = `NOT EXISTS (SELECT 1 FROM deliveries prior
-  WHERE prior.owner_id=d.owner_id AND prior.installation_id=d.installation_id
-  AND prior.destination_id=d.destination_id AND prior.sequence<d.sequence)`;
+  WHERE prior.owner_id=d.owner_id AND prior.sync_id=d.sync_id
+  AND prior.sequence<d.sequence)`;
 
 export class SqliteDeliveries implements DeliveryRepository {
   constructor(private readonly db: Database) {}
@@ -25,7 +25,7 @@ export class SqliteDeliveries implements DeliveryRepository {
   claim(leaseMs: number): DeliveryLease | undefined {
     return this.db
       .transaction(() => {
-        // A blocked delivery stops only its sync–destination pair; ordering survives retries and restarts.
+        // A blocked delivery stops only its sync; ordering survives retries and restarts.
         const row = this.db
           .query<
             Row,
@@ -47,10 +47,10 @@ export class SqliteDeliveries implements DeliveryRepository {
         return {
           ...scope,
           delivery: JSON.parse(String(row.body)),
-          destination: readDestination({
+          destination: readSync({
             db: this.db,
-            scope: { ...scope, id: String(row.destination_id) },
-          }),
+            scope: { ...scope, id: String(row.sync_id) },
+          }).destination,
           workerId,
           generation: Number(row.generation) + 1,
           attempt: Number(row.attempt) + 1,
@@ -70,7 +70,7 @@ export class SqliteDeliveries implements DeliveryRepository {
           // Capacity is global; all paused acquisitions can compete for the released budget.
           this.db
             .query(
-              "UPDATE installations SET next_due_at=? WHERE enabled=1 AND status='waiting_for_capacity'",
+              "UPDATE syncs SET next_due_at=? WHERE enabled=1 AND status='waiting_for_capacity'",
             )
             .run(Date.now());
         } else {
@@ -95,10 +95,7 @@ export class SqliteDeliveries implements DeliveryRepository {
   pending(input: Scope & { offset: number }) {
     const limit = 50;
     const rows = this.db
-      .query<
-        PendingDelivery,
-        [string, number, number]
-      >(`SELECT id,installation_id AS installationId,destination_id AS destinationId,state,bytes,
+      .query<PendingDelivery, [string, number, number]>(`SELECT id,sync_id AS syncId,state,bytes,
       record_count AS recordCount,attempt,due_at AS nextAttemptAt,error_code AS errorCode FROM deliveries WHERE owner_id=? ORDER BY sequence LIMIT ? OFFSET ?`)
       .all(input.ownerId, limit + 1, input.offset);
     return { deliveries: rows.slice(0, limit), hasMore: rows.length > limit, pageSize: limit };

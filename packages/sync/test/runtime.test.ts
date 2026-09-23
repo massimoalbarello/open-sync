@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import type { SyncRegistration } from '../src/models/definition';
 import { createSyncRuntime } from '../src/runtime';
-import { accepted, alpha, configure, fixture, page, runtime } from './support';
+import { accepted, alpha, configure, fixture, page, runtime, savedSync } from './support';
 
 const count = 3;
 
@@ -22,9 +22,9 @@ test('local delivery drains independently and unblocks bounded acquisition', asy
     },
   });
   try {
-    const installation = await configure(f.engine);
+    const sync = await configure(f.engine);
     await f.engine.tick();
-    expect(f.engine.api.installation({ ...alpha, id: installation.id }).checkpoint).toBe(1);
+    expect(savedSync({ path: f.files.path, scope: { ...alpha, id: sync.id } }).checkpoint).toBe(1);
     expect(f.engine.api.status(alpha).queue.pendingRecords).toBe(1);
     accept = true;
     const attempts = 8;
@@ -33,8 +33,8 @@ test('local delivery drains independently and unblocks bounded acquisition', asy
     }
     expect(received).toHaveLength(count);
     expect(f.engine.api.status(alpha).queue.pendingRecords).toBe(0);
-    expect(f.engine.api.installation({ ...alpha, id: installation.id }).status).toBe('succeeded');
-    f.engine.api.queueRun({ ...alpha, id: installation.id, backfill: true });
+    expect(f.engine.api.sync({ ...alpha, id: sync.id }).status).toBe('succeeded');
+    f.engine.api.queueRun({ ...alpha, id: sync.id, backfill: true });
     await f.engine.tick();
     expect(received).toHaveLength(count);
   } finally {
@@ -57,20 +57,20 @@ test('committed pages survive step failure and restart resumes from their checkp
   };
   const f = runtime({ registration: definition });
   try {
-    const installation = await configure(f.engine);
+    const sync = await configure(f.engine);
     await f.engine.tick();
     await f.engine.tick();
-    expect(f.engine.api.installation({ ...alpha, id: installation.id }).checkpoint).toBe(1);
-    expect(f.engine.api.installation({ ...alpha, id: installation.id }).status).toBe(
-      'execution_failed',
-    );
+    expect(savedSync({ path: f.files.path, scope: { ...alpha, id: sync.id } }).checkpoint).toBe(1);
+    expect(f.engine.api.sync({ ...alpha, id: sync.id }).status).toBe('execution_failed');
     await f.engine.close();
     const resumed = createSyncRuntime({ ...f.options, definitions: [fixture] });
     try {
-      resumed.api.queueRun({ ...alpha, id: installation.id });
+      resumed.api.queueRun({ ...alpha, id: sync.id });
       await resumed.tick();
       await resumed.tick();
-      expect(resumed.api.installation({ ...alpha, id: installation.id }).checkpoint).toBe(count);
+      expect(savedSync({ path: f.files.path, scope: { ...alpha, id: sync.id } }).checkpoint).toBe(
+        count,
+      );
     } finally {
       await resumed.close();
     }
@@ -95,35 +95,37 @@ test('an invalid page cannot advance a valid earlier checkpoint', async () => {
     },
   });
   try {
-    const installation = await configure(f.engine);
+    const sync = await configure(f.engine);
     await f.engine.tick();
     await f.engine.tick();
-    const result = f.engine.api.installation({ ...alpha, id: installation.id });
-    expect(result.checkpoint).toBe(1);
+    const result = f.engine.api.sync({ ...alpha, id: sync.id });
+    expect(savedSync({ path: f.files.path, scope: { ...alpha, id: sync.id } }).checkpoint).toBe(1);
     expect(result.status).toBe('invalid_page');
   } finally {
     await f.close();
   }
 });
 
-test('definition versions are immutable and absent exact versions fail closed', async () => {
+test('host manifests can change on restart and missing named sources fail closed', async () => {
   const f = runtime();
   try {
-    const installation = await configure(f.engine);
+    const sync = await configure(f.engine);
     await f.engine.close();
-    expect(() =>
-      createSyncRuntime({
-        ...f.options,
-        definitions: [{ ...fixture, definition: { ...fixture.definition, artifactId: 'changed' } }],
-      }),
-    ).toThrow('definition conflict');
+    const changed = createSyncRuntime({
+      ...f.options,
+      definitions: [
+        { ...fixture, definition: { ...fixture.definition, name: 'Changed host source' } },
+      ],
+    });
+    expect(changed.api.definitions(alpha)[0]?.name).toBe('Changed host source');
+    await changed.close();
     const absent = createSyncRuntime({ ...f.options, definitions: [] });
     try {
       await absent.tick();
-      expect(absent.api.installation({ ...alpha, id: installation.id }).status).toBe(
-        'definition_unavailable',
+      expect(absent.api.sync({ ...alpha, id: sync.id }).status).toBe('definition_unavailable');
+      expect(savedSync({ path: f.files.path, scope: { ...alpha, id: sync.id } }).checkpoint).toBe(
+        0,
       );
-      expect(absent.api.installation({ ...alpha, id: installation.id }).checkpoint).toBe(0);
     } finally {
       await absent.close();
     }
@@ -132,7 +134,7 @@ test('definition versions are immutable and absent exact versions fail closed', 
   }
 });
 
-test('changing a destination implementation cannot reroute its queued deliveries', async () => {
+test('queued deliveries resolve the current host destination implementation by name', async () => {
   const f = runtime({
     destination: {
       ...accepted,
@@ -149,7 +151,6 @@ test('changing a destination implementation cannot reroute its queued deliveries
       destinationTypes: {
         local: {
           ...accepted,
-          version: '2',
           deliver: () => {
             called = true;
             return Promise.resolve({ status: 'accepted' });
@@ -159,8 +160,8 @@ test('changing a destination implementation cannot reroute its queued deliveries
     });
     try {
       await next.tick();
-      expect(called).toBe(false);
-      expect(next.api.status(alpha).queue.blockedDeliveries).toBe(1);
+      expect(called).toBe(true);
+      expect(next.api.status(alpha).queue.blockedDeliveries).toBe(0);
     } finally {
       await next.close();
     }
@@ -202,12 +203,17 @@ test('shutdown aborts trusted execution, cancels the step, and leaves a resumabl
     await f.engine.close();
     await tick;
     expect(cleaned).toBe(true);
-    expect(() => f.engine.api.installations(alpha)).toThrow('closed');
+    expect(() => f.engine.api.syncs(alpha)).toThrow('closed');
     const restarted = createSyncRuntime({ ...f.options, definitions: [fixture] });
     try {
-      expect(restarted.api.installations(alpha)[0]?.checkpoint).toBe(1);
-      const installation = restarted.api.installations(alpha)[0]!;
-      expect(restarted.api.polls({ ...alpha, id: installation.id }).polls[0]).toMatchObject({
+      expect(
+        savedSync({
+          path: f.files.path,
+          scope: { ...alpha, id: restarted.api.syncs(alpha)[0]!.id },
+        }).checkpoint,
+      ).toBe(1);
+      const sync = restarted.api.syncs(alpha)[0]!;
+      expect(restarted.api.polls({ ...alpha, id: sync.id }).polls[0]).toMatchObject({
         state: 'interrupted',
         recordsProcessed: 1,
       });

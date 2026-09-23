@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { type ProviderApi, providerApi, type SyncApi, syncApi } from './api';
+import { type ProviderApi, providerApi, type SyncApi } from './api';
 import { createConnectorClient } from './connector/client';
 import { loadProviderKey } from './connector/encryption-key';
 import { connectorManagement } from './connector/management';
@@ -143,7 +143,7 @@ export async function createOpenSync(options: OpenSyncOptions): Promise<OpenSync
       returnUrl: (input) =>
         `${publicUrl}/providers/${encodeURIComponent(input.service)}/return/${input.id}`,
     });
-    const api = syncApi(engine.api);
+    const api = engine.api;
     const http = createHttpApp({
       prefix,
       api,

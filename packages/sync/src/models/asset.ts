@@ -3,7 +3,7 @@ import { fail } from './error';
 import type { JsonValue } from './json';
 import type { SourceTimestamps } from './metadata';
 
-/** Identity is scoped to one owner and source. A version must identify immutable content. */
+/** Identity is scoped to one owner and configured sync. A version must identify immutable content. */
 export interface AssetRef {
   id: string;
   version: string;

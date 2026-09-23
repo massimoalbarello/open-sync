@@ -16,7 +16,7 @@ export interface ReceivedRecord
     Extract<SyncRecord, { operation: 'upsert' }>,
     'preview' | 'createdAt' | 'updatedAt'
   > {
-  sourceId: string;
+  syncId: string;
   kind: string;
   id: string;
   revision: number;
@@ -26,26 +26,26 @@ export interface ReceivedRecord
 }
 export interface ReceivedAsset extends Pick<AssetMetadata, 'createdAt' | 'updatedAt'> {
   id: string;
-  sourceId: string;
+  syncId: string;
   name: string;
   mediaType: string;
   size: number;
 }
 export interface RecordIdentity {
-  sourceId: string;
+  syncId: string;
   kind: string;
   id: string;
 }
 export interface ReceiverRepository {
   record(input: ReceiverScope & RecordIdentity): Promise<ReceivedRecord | undefined>;
   assetInfo(input: ReceiverScope & { id: string }): Promise<ReceivedAsset | undefined>;
-  assets(input: ReceiverScope & { sourceId?: string; offset: number }): Promise<{
+  assets(input: ReceiverScope & { syncId?: string; offset: number }): Promise<{
     assets: ReceivedAsset[];
     hasMore: boolean;
     pageSize: number;
   }>;
   acceptAsset(
-    input: ReceiverScope & AssetUpload & { sourceId: string; signal: AbortSignal },
+    input: ReceiverScope & AssetUpload & { syncId: string; signal: AbortSignal },
   ): Promise<string>;
   asset(input: ReceiverScope & { id: string }): Promise<
     | {
@@ -57,7 +57,7 @@ export interface ReceiverRepository {
     | undefined
   >;
   records(
-    input: ReceiverScope & { sourceId?: string; offset: number },
+    input: ReceiverScope & { syncId?: string; offset: number },
   ): Promise<{ records: ReceivedRecord[]; hasMore: boolean; pageSize: number }>;
   isPaused(scope: ReceiverScope): Promise<boolean>;
   status(scope: ReceiverScope): Promise<ReceiverStatus>;

@@ -31,14 +31,14 @@ function receiveAsset(input: {
   receiver: SqliteReceiver;
   id: string;
   scope?: typeof owner;
-  sourceId?: string;
+  syncId?: string;
   updatedAt?: string;
   createdAt?: string;
 }) {
   const bytes = new TextEncoder().encode(input.id);
   return input.receiver.acceptAsset({
     ...(input.scope ?? owner),
-    sourceId: input.sourceId ?? 'source',
+    syncId: input.syncId ?? 'source',
     idempotencyKey: input.id,
     signal: new AbortController().signal,
     asset: {
@@ -69,9 +69,8 @@ function receiveRecord(input: {
       version: 1,
       id: input.deliveryId ?? `delivery_${input.revision}`,
       ownerId: owner.ownerId,
-      sourceId: 'source',
-      installationId: 'sync',
-      definition: { id: 'test', version: '1', artifactId: 'test/1' },
+      syncId: 'source',
+      definition: 'test',
       deliverable: {
         records: [
           {
@@ -105,11 +104,11 @@ test('assets browse in bounded pages with owner and source isolation and public 
       ids.push(id);
     }
     const foreign = await receiveAsset({ receiver, id: 'foreign', scope: other });
-    const anotherSource = await receiveAsset({ receiver, id: 'another', sourceId: 'other-source' });
-    const first = await receiver.assets({ ...owner, sourceId: 'source', offset: 0 });
+    const anotherSource = await receiveAsset({ receiver, id: 'another', syncId: 'other-source' });
+    const first = await receiver.assets({ ...owner, syncId: 'source', offset: 0 });
     expect(first.assets).toHaveLength(first.pageSize);
     expect(first.hasMore).toBe(true);
-    const last = await receiver.assets({ ...owner, sourceId: 'source', offset: first.pageSize });
+    const last = await receiver.assets({ ...owner, syncId: 'source', offset: first.pageSize });
     expect(last.assets).toHaveLength(1);
     expect(last.hasMore).toBe(false);
     const all = [...first.assets, ...last.assets];
@@ -123,11 +122,11 @@ test('assets browse in bounded pages with owner and source isolation and public 
       'mediaType',
       'name',
       'size',
-      'sourceId',
+      'syncId',
       'updatedAt',
     ]);
     expect(
-      (await receiver.assets({ ...owner, sourceId: 'other-source', offset: 0 })).assets.map(
+      (await receiver.assets({ ...owner, syncId: 'other-source', offset: 0 })).assets.map(
         (asset) => asset.id,
       ),
     ).toEqual([anotherSource]);
@@ -144,7 +143,7 @@ test('records persist declared asset relationships independently of rendered con
     const second = await receiveAsset({ receiver, id: 'second' });
     const unlinked = await receiveAsset({ receiver, id: 'unlinked' });
     await receiveAsset({ receiver, id: 'foreign', scope: other });
-    await receiveAsset({ receiver, id: 'another', sourceId: 'other-source' });
+    await receiveAsset({ receiver, id: 'another', syncId: 'other-source' });
     const assetRefs = Object.fromEntries(
       ['first', 'second', 'foreign', 'another', 'missing'].map((id) => [id, { id, version: '1' }]),
     );

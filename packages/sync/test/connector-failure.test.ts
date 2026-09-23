@@ -4,7 +4,7 @@ import { connectorFailure } from '../src/connector/failure';
 import type { SyncEvent } from '../src/execution/diagnostics';
 import type { SyncRegistration } from '../src/models/definition';
 import { createSyncRuntime } from '../src/runtime';
-import { accepted, alpha, fixture, page, storage } from './support';
+import { accepted, alpha, fixture, page, savedSync, storage } from './support';
 
 const connection = { id: 'connection', service: 'slack' };
 const requirements = { service: 'slack', actions: [], proxyPaths: ['/conversations.replies'] };
@@ -115,12 +115,12 @@ test('connector failures use engine backoff despite timing headers and retain on
     onEvent: (event) => events.push(event),
   });
   try {
-    const destination = engine.api.createDestination({ ...alpha, type: 'local', config: {} });
-    const installation = await engine.api.createInstallation({
+    const destination = { type: 'local', input: {} };
+    const sync = await engine.api.createSync({
       ...alpha,
       connection,
-      definition: registration.definition,
-      destinationId: destination.id,
+      definition: registration.definition.id,
+      destination,
       config: { count: 1 },
     });
     await engine.tick();
@@ -128,7 +128,7 @@ test('connector failures use engine backoff despite timing headers and retain on
       {
         code: 'connector_request_failed',
         ownerId: alpha.ownerId,
-        installationId: installation.id,
+        syncId: sync.id,
         fields: {
           service: 'slack',
           operation: '/conversations.replies',
@@ -143,10 +143,10 @@ test('connector failures use engine backoff despite timing headers and retain on
       },
     ]);
     expect(JSON.stringify(events)).not.toContain(secret);
-    const scope = { ...alpha, id: installation.id };
+    const scope = { ...alpha, id: sync.id };
     const firstDelay = 30_000;
     const secondDelay = 60_000;
-    expect(engine.api.installation(scope)).toMatchObject({
+    expect(savedSync({ path: files.path, scope: scope })).toMatchObject({
       checkpoint: 0,
       nextDueAt: now + firstDelay,
     });
@@ -154,7 +154,7 @@ test('connector failures use engine backoff despite timing headers and retain on
     const providerDelay = 120_000;
     retryAfter = new Date(now + providerDelay).toUTCString();
     await engine.tick();
-    expect(engine.api.installation(scope)).toMatchObject({
+    expect(savedSync({ path: files.path, scope: scope })).toMatchObject({
       checkpoint: 0,
       nextDueAt: now + secondDelay,
     });

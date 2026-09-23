@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import type { SyncRegistration, SyncStep } from '../src/models/definition';
 import type { Delivery } from '../src/models/delivery';
-import { accepted, alpha, configure, fixture, runtime } from './support';
+import { accepted, alpha, configure, fixture, runtime, savedSync } from './support';
 
 test('each record kind uses its own schema and an invalid kind leaves the whole page uncommitted', async () => {
   const received: Delivery[] = [];
@@ -51,11 +51,11 @@ test('each record kind uses its own schema and an invalid kind leaves the whole 
     },
   });
   try {
-    const installation = await configure(f.engine);
-    const resource = { ...alpha, id: installation.id };
+    const sync = await configure(f.engine);
+    const resource = { ...alpha, id: sync.id };
     invalid = true;
     await f.engine.tick();
-    expect(f.engine.api.installation(resource)).toMatchObject({
+    expect(savedSync({ path: f.files.path, scope: resource })).toMatchObject({
       checkpoint: 0,
       status: 'invalid_page',
     });

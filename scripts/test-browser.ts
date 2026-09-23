@@ -162,7 +162,7 @@ try {
   await page.getByRole('button', { name: 'Connect account', exact: true }).click();
   await page.getByText('Connected', { exact: true }).waitFor();
   const originalKeySync = await (
-    await page.request.get(`${app.origin}/api/open-sync/sync/installations/${syncId}`)
+    await page.request.get(`${app.origin}/api/open-sync/sync/syncs/${syncId}`)
   ).json();
   assert.equal(originalKeySync.connection, undefined);
   assert.equal(originalKeySync.enabled, false);
@@ -184,10 +184,10 @@ try {
   await page.getByRole('button', { name: 'Reconnect account', exact: true }).click();
   assert.ok((await keyResponse).ok());
   const refreshedKeySync = await (
-    await page.request.get(`${app.origin}/api/open-sync/sync/installations/${syncId}`)
+    await page.request.get(`${app.origin}/api/open-sync/sync/syncs/${syncId}`)
   ).json();
   assert.deepEqual(refreshedKeySync.connection, originalKeySync.connection);
-  assert.equal(refreshedKeySync.sourceId, originalKeySync.sourceId);
+  assert.equal(refreshedKeySync.id, originalKeySync.id);
   await githubOAuthSuccessJourney({ page, origin: app.origin });
   await page.goto(`${app.origin}/syncs/${syncId}`);
   await page.getByRole('link', { name: 'Polling history', exact: true }).click();
@@ -213,7 +213,7 @@ try {
     .first()
     .waitFor();
   const polls = await (
-    await page.request.get(`${app.origin}/api/open-sync/sync/installations/${syncId}/polls`)
+    await page.request.get(`${app.origin}/api/open-sync/sync/syncs/${syncId}/polls`)
   ).json();
   assert.equal(polls.polls.length, 1);
   assert.equal(polls.polls[0].recordsProcessed, fixtureRecordCount);
@@ -261,28 +261,24 @@ try {
   await page.screenshot({ path: 'artifacts/received-records.png', animations: 'disabled' });
   await page.getByRole('link', { name: 'Syncs', exact: true }).click();
   requests.length = 0;
-  await page.waitForResponse('**/api/open-sync/sync/installations');
+  await page.waitForResponse('**/api/open-sync/sync/syncs');
   assert.ok(!requests.some((url) => new URL(url).pathname === '/api/open-sync/sync/deliveries'));
-  // An authorized account skips setup and reuses the managed local destination.
+  // An authorized account creates a new sync with its own local destination settings.
   await page.getByRole('link', { name: 'Create sync', exact: true }).click();
   await page.getByLabel('Source', { exact: true }).click();
   await page.getByRole('option', { name: 'GitHub pull requests', exact: true }).click();
   await page.getByRole('button', { name: 'Create sync', exact: true }).click();
   await page.getByRole('navigation', { name: 'Sync sections' }).waitFor();
   assert.ok(new URL(page.url()).pathname.startsWith('/syncs/sync_'));
-  const destinations = await (
-    await page.request.get(`${app.origin}/api/open-sync/sync/destinations`)
-  ).json();
-  assert.equal(destinations.destinations.length, 1);
-  // Exercise the successful OAuth callback against a saved, unbound installation as well.
+  // Exercise the successful OAuth callback against a saved, unbound sync as well.
   const definitions = await (
     await page.request.get(`${app.origin}/api/open-sync/sync/definitions`)
   ).json();
-  const pendingOAuth = await page.request.post(`${app.origin}/api/open-sync/sync/installations`, {
+  const pendingOAuth = await page.request.post(`${app.origin}/api/open-sync/sync/syncs`, {
     headers: { origin: app.origin },
     data: {
-      definition: definitions.definitions[0],
-      destinationId: destinations.destinations[0].id,
+      definition: definitions.definitions[0].id,
+      destination: { type: 'local', input: {} },
       config: {},
       enabled: false,
     },
@@ -291,7 +287,7 @@ try {
   const oauthSync = await pendingOAuth.json();
   const accountId = await githubOAuthSuccessJourney({ page, origin: app.origin });
   const activated = await (
-    await page.request.get(`${app.origin}/api/open-sync/sync/installations/${oauthSync.id}`)
+    await page.request.get(`${app.origin}/api/open-sync/sync/syncs/${oauthSync.id}`)
   ).json();
   assert.equal(activated.enabled, true);
   assert.ok(activated.connection);
@@ -310,10 +306,10 @@ try {
     accountId,
   });
   const reconnected = await (
-    await page.request.get(`${app.origin}/api/open-sync/sync/installations/${oauthSync.id}`)
+    await page.request.get(`${app.origin}/api/open-sync/sync/syncs/${oauthSync.id}`)
   ).json();
   assert.deepEqual(reconnected.connection, activated.connection);
-  assert.equal(reconnected.sourceId, activated.sourceId);
+  assert.equal(reconnected.id, activated.id);
   const accounts = await (
     await page.request.get(`${app.origin}/api/open-sync/providers/github`)
   ).json();
@@ -325,19 +321,15 @@ try {
     .getByRole('cell', { name: 'Completed', exact: true })
     .first()
     .waitFor({ timeout: 2 * drainTimeoutMs });
-  await page.getByRole('link', { name: 'Overview', exact: true }).click();
   const beforeRun = await (
-    await page.request.get(`${app.origin}/api/open-sync/sync/installations/${oauthSync.id}`)
+    await page.request.get(`${app.origin}/api/open-sync/sync/syncs/${oauthSync.id}/polls`)
   ).json();
   const nextRun = page.waitForResponse(async (response) => {
-    if (!response.url().endsWith(`/sync/installations/${oauthSync.id}`) || !response.ok()) {
+    if (!response.url().includes(`/sync/syncs/${oauthSync.id}/polls`) || !response.ok()) {
       return false;
     }
-    const installation = await response.json();
-    return (
-      installation.status === 'succeeded' &&
-      installation.checkpointRevision > beforeRun.checkpointRevision
-    );
+    const history = await response.json();
+    return history.polls[0]?.state === 'succeeded' && history.polls[0].id !== beforeRun.polls[0].id;
   });
   await page.getByRole('button', { name: 'Run now', exact: true }).click();
   await nextRun;
@@ -382,7 +374,7 @@ try {
     unauthorized,
   );
   assert.equal(
-    (await page.request.get(`${app.origin}/api/open-sync/sync/installations/${syncId}`)).status(),
+    (await page.request.get(`${app.origin}/api/open-sync/sync/syncs/${syncId}`)).status(),
     unauthorized,
   );
   assert.equal(
@@ -398,7 +390,7 @@ try {
     unauthorized,
   );
   for (const endpoint of [
-    '/records/detail?sourceId=source&kind=note&id=missing',
+    '/records/detail?syncId=source&kind=note&id=missing',
     '/assets/asset_00000000-0000-0000-0000-000000000000/details',
     '/assets/asset_00000000-0000-0000-0000-000000000000/preview',
   ]) {
@@ -422,7 +414,7 @@ try {
   }
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.getByRole('heading', { name: 'Syncs', exact: true }).waitFor();
-  // Both additional GitHub installations can still be delivering their backfills.
+  // Both additional GitHub syncs can still be delivering their backfills.
   await page.getByRole('link', { name: 'Queue', exact: true }).click();
   await page
     .getByText('Nothing waiting for delivery', { exact: true })

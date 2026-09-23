@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test';
 import { join } from 'node:path';
 import type { Delivery } from '../src/models/delivery';
 import { createSyncRuntime } from '../src/runtime';
-import { accepted, alpha, fixture, storage } from './support';
+import { accepted, alpha, fixture, savedSync, storage } from './support';
 
 const targetCount = 3;
 
@@ -36,15 +36,21 @@ test('SIGKILL recovery reclaims expired acquisition and delivery without changin
       },
     });
     try {
-      expect(engine.api.installations(alpha)[0]?.checkpoint).toBe(1);
+      expect(
+        savedSync({ path: files.path, scope: { ...alpha, id: engine.api.syncs(alpha)[0]!.id } })
+          .checkpoint,
+      ).toBe(1);
       await engine.tick();
       await engine.tick();
       await engine.tick();
       expect(delivered[0]).toEqual(JSON.parse(original));
-      expect(engine.api.installations(alpha)[0]?.checkpoint).toBe(targetCount);
+      expect(
+        savedSync({ path: files.path, scope: { ...alpha, id: engine.api.syncs(alpha)[0]!.id } })
+          .checkpoint,
+      ).toBe(targetCount);
       expect(engine.api.status(alpha).queue.pendingRecords).toBe(0);
-      const installation = engine.api.installations(alpha)[0]!;
-      expect(engine.api.polls({ ...alpha, id: installation.id }).polls[0]).toMatchObject({
+      const sync = engine.api.syncs(alpha)[0]!;
+      expect(engine.api.polls({ ...alpha, id: sync.id }).polls[0]).toMatchObject({
         state: 'succeeded',
         recordsProcessed: targetCount,
         recordsChanged: targetCount,

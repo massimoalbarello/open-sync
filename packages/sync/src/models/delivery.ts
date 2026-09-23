@@ -1,6 +1,5 @@
 import type { Schema } from '@cfworker/json-schema';
 import type { DeliveryAsset, DestinationAssets } from './asset';
-import type { DefinitionRef } from './definition';
 import type { Scope } from './identity';
 import type { JsonObject } from './json';
 import type { SyncRecord } from './record';
@@ -20,9 +19,8 @@ export interface Delivery {
   version: 1 | 2;
   id: string;
   ownerId: string;
-  sourceId: string;
-  installationId: string;
-  definition: DefinitionRef;
+  syncId: string;
+  definition: string;
   deliverable: Deliverable;
 }
 export type DeliveryResult =
@@ -32,8 +30,6 @@ export type DeliveryResult =
 export interface DestinationType {
   name?: string;
   description?: string;
-  /** Pin endpoint/interpretation changes to a new version. Existing work is never rerouted. */
-  version: string;
   configSchema: Schema;
   /** Declares that deliver consumes assets, either as a bundle or with assetsFirst. */
   acceptsAssets?: boolean;
@@ -54,13 +50,6 @@ export interface DestinationType {
     assets?: DestinationAssets;
   }): Promise<DeliveryResult>;
 }
-export interface Destination {
-  id: string;
-  ownerId: string;
-  type: string;
-  version: string;
-  config: JsonObject;
-}
 export interface QueueStatus {
   pendingBytes: number;
   pendingRecords: number;
@@ -69,8 +58,7 @@ export interface QueueStatus {
 }
 export interface PendingDelivery {
   id: string;
-  installationId: string;
-  destinationId: string;
+  syncId: string;
   state: string;
   bytes: number;
   recordCount: number;

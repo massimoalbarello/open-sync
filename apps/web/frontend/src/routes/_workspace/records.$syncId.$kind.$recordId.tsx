@@ -8,14 +8,14 @@ import { SectionPage } from '../../components/section-page';
 import { SourceTimestamps } from '../../components/source-timestamps';
 import { recordOptions } from '../../queries/records';
 
-export const Route = createFileRoute('/_workspace/records/$sourceId/$kind/$recordId')({
+export const Route = createFileRoute('/_workspace/records/$syncId/$kind/$recordId')({
   component: RecordDetail,
 });
 
 function RecordDetail() {
   const { userId } = Route.useRouteContext();
-  const { sourceId, kind, recordId } = Route.useParams();
-  const query = useQuery(recordOptions({ userId, sourceId, kind, id: recordId }));
+  const { syncId, kind, recordId } = Route.useParams();
+  const query = useQuery(recordOptions({ userId, syncId, kind, id: recordId }));
   const record = query.data;
   const title = record?.preview || record?.data.title || record?.data.subject;
   return (
@@ -29,7 +29,7 @@ function RecordDetail() {
         </p>
       }
       action={
-        <Link to="/records" search={{ sourceId }} className="text-sm underline">
+        <Link to="/records" search={{ syncId }} className="text-sm underline">
           Back to records
         </Link>
       }

@@ -19,8 +19,7 @@ export async function destinationSetupJourney(input: { page: Page; origin: strin
           {
             type: 'archive',
             name: 'Archive',
-            version: '1',
-            configSchema: {},
+
             setupSchema: {
               type: 'object',
               $id: 'https://example.com/archive-setup',
@@ -88,7 +87,7 @@ export async function destinationSetupJourney(input: { page: Page; origin: strin
     await page.unroute(pattern);
   }
   // Authoritative validation rejects both invalid destination settings and malformed envelopes safely.
-  const before = await (await page.request.get(`${origin}/api/open-sync/sync/destinations`)).json();
+  const before = await (await page.request.get(`${origin}/api/open-sync/sync/syncs`)).json();
   for (const settings of [{ unexpected: 'synthetic-secret' }, ['synthetic-secret']]) {
     const rejected = await page.request.post(`${origin}/api/dashboard/syncs`, {
       data: { source: 'gmail.threads', destination: { type: 'local', input: settings } },
@@ -98,7 +97,7 @@ export async function destinationSetupJourney(input: { page: Page; origin: strin
     assert.ok(!(await rejected.text()).includes('synthetic-secret'));
   }
   assert.deepEqual(
-    await (await page.request.get(`${origin}/api/open-sync/sync/destinations`)).json(),
+    await (await page.request.get(`${origin}/api/open-sync/sync/syncs`)).json(),
     before,
   );
 }

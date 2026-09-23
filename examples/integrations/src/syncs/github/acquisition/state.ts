@@ -27,7 +27,7 @@ export async function beginCycle(context: SyncContext): Promise<Checkpoint> {
   );
   const accountId = z.string().min(1).parse(viewer.id);
   if (checkpoint.accountId !== null && checkpoint.accountId !== accountId) {
-    throw new Error('GitHub account changed. Create a new installation.');
+    throw new Error('GitHub account changed. Create a new sync.');
   }
   const startedAt = new Date().toISOString();
   const dayMs = 86_400_000;

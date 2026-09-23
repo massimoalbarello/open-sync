@@ -6,11 +6,6 @@ import type { SyncRecord } from './record';
 // biome-ignore lint/performance/noBarrelFile: Public source-authoring entry point exposes its failure contract.
 export { SourceHttpError } from './source-http-error';
 
-export interface DefinitionRef {
-  id: string;
-  version: string;
-  artifactId: string;
-}
 export interface ConnectionRef {
   id: string;
   service: string;
@@ -39,7 +34,9 @@ export interface ProviderOperations {
   get(input: { path: string; query?: JsonObject }): Promise<ProviderResponse>;
   post(input: { path: string; body: JsonObject }): Promise<ProviderResponse>;
 }
-export interface SyncDefinition extends DefinitionRef {
+export interface SyncDefinition {
+  /** Host-defined registration name, shared by configured syncs using this implementation. */
+  id: string;
   name?: string;
   description?: string;
   configSchema: Schema;
@@ -64,7 +61,8 @@ export interface SyncStep {
 export interface SyncContext {
   config: JsonObject;
   checkpoint: JsonValue;
-  sourceId: string;
+  /** Identity of this configured sync, also supplied to the destination. */
+  syncId: string;
   signal: AbortSignal;
   provider: ProviderOperations;
   assets: SourceAssets;
@@ -77,7 +75,4 @@ export interface SyncExecutable {
 export interface SyncRegistration {
   definition: SyncDefinition;
   load(): SyncExecutable | Promise<SyncExecutable>;
-}
-export function definitionKey(ref: DefinitionRef): string {
-  return JSON.stringify([ref.id, ref.version, ref.artifactId]);
 }

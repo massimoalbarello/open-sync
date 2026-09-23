@@ -1,3 +1,4 @@
+import { Database } from 'bun:sqlite';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -22,7 +23,6 @@ export async function fixture(input: {
     connector: { bind: () => Promise.resolve(input.provider) },
     destinationTypes: {
       test: {
-        version: '1',
         acceptsAssets: true,
         configSchema: { type: 'object' as const },
         deliver: ({ delivery }: { delivery: Delivery }) => {
@@ -33,22 +33,36 @@ export async function fixture(input: {
     },
   };
   let engine = createSyncRuntime(options);
-  const destination = engine.api.createDestination({ ...owner, type: 'test', config: {} });
-  const installation = await engine.api.createInstallation({
+  const destination = { type: 'test', input: {} };
+  const sync = await engine.api.createSync({
     ...owner,
-    definition: input.registration.definition,
+    definition: input.registration.definition.id,
     connection: { id: 'connection', service: input.registration.definition.provider!.service },
     config: input.config ?? {},
-    destinationId: destination.id,
+    destination,
   });
-  const resource = { ...owner, id: installation.id };
+  const resource = { ...owner, id: sync.id };
   return {
     deliveries,
     get engine() {
       return engine;
     },
     get saved() {
-      return engine.api.installation(resource);
+      const db = new Database(options.databasePath, { readonly: true });
+      try {
+        const row = db
+          .query<{ checkpoint: string; checkpoint_revision: number }, string[]>(
+            'SELECT checkpoint, checkpoint_revision FROM syncs WHERE owner_id=? AND id=?',
+          )
+          .get(owner.ownerId, sync.id)!;
+        return {
+          ...engine.api.sync({ ...owner, id: sync.id }),
+          checkpoint: JSON.parse(row.checkpoint),
+          checkpointRevision: row.checkpoint_revision,
+        };
+      } finally {
+        db.close();
+      }
     },
     get records() {
       return deliveries.flatMap((delivery) => delivery.deliverable.records);
@@ -60,11 +74,11 @@ export async function fixture(input: {
       const maxTicks = 30;
       for (let tick = 0; tick < maxTicks; tick++) {
         await engine.tick();
-        if (engine.api.installation(resource).status === 'execution_failed') {
+        if (engine.api.sync(resource).status === 'execution_failed') {
           throw new Error('Example acquisition failed');
         }
         if (
-          engine.api.installation(resource).status === 'succeeded' &&
+          engine.api.sync(resource).status === 'succeeded' &&
           !engine.api.status(owner).queue.pendingRecords
         ) {
           return;

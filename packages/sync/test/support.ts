@@ -1,13 +1,16 @@
+import { Database } from 'bun:sqlite';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../src/db/client';
 import type { SyncRegistration } from '../src/models/definition';
 import type { DestinationType } from '../src/models/delivery';
+import type { Resource } from '../src/models/identity';
 import { defaultLimits } from '../src/models/limits';
 import { SqliteAcquisition } from '../src/repositories/acquisition/sqlite';
 import { SqliteCatalog } from '../src/repositories/catalog/sqlite';
 import { SqliteDeliveries } from '../src/repositories/delivery/sqlite';
+import { readSync } from '../src/repositories/rows';
 import { createSyncRuntime } from '../src/runtime';
 
 export const alpha = { actorId: 'alice', ownerId: 'alpha' };
@@ -15,8 +18,7 @@ export const beta = { actorId: 'bob', ownerId: 'beta' };
 export const fixture: SyncRegistration = {
   definition: {
     id: 'test',
-    version: '1',
-    artifactId: 'test/1',
+
     configSchema: {
       type: 'object',
       properties: { count: { type: 'integer', minimum: 1 } },
@@ -57,7 +59,6 @@ export const fixture: SyncRegistration = {
   }),
 };
 export const accepted: DestinationType = {
-  version: '1',
   configSchema: { type: 'object', additionalProperties: false },
   deliver: () => Promise.resolve({ status: 'accepted' }),
 };
@@ -86,18 +87,13 @@ export function repositories(input: { maxPendingRecords?: number; maxPendingByte
     historyLimit: 1,
   });
   const deliveries = new SqliteDeliveries(db);
-  catalog.register(fixture.definition);
-  const destination = catalog.createDestination({
+
+  const destination = { type: 'local', config: {} };
+  const sync = catalog.createSync({
     ...alpha,
-    type: 'local',
-    version: '1',
-    config: {},
-  });
-  const installation = catalog.createInstallation({
-    ...alpha,
-    definition: fixture.definition,
+    definition: fixture.definition.id,
     config: { count: 1 },
-    destinationId: destination.id,
+    destination,
     initialCheckpoint: 0,
   });
   return {
@@ -106,7 +102,7 @@ export function repositories(input: { maxPendingRecords?: number; maxPendingByte
     catalog,
     acquisition,
     deliveries,
-    installation,
+    sync,
     close: () => {
       db.close();
       files.close();
@@ -114,12 +110,12 @@ export function repositories(input: { maxPendingRecords?: number; maxPendingByte
   };
 }
 export async function configure(runtime: ReturnType<typeof createSyncRuntime>) {
-  const destination = runtime.api.createDestination({ ...alpha, type: 'local', config: {} });
-  return await runtime.api.createInstallation({
+  const destination = { type: 'local', input: {} };
+  return await runtime.api.createSync({
     ...alpha,
-    definition: fixture.definition,
+    definition: fixture.definition.id,
     config: { count: 3 },
-    destinationId: destination.id,
+    destination,
   });
 }
 const fixtureQueueCapacity = 100;
@@ -148,4 +144,14 @@ export function runtime(
       files.close();
     },
   };
+}
+
+/** Tests inspect private persistence directly when proving checkpoint atomicity. */
+export function savedSync(input: { path: string; scope: Resource }) {
+  const db = new Database(input.path, { readonly: true });
+  try {
+    return readSync({ db, scope: input.scope });
+  } finally {
+    db.close();
+  }
 }

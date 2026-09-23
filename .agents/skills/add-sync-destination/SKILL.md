@@ -17,7 +17,7 @@ in the destination; follow the repository's engineering and compatibility guidan
   I/O before returning; an in-memory handoff or an unawaited request is not durable acceptance.
 - Expect retries after timeouts, restarts, or a lost acknowledgement, including after the receiver
   has already committed. Use stable delivery/event IDs for idempotency. Scope stored records to
-  their owner, source, kind, and ID, and protect newer revisions from stale replay. If the receiver
+  their owner, configured sync, kind, and ID, and protect newer revisions from stale replay. If the receiver
   cannot commit a batch atomically, make each effect replay-safe before acknowledging the batch.
 - Use `retry` for temporary failures, optionally providing a server-requested delay, and `rejected`
   for permanent failures requiring intervention. Never report success to clear an error. The
@@ -41,8 +41,9 @@ in the destination; follow the repository's engineering and compatibility guidan
 
 Honor the supplied scope and cancellation signal, and pass the signal through outbound I/O.
 Independent syncs can call the same destination concurrently; avoid shared mutable request state
-and assumptions of global ordering. Validate configuration at setup, and version changes that
-would reinterpret or reroute already queued work.
+and assumptions of global ordering. Validate configuration during sync creation. Implementations
+are registered by name; settle queued work and replace the sync before changing its delivery
+contract incompatibly.
 
 Test the receiver committing successfully but losing its acknowledgement, then retry after an
 engine restart: records and uploads must not duplicate. Also cover partial upload/batch failure,

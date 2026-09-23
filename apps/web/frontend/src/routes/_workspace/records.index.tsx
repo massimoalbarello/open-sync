@@ -9,20 +9,20 @@ import { recordsOptions } from '../../queries/records';
 
 export const Route = createFileRoute('/_workspace/records/')({
   component: Records,
-  validateSearch: (search: Record<string, unknown>): { sourceId?: string } => ({
-    sourceId: typeof search.sourceId === 'string' ? search.sourceId : undefined,
+  validateSearch: (search: Record<string, unknown>): { syncId?: string } => ({
+    syncId: typeof search.syncId === 'string' ? search.syncId : undefined,
   }),
 });
 function Records() {
   const { userId } = Route.useRouteContext();
-  const { sourceId } = Route.useSearch();
-  const query = useInfiniteQuery(recordsOptions({ userId, sourceId }));
+  const { syncId } = Route.useSearch();
+  const query = useInfiniteQuery(recordsOptions({ userId, syncId }));
   const records = query.data?.pages.flatMap((page) => page.records) ?? [];
   return (
     <SectionPage
       title="Records"
       action={
-        sourceId ? (
+        syncId ? (
           <Link to="/records" search={{}} className="text-sm underline">
             All records
           </Link>
@@ -38,13 +38,13 @@ function Records() {
       <UpdatedDayList
         items={records}
         label="Received records"
-        itemKey={(record) => JSON.stringify([record.sourceId, record.kind, record.id])}
+        itemKey={(record) => JSON.stringify([record.syncId, record.kind, record.id])}
       >
         {(record) => (
           <>
             <Link
-              to="/records/$sourceId/$kind/$recordId"
-              params={{ sourceId: record.sourceId, kind: record.kind, recordId: record.id }}
+              to="/records/$syncId/$kind/$recordId"
+              params={{ syncId: record.syncId, kind: record.kind, recordId: record.id }}
               className="break-words font-medium underline underline-offset-4"
             >
               {record.preview || `${record.kind} · ${record.id}`}

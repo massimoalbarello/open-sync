@@ -9,7 +9,7 @@ export async function previewsJourney(input: {
   record: ReceivedRecord;
 }) {
   const { page, origin, record } = input;
-  const recordUrl = `${origin}/records/${encodeURIComponent(record.sourceId)}/${encodeURIComponent(record.kind)}/${encodeURIComponent(record.id)}`;
+  const recordUrl = `${origin}/records/${encodeURIComponent(record.syncId)}/${encodeURIComponent(record.kind)}/${encodeURIComponent(record.id)}`;
   await page.goto(recordUrl);
   const content = page.getByRole('region', { name: 'Record content' });
   await content.getByRole('heading', { name: 'Lunch', exact: true }).waitFor();

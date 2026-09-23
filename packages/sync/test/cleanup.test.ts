@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type { SyncRegistration } from '../src/models/definition';
 import { DirectoryAssets } from '../src/repositories/assets/filesystem';
 import { createSyncRuntime } from '../src/runtime';
-import { accepted, alpha, fixture, page, storage } from './support';
+import { accepted, alpha, fixture, page, savedSync, storage } from './support';
 
 async function until(check: () => boolean | Promise<boolean>) {
   const deadlineMs = 2000;
@@ -35,7 +35,7 @@ test('accepted files disappear while another source is still writing, and live f
           mediaType: 'text/plain',
           read: () =>
             Promise.resolve(
-              context.sourceId === slow
+              context.syncId === slow
                 ? new ReadableStream({
                     start(controller) {
                       controller.enqueue(new TextEncoder().encode('held'));
@@ -69,8 +69,8 @@ test('accepted files disappear while another source is still writing, and live f
           const text = await new Response(
             await assets!.open(delivery.deliverable.assets![0]!),
           ).text();
-          expect(text).toBe(delivery.sourceId === slow ? 'held' : 'fast');
-          delivered.push(delivery.sourceId);
+          expect(text).toBe(delivery.syncId === slow ? 'held' : 'fast');
+          delivered.push(delivery.syncId);
           return { status: 'accepted' as const };
         },
       },
@@ -78,32 +78,34 @@ test('accepted files disappear while another source is still writing, and live f
   };
   const engine = createSyncRuntime(options);
   try {
-    const destination = engine.api.createDestination({ ...alpha, type: 'local', config: {} });
-    const first = await engine.api.createInstallation({
+    const destination = { type: 'local', input: {} };
+    const first = await engine.api.createSync({
       ...alpha,
-      definition: fixture.definition,
+      definition: fixture.definition.id,
       config: { count: 1 },
-      destinationId: destination.id,
+      destination,
     });
-    const second = await engine.api.createInstallation({
+    const second = await engine.api.createSync({
       ...alpha,
-      definition: fixture.definition,
+      definition: fixture.definition.id,
       config: { count: 1 },
-      destinationId: destination.id,
+      destination,
     });
-    slow = second.sourceId;
+    slow = second.id;
     engine.start();
     const db = new Database(files.path);
     try {
       await until(
         () =>
           staged &&
-          delivered.includes(first.sourceId) &&
+          delivered.includes(first.id) &&
           db.query<{ count: number }, []>('SELECT count(*) AS count FROM asset_files').get()!
             .count === 1,
       );
       expect(await readdir(`${files.path}.assets`)).toHaveLength(1);
-      expect(engine.api.installation({ ...alpha, id: second.id }).checkpoint).toBe(0);
+      expect(savedSync({ path: files.path, scope: { ...alpha, id: second.id } }).checkpoint).toBe(
+        0,
+      );
       finish.resolve();
       await until(
         () =>
@@ -185,12 +187,12 @@ test('a crash after releasing an asset reference retains its charge until recove
   };
   const engine = createSyncRuntime(options);
   try {
-    const destination = engine.api.createDestination({ ...alpha, type: 'local', config: {} });
-    await engine.api.createInstallation({
+    const destination = { type: 'local', input: {} };
+    await engine.api.createSync({
       ...alpha,
-      definition: fixture.definition,
+      definition: fixture.definition.id,
       config: { count: 1 },
-      destinationId: destination.id,
+      destination,
     });
     await engine.tick();
     await engine.close();
@@ -264,37 +266,37 @@ test('releasing partial captures does not spin a capacity retry; acceptance wake
     },
   });
   try {
-    const destination = engine.api.createDestination({ ...alpha, type: 'local', config: {} });
-    await engine.api.createInstallation({
+    const destination = { type: 'local', input: {} };
+    await engine.api.createSync({
       ...alpha,
-      definition: fixture.definition,
+      definition: fixture.definition.id,
       config: { count: 1 },
-      destinationId: destination.id,
+      destination,
     });
     await engine.tick();
-    const waiting = await engine.api.createInstallation({
+    const waiting = await engine.api.createSync({
       ...alpha,
-      definition: fixture.definition,
+      definition: fixture.definition.id,
       config: { count: 2 },
-      destinationId: destination.id,
+      destination,
     });
     const scope = { ...alpha, id: waiting.id };
     engine.start();
     await until(
       async () =>
-        engine.api.installation(scope).status === 'waiting_for_capacity' &&
+        engine.api.sync(scope).status === 'waiting_for_capacity' &&
         (await readdir(`${files.path}.assets`)).length === 1,
     );
     const before = reads;
     const observeMs = 50;
     await Bun.sleep(observeMs);
     expect(reads).toBe(before);
-    expect(engine.api.installation(scope).checkpoint).toBe(0);
+    expect(savedSync({ path: files.path, scope: scope }).checkpoint).toBe(0);
     accept = true;
     engine.api.retryDelivery({ ...alpha, id: engine.api.deliveries(alpha).deliveries[0]!.id });
     await until(
       () =>
-        engine.api.installation(scope).status === 'succeeded' &&
+        engine.api.sync(scope).status === 'succeeded' &&
         engine.api.status(alpha).queue.pendingRecords === 0,
     );
   } finally {

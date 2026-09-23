@@ -1,7 +1,7 @@
 CREATE TABLE host_assets (
   owner_id TEXT NOT NULL,
   id TEXT NOT NULL,
-  source_id TEXT NOT NULL,
+  sync_id TEXT NOT NULL,
   asset_id TEXT NOT NULL,
   asset_version TEXT NOT NULL,
   idempotency_key TEXT NOT NULL,
@@ -14,7 +14,7 @@ CREATE TABLE host_assets (
   updated_at TEXT,
   PRIMARY KEY(owner_id, id),
   UNIQUE(owner_id, idempotency_key),
-  UNIQUE(owner_id, source_id, asset_id, asset_version)
+  UNIQUE(owner_id, sync_id, asset_id, asset_version)
 );
 
 CREATE INDEX host_assets_file_id ON host_assets(file_id);

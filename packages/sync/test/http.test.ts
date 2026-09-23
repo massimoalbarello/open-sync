@@ -10,7 +10,7 @@ const validation = 422;
 test('mountable management routes require host authorization and preserve resource ownership', async () => {
   const f = runtime();
   try {
-    const installation = await configure(f.engine);
+    const sync = await configure(f.engine);
     const app = new Elysia().group('/api', (app) =>
       app.use(
         createSyncController({
@@ -24,17 +24,17 @@ test('mountable management routes require host authorization and preserve resour
         }),
       ),
     );
-    expect((await app.handle(new Request('http://localhost/api/sync/installations'))).status).toBe(
+    expect((await app.handle(new Request('http://localhost/api/sync/syncs'))).status).toBe(
       unauthorized,
     );
     const missing = await app.handle(
-      new Request(`http://localhost/api/sync/installations/${installation.id}`, {
+      new Request(`http://localhost/api/sync/syncs/${sync.id}`, {
         headers: { 'test-actor': 'beta' },
       }),
     );
     expect(missing.status).toBe(notFound);
     const invalid = await app.handle(
-      new Request('http://localhost/api/sync/installations', {
+      new Request('http://localhost/api/sync/syncs', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'test-actor': 'alpha' },
         body: '{}',
@@ -42,11 +42,11 @@ test('mountable management routes require host authorization and preserve resour
     );
     expect(invalid.status).toBe(validation);
     const list = await app.handle(
-      new Request('http://localhost/api/sync/installations', {
+      new Request('http://localhost/api/sync/syncs', {
         headers: { 'test-actor': 'alpha' },
       }),
     );
-    expect(((await list.json()) as { installations: unknown[] }).installations).toHaveLength(1);
+    expect(((await list.json()) as { syncs: unknown[] }).syncs).toHaveLength(1);
   } finally {
     await f.close();
   }
@@ -55,18 +55,17 @@ test('mountable management routes require host authorization and preserve resour
 test('queue inspection pages a real backlog without exposing another owner or changing work', async () => {
   const f = runtime({
     destination: {
-      version: '1',
       configSchema: { type: 'object' },
       deliver: () => Promise.resolve({ status: 'retry', retryAfterMs: 0 }),
     },
   });
   const count = 51;
   try {
-    const destination = f.engine.api.createDestination({ ...alpha, type: 'local', config: {} });
-    await f.engine.api.createInstallation({
+    const destination = { type: 'local', input: {} };
+    await f.engine.api.createSync({
       ...alpha,
-      definition: fixture.definition,
-      destinationId: destination.id,
+      definition: fixture.definition.id,
+      destination,
       config: { count },
     });
     for (let step = 0; step < count; step++) {

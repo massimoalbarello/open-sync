@@ -199,13 +199,13 @@ function SyncForm(input: {
           }}
         </form.Subscribe>
         <form.Subscribe selector={(state) => state.values.source}>
-          {(sourceId) => {
-            const source = catalog.sources.find((entry) => entry.id === sourceId);
+          {(definitionId) => {
+            const source = catalog.sources.find((entry) => entry.id === definitionId);
             return (
               source &&
               [...setupFields(source.configSchema).entries()].map(([index, definition]) => (
                 <form.Field
-                  key={`${sourceId}:${definition.name}`}
+                  key={`${definitionId}:${definition.name}`}
                   name={`sourceValues[${index}]`}
                   validators={{
                     onSubmit: ({ value }) =>

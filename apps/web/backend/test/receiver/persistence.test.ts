@@ -12,9 +12,8 @@ const delivery: Delivery = {
   version: 1,
   id: 'delivery_1',
   ownerId: scope.ownerId,
-  sourceId: 'source_1',
-  installationId: 'sync_1',
-  definition: { id: 'test', version: '1', artifactId: 'test/1' },
+  syncId: 'source_1',
+  definition: 'test',
   deliverable: {
     records: [
       {
@@ -51,21 +50,19 @@ test('local receiver atomically deduplicates whole deliveries and keeps owner da
       'owner mismatch',
     );
     expect(await receiver.records({ ...scope, offset: 0 })).toMatchObject({
-      records: [{ sourceId: 'source_1', kind: 'item', id: 'a', revision: 1, data: { value: 1 } }],
+      records: [{ syncId: 'source_1', kind: 'item', id: 'a', revision: 1, data: { value: 1 } }],
       hasMore: false,
     });
     expect(
       (await receiver.records({ actorId: 'bob', ownerId: 'beta', offset: 0 })).records,
     ).toEqual([]);
-    expect((await receiver.records({ ...scope, sourceId: 'other', offset: 0 })).records).toEqual(
-      [],
-    );
-    const identity = { ...scope, sourceId: 'source_1', kind: 'item', id: 'a' };
+    expect((await receiver.records({ ...scope, syncId: 'other', offset: 0 })).records).toEqual([]);
+    const identity = { ...scope, syncId: 'source_1', kind: 'item', id: 'a' };
     expect(await receiver.record(identity)).toMatchObject({
       content: { format: 'markdown', body: '# Hello' },
     });
     expect(await receiver.record({ ...identity, ownerId: 'beta', actorId: 'bob' })).toBeUndefined();
-    expect(await receiver.record({ ...identity, sourceId: 'other' })).toBeUndefined();
+    expect(await receiver.record({ ...identity, syncId: 'other' })).toBeUndefined();
     expect(await receiver.record({ ...identity, kind: 'other' })).toBeUndefined();
     const changed = structuredClone(delivery);
     changed.deliverable.records[0]!.revision++;
@@ -131,7 +128,7 @@ test('record browsing preserves unrelated JSON schemas, pagination and deletions
       delivery: { ...delivery, id: 'stale', deliverable: { records: [records.at(-1)!] } },
     });
     expect(
-      (await receiver.record({ ...scope, sourceId: 'source_1', kind: 'measurement', id: '50' }))!
+      (await receiver.record({ ...scope, syncId: 'source_1', kind: 'measurement', id: '50' }))!
         .updatedAt,
     ).toBe(updatedAt);
     await receiver.accept({
@@ -155,7 +152,7 @@ test('record browsing preserves unrelated JSON schemas, pagination and deletions
     });
     expect((await receiver.records({ ...scope, offset: 0 })).records[0]!.id).toBe('50');
     expect(
-      await receiver.record({ ...scope, sourceId: 'source_1', kind: 'measurement', id: '00' }),
+      await receiver.record({ ...scope, syncId: 'source_1', kind: 'measurement', id: '00' }),
     ).toBeUndefined();
   } finally {
     await db.close();

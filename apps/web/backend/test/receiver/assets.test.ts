@@ -17,7 +17,7 @@ test('receiver owns its bytes and stable asset IDs, checks integrity, and isolat
     const bytes = Buffer.from('00ff0d0a', 'hex');
     const input = {
       ...owner,
-      sourceId: 'source',
+      syncId: 'source',
       idempotencyKey: 'upload',
       signal: new AbortController().signal,
       asset: {

@@ -1,20 +1,20 @@
 import type { Database } from 'bun:sqlite';
 import type { DeliveredRecord } from '../../models/delivery';
-import type { Installation } from '../../models/installation';
 import { canonicalJson } from '../../models/json';
 import type { SyncRecord } from '../../models/record';
+import type { Sync } from '../../models/sync';
 
 export function writeRecord(input: {
   db: Database;
-  installation: Installation;
+  sync: Sync;
   record: SyncRecord;
 }): DeliveredRecord | undefined {
-  const { db, installation, record } = input;
+  const { db, sync, record } = input;
   const previous = db
     .query<{ hash: string; revision: number; deleted: number }, [string, string, string, string]>(
-      'SELECT hash,revision,deleted FROM records WHERE owner_id=? AND installation_id=? AND kind=? AND id=?',
+      'SELECT hash,revision,deleted FROM records WHERE owner_id=? AND sync_id=? AND kind=? AND id=?',
     )
-    .get(installation.ownerId, installation.id, record.kind, record.id);
+    .get(sync.ownerId, sync.id, record.kind, record.id);
   if (record.operation === 'delete' && (!previous || previous.deleted === 1)) {
     return;
   }
@@ -23,10 +23,10 @@ export function writeRecord(input: {
     return;
   }
   const revision = (previous?.revision ?? 0) + 1;
-  db.query(`INSERT INTO records VALUES (?,?,?,?,?,?,?) ON CONFLICT(owner_id,installation_id,kind,id)
+  db.query(`INSERT INTO records VALUES (?,?,?,?,?,?,?) ON CONFLICT(owner_id,sync_id,kind,id)
     DO UPDATE SET hash=excluded.hash,revision=excluded.revision,deleted=excluded.deleted`).run(
-    installation.ownerId,
-    installation.id,
+    sync.ownerId,
+    sync.id,
     record.kind,
     record.id,
     contentHash,

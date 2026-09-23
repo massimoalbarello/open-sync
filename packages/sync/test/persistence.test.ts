@@ -10,17 +10,17 @@ test('a page rolls back records, outbox and checkpoint if the final write fails'
   try {
     const lease = f.acquisition.claim(leaseMs)!;
     f.db.exec(
-      "CREATE TRIGGER fail_checkpoint BEFORE UPDATE OF checkpoint ON installations BEGIN SELECT RAISE(ABORT,'injected'); END;",
+      "CREATE TRIGGER fail_checkpoint BEFORE UPDATE OF checkpoint ON syncs BEGIN SELECT RAISE(ABORT,'injected'); END;",
     );
     expect(() => f.acquisition.commit({ lease, page, definition: fixture.definition })).toThrow(
       'injected',
     );
     expect(f.db.query('SELECT * FROM records').all()).toEqual([]);
     expect(f.deliveries.status(alpha).pendingRecords).toBe(0);
-    expect(f.catalog.installation({ ...alpha, id: f.installation.id }).checkpointRevision).toBe(0);
+    expect(f.catalog.sync({ ...alpha, id: f.sync.id }).checkpointRevision).toBe(0);
     f.db.exec('DROP TRIGGER fail_checkpoint');
     f.acquisition.commit({ lease, page, definition: fixture.definition });
-    expect(f.catalog.installation({ ...alpha, id: f.installation.id }).checkpoint).toBe(1);
+    expect(f.catalog.sync({ ...alpha, id: f.sync.id }).checkpoint).toBe(1);
   } finally {
     f.close();
   }
@@ -50,7 +50,7 @@ test('queue capacity counts blocked and leased work and rejects whole pages atom
         definition: fixture.definition,
       }),
     ).toThrow('waiting for capacity');
-    expect(f.catalog.installation({ ...alpha, id: f.installation.id }).checkpoint).toBe(1);
+    expect(f.catalog.sync({ ...alpha, id: f.sync.id }).checkpoint).toBe(1);
     expect(f.db.query('SELECT * FROM records').all()).toHaveLength(1);
     f.deliveries.retry({ ...alpha, id: delivery.delivery.id });
     const retried = f.deliveries.claim(leaseMs)!;
@@ -73,7 +73,7 @@ test('serialized envelope byte budget is enforced before advancing progress', ()
       'page exceeds queue capacity',
     );
     expect(f.db.query('SELECT * FROM records').all()).toEqual([]);
-    expect(f.catalog.installation({ ...alpha, id: f.installation.id }).checkpoint).toBe(0);
+    expect(f.catalog.sync({ ...alpha, id: f.sync.id }).checkpoint).toBe(0);
   } finally {
     f.close();
   }
@@ -90,16 +90,16 @@ test('binding changes, stale generations and stale checkpoint revisions cannot c
         definition: fixture.definition,
       }),
     ).toThrow('lease lost');
-    const other = f.catalog.createInstallation({
+    const other = f.catalog.createSync({
       ...alpha,
-      definition: fixture.definition,
+      definition: fixture.definition.id,
       config: { count: 1 },
-      destinationId: f.installation.destinationId,
+      destination: f.sync.destination,
       initialCheckpoint: 0,
     });
     expect(() =>
       f.acquisition.commit({
-        lease: { ...lease, installation: other },
+        lease: { ...lease, sync: other },
         page,
         definition: fixture.definition,
       }),
@@ -116,8 +116,8 @@ test('binding changes, stale generations and stale checkpoint revisions cannot c
     expect(() =>
       f.acquisition.commit({ lease: stale, page, definition: fixture.definition }),
     ).toThrow('lease lost');
-    f.catalog.setEnabled({ ...alpha, id: f.installation.id, enabled: false });
-    f.catalog.setEnabled({ ...alpha, id: f.installation.id, enabled: true });
+    f.catalog.setEnabled({ ...alpha, id: f.sync.id, enabled: false });
+    f.catalog.setEnabled({ ...alpha, id: f.sync.id, enabled: true });
     expect(() => f.acquisition.commit({ lease, page, definition: fixture.definition })).toThrow(
       'lease lost',
     );
@@ -147,32 +147,20 @@ test('hashes suppress repeats and tombstones retain monotonic revisions', () => 
     expect(f.deliveries.status(alpha).pendingRecords).toBe(changedRecords);
     const stored = f.db.query<{ revision: number }, []>('SELECT revision FROM records').get();
     expect(stored?.revision).toBe(changedRecords);
-    expect(f.catalog.installation({ ...alpha, id: f.installation.id }).checkpointRevision).toBe(
-      committedPages,
-    );
+    expect(f.catalog.sync({ ...alpha, id: f.sync.id }).checkpointRevision).toBe(committedPages);
   } finally {
     f.close();
   }
 });
 
-test('owner filtering applies to reads, mutations, destination assignment and queued payloads', () => {
+test('owner filtering applies to reads, mutations and queued payloads', () => {
   const f = repositories();
   try {
-    expect(f.catalog.installations(beta)).toEqual([]);
-    expect(f.catalog.destinations(beta)).toEqual([]);
-    expect(() => f.catalog.installation({ ...beta, id: f.installation.id })).toThrow('not found');
-    expect(() => f.catalog.setEnabled({ ...beta, id: f.installation.id, enabled: false })).toThrow(
+    expect(f.catalog.syncs(beta)).toEqual([]);
+    expect(() => f.catalog.sync({ ...beta, id: f.sync.id })).toThrow('not found');
+    expect(() => f.catalog.setEnabled({ ...beta, id: f.sync.id, enabled: false })).toThrow(
       'not found',
     );
-    expect(() =>
-      f.catalog.createInstallation({
-        ...beta,
-        definition: fixture.definition,
-        config: {},
-        destinationId: f.installation.destinationId,
-        initialCheckpoint: 0,
-      }),
-    ).toThrow('not found');
     const lease = f.acquisition.claim(leaseMs)!;
     f.acquisition.commit({ lease, page, definition: fixture.definition });
     const delivery = f.deliveries.claim(leaseMs)!;

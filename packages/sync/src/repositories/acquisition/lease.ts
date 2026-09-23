@@ -1,41 +1,34 @@
 import type { Database } from 'bun:sqlite';
-import { definitionKey } from '../../models/definition';
 import { fail } from '../../models/error';
 import { workerScope } from '../../models/identity';
-import type { Installation } from '../../models/installation';
-import { readInstallation } from '../rows';
+import type { Sync } from '../../models/sync';
+import { readSync } from '../rows';
 import type { RunLease } from './contract';
 import { claimPoll, updatePoll } from './polls';
 
-export function assertRun(input: { db: Database; lease: RunLease }): Installation {
+export function assertRun(input: { db: Database; lease: RunLease }): Sync {
   const { db, lease } = input;
   const valid = db
     .query(
-      "SELECT 1 FROM runs WHERE owner_id=? AND id=? AND installation_id=? AND binding_epoch=? AND definition_ref=? AND state='running' AND worker_id=? AND generation=? AND expires_at>?",
+      "SELECT 1 FROM runs WHERE owner_id=? AND id=? AND sync_id=? AND binding_epoch=? AND state='running' AND worker_id=? AND generation=? AND expires_at>?",
     )
     .get(
       lease.ownerId,
       lease.id,
-      lease.installation.id,
-      lease.installation.bindingEpoch,
-      definitionKey(lease.installation.definition),
+      lease.sync.id,
+      lease.sync.bindingEpoch,
       lease.workerId,
       lease.generation,
       Date.now(),
     );
-  const installation = readInstallation({ db, scope: { ...lease, id: lease.installation.id } });
-  if (
-    !valid ||
-    !installation.enabled ||
-    installation.bindingEpoch !== lease.installation.bindingEpoch ||
-    definitionKey(installation.definition) !== definitionKey(lease.installation.definition)
-  ) {
+  const sync = readSync({ db, scope: { ...lease, id: lease.sync.id } });
+  if (!valid || !sync.enabled || sync.bindingEpoch !== lease.sync.bindingEpoch) {
     fail('lease_lost');
   }
-  if (installation.checkpointRevision !== lease.checkpointRevision) {
+  if (sync.checkpointRevision !== lease.checkpointRevision) {
     fail('checkpoint_conflict');
   }
-  return installation;
+  return sync;
 }
 export function claimRun(input: {
   db: Database;
@@ -48,42 +41,41 @@ export function claimRun(input: {
       recoverRuns(input);
       const row = db
         .query<{ id: string; owner_id: string; failure_count: number }, [number]>(
-          `SELECT id,owner_id,failure_count FROM installations i WHERE enabled=1 AND next_due_at<=?
-          AND NOT EXISTS (SELECT 1 FROM runs r WHERE r.owner_id=i.owner_id AND r.installation_id=i.id AND r.state='running')
-          ORDER BY next_due_at,(SELECT COALESCE(MAX(rowid),0) FROM runs r WHERE r.owner_id=i.owner_id AND r.installation_id=i.id),id LIMIT 1`,
+          `SELECT id,owner_id,failure_count FROM syncs i WHERE enabled=1 AND next_due_at<=?
+          AND NOT EXISTS (SELECT 1 FROM runs r WHERE r.owner_id=i.owner_id AND r.sync_id=i.id AND r.state='running')
+          ORDER BY next_due_at,(SELECT COALESCE(MAX(rowid),0) FROM runs r WHERE r.owner_id=i.owner_id AND r.sync_id=i.id),id LIMIT 1`,
         )
         .get(Date.now());
       if (!row) {
         return;
       }
       const scope = workerScope(row.owner_id);
-      const installation = readInstallation({ db, scope: { ...scope, id: row.id } });
+      const sync = readSync({ db, scope: { ...scope, id: row.id } });
       const pollId = claimPoll({ db, scope: { ...scope, id: row.id } });
       const lease: RunLease = {
         ...scope,
         id: `run_${crypto.randomUUID()}`,
-        installation,
+        sync,
         workerId: crypto.randomUUID(),
         generation: 1,
-        checkpointRevision: installation.checkpointRevision,
+        checkpointRevision: sync.checkpointRevision,
         failureCount: row.failure_count,
       };
-      db.query(`INSERT INTO runs(owner_id,id,installation_id,definition_ref,binding_epoch,worker_id,generation,expires_at,state,started_at,poll_id)
-      VALUES (?,?,?,?,?,?,?,?,'running',?,?)`).run(
+      db.query(`INSERT INTO runs(owner_id,id,sync_id,binding_epoch,worker_id,generation,expires_at,state,started_at,poll_id)
+      VALUES (?,?,?,?,?,?,?,'running',?,?)`).run(
         scope.ownerId,
         lease.id,
-        installation.id,
-        definitionKey(installation.definition),
-        installation.bindingEpoch,
+        sync.id,
+        sync.bindingEpoch,
         lease.workerId,
         lease.generation,
         Date.now() + input.leaseMs,
         Date.now(),
         pollId,
       );
-      db.query("UPDATE installations SET status='running' WHERE owner_id=? AND id=?").run(
+      db.query("UPDATE syncs SET status='running' WHERE owner_id=? AND id=?").run(
         scope.ownerId,
-        installation.id,
+        sync.id,
       );
       return lease;
     })
@@ -95,8 +87,8 @@ function recoverRuns(input: { db: Database; historyLimit: number }): void {
     SELECT 1 FROM runs WHERE owner_id=polls.owner_id AND poll_id=polls.id AND state='running' AND expires_at<=?)`)
     .run(Date.now());
   input.db
-    .query(`UPDATE installations SET next_due_at=?,status='lease_expired' WHERE enabled=1 AND EXISTS (
-    SELECT 1 FROM runs WHERE owner_id=installations.owner_id AND installation_id=installations.id AND state='running' AND expires_at<=?)`)
+    .query(`UPDATE syncs SET next_due_at=?,status='lease_expired' WHERE enabled=1 AND EXISTS (
+    SELECT 1 FROM runs WHERE owner_id=syncs.owner_id AND sync_id=syncs.id AND state='running' AND expires_at<=?)`)
     .run(Date.now(), Date.now());
   input.db
     .query(
@@ -133,7 +125,7 @@ export function finishRun(input: {
     .run(input.state, Date.now(), input.lease.ownerId, input.lease.id);
   input.db
     .query(
-      'UPDATE installations SET status=?,next_due_at=?,failure_count=COALESCE(?,failure_count),enabled=CASE WHEN ? THEN 0 ELSE enabled END WHERE owner_id=? AND id=?',
+      'UPDATE syncs SET status=?,next_due_at=?,failure_count=COALESCE(?,failure_count),enabled=CASE WHEN ? THEN 0 ELSE enabled END WHERE owner_id=? AND id=?',
     )
     .run(
       input.state,
@@ -141,6 +133,6 @@ export function finishRun(input: {
       input.failureCount ?? null,
       input.pause ? 1 : 0,
       input.lease.ownerId,
-      input.lease.installation.id,
+      input.lease.sync.id,
     );
 }

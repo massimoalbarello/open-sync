@@ -7,13 +7,10 @@ export type SyncApi = Pick<
   | 'definitions'
   | 'destinationTypes'
   | 'polls'
-  | 'destinations'
-  | 'createDestination'
-  | 'setupDestination'
-  | 'createInstallation'
-  | 'connectInstallation'
-  | 'installations'
-  | 'installation'
+  | 'createSync'
+  | 'connectSync'
+  | 'syncs'
+  | 'sync'
   | 'setEnabled'
   | 'queueRun'
   | 'status'
@@ -28,15 +25,12 @@ export type ProviderApi = Pick<
 export function syncApi(service: SyncManagement): SyncApi {
   return {
     definitions: service.definitions.bind(service),
-    destinations: service.destinations.bind(service),
     destinationTypes: service.destinationTypes.bind(service),
     polls: service.polls.bind(service),
-    createDestination: service.createDestination.bind(service),
-    setupDestination: service.setupDestination.bind(service),
-    createInstallation: service.createInstallation.bind(service),
-    connectInstallation: service.connectInstallation.bind(service),
-    installations: service.installations.bind(service),
-    installation: service.installation.bind(service),
+    createSync: service.createSync.bind(service),
+    connectSync: service.connectSync.bind(service),
+    syncs: service.syncs.bind(service),
+    sync: service.sync.bind(service),
     setEnabled: service.setEnabled.bind(service),
     queueRun: service.queueRun.bind(service),
     status: service.status.bind(service),

@@ -10,8 +10,6 @@ export const slackThreads = {
     name: 'Slack threads',
     description:
       'Complete threads from joined channels within the selected history range, including all replies in chronological order. Rechecks for edits and new replies; excludes DMs and deletion detection.',
-    version: '3',
-    artifactId: 'open-sync/slack-threads/3',
     provider: {
       service: 'slack',
       actions: ['slack.download_file'],
