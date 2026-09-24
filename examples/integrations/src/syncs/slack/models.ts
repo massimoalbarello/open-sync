@@ -37,21 +37,23 @@ export const providerMessageSchema = z.object({
   files: z.array(fileSchema).optional(),
 });
 export const checkpointSchema = z.strictObject({
+  // Team and user identity; retained after completion to reject a different account.
   account: z.string().nullable(),
-  oldest: z.string().nullable(),
-  latest: z.string().nullable(),
+  // Frozen before provider I/O. Derives both history bounds across pages/restarts;
+  // cleared on completion because Slack history has no cross-iteration change token.
+  iterationStartedAt: z.iso.datetime({ offset: true }).nullable(),
+  // Next directory page after the active channel; null before discovery or on the last page.
   directoryCursor: z.string().nullable(),
-  directoryComplete: z.boolean(),
+  // Active channel whose history is unfinished; avoids rediscovering its directory page.
   channelId: z.string().nullable(),
+  // Native position within that channel's history; reply pages finish within the step.
   messageCursor: z.string().nullable(),
 });
 export type Checkpoint = z.infer<typeof checkpointSchema>;
 export const initialCheckpoint: Checkpoint = {
   account: null,
-  oldest: null,
-  latest: null,
+  iterationStartedAt: null,
   directoryCursor: null,
-  directoryComplete: false,
   channelId: null,
   messageCursor: null,
 };
