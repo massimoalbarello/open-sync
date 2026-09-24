@@ -1,5 +1,6 @@
 // Provider HTTP boundaries only: authentication, OAuth state, MCP and storage stay real.
 let granolaRegistrationAttempts = 0;
+let granolaListingAttempts = 0;
 export const githubFixtureRecordCount = 24;
 export const granolaFixtureMeetingCount = 23;
 const granolaMeetingIds = [...Array(granolaFixtureMeetingCount).keys()].map(
@@ -289,11 +290,13 @@ function granolaToolResponse(params: {
   if (listing && params.arguments?.time_range !== 'last_30_days') {
     throw new Error('Unexpected Granola listing window');
   }
+  // Exercise the real Connector's truncation rejection before a successful retry.
+  const truncated = listing && ++granolaListingAttempts === 1;
   return {
     content: [
       {
         type: 'text',
-        text: `<meetings_data count="${ids.length}">${ids.map((id) => `<meeting id="${id}" title="Planning ${id}" date="2026-09-19"><known_participants>Alice, Sam</known_participants><summary>## Decisions\nShip it.</summary></meeting>`).join('')}</meetings_data>`,
+        text: `<meetings_data count="${ids.length}" has_more="${truncated}">${ids.map((id) => `<meeting id="${id}" title="Planning ${id}" date="2026-09-19"><known_participants>Alice, Sam</known_participants><summary>## Decisions\nShip it.</summary></meeting>`).join('')}</meetings_data>`,
       },
     ],
   };

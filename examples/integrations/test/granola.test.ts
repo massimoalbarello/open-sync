@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import type { JsonObject } from '@context-use/open-sync/json';
 import { granolaMeetings } from '../src/syncs/granola/definition';
 import { fixture, owner, unused } from './fixture';
 
@@ -73,12 +74,27 @@ test('Granola completes one unpaginated listing in one step and preserves notes 
   }
 });
 
-test.each(['transient', 'missing', 'duplicate', 'foreign'] as const)(
+test.each(['transient', 'missing', 'duplicate', 'foreign', 'missing-summary'] as const)(
   'Granola commits no partial listing after a %s detail failure and retries the whole step after restart',
   async (mode) => {
     let fail = true;
     let listings = 0;
     const requested: string[][] = [];
+    function incomplete(meetings: JsonObject[]) {
+      switch (mode) {
+        case 'transient':
+          throw new Error('Detail request failed');
+        case 'missing-summary':
+          delete meetings[0]!.summary;
+          return meetings;
+        case 'missing':
+          return meetings.slice(1);
+        case 'duplicate':
+          return [...meetings, meetings[0]!];
+        case 'foreign':
+          return [...meetings.slice(1), meeting('unexpected')];
+      }
+    }
     const f = await fixture({
       registration: granolaMeetings,
       provider: {
@@ -91,17 +107,9 @@ test.each(['transient', 'missing', 'duplicate', 'foreign'] as const)(
           }
           const batch = input.meeting_ids as string[];
           requested.push(batch);
-          let meetings = batch.map(meeting);
+          let meetings: JsonObject[] = batch.map(meeting);
           if (fail && batch.includes('10')) {
-            if (mode === 'transient') {
-              throw new Error('Detail request failed');
-            }
-            meetings =
-              mode === 'missing'
-                ? meetings.slice(1)
-                : mode === 'duplicate'
-                  ? [...meetings, meetings[0]!]
-                  : [...meetings.slice(1), meeting('unexpected')];
+            meetings = incomplete(meetings);
           }
           return Promise.resolve({ meetings });
         },
@@ -131,3 +139,91 @@ test.each(['transient', 'missing', 'duplicate', 'foreign'] as const)(
     }
   },
 );
+
+test('Granola rechecks edits without checkpoint state and distinguishes missing summaries from intentionally empty notes', async () => {
+  let summary: string | undefined = 'Original notes';
+  const f = await fixture({
+    registration: granolaMeetings,
+    provider: {
+      get: unused,
+      post: unused,
+      action({ id }) {
+        // Listing previews intentionally have no summary.
+        const preview = { id: 'meeting', title: 'Planning' };
+        return Promise.resolve({
+          meetings: [
+            id === 'granola.list_meetings'
+              ? preview
+              : {
+                  ...preview,
+                  ...(summary === undefined ? {} : { summary }),
+                },
+          ],
+        });
+      },
+    },
+  });
+  try {
+    await f.finish();
+    expect(f.saved.checkpoint).toEqual({});
+    expect(f.records[0]).toMatchObject({
+      id: 'meeting',
+      revision: 1,
+      data: { notes: 'Original notes' },
+    });
+    summary = undefined;
+    f.queue();
+    await f.engine.tick();
+    expect(f.saved).toMatchObject({
+      status: 'retrying',
+      checkpoint: {},
+      errorCode: 'execution_failed',
+    });
+    expect(f.engine.api.status(owner).queue.pendingRecords).toBe(0);
+    expect(f.records).toHaveLength(1);
+    await f.restart();
+    summary = '';
+    f.queue();
+    await f.finish();
+    expect(f.saved.checkpoint).toEqual({});
+    expect(f.records.at(-1)).toMatchObject({ id: 'meeting', revision: 2, data: { notes: '' } });
+    f.queue();
+    await f.finish();
+    expect(f.records).toHaveLength(2);
+  } finally {
+    await f.close();
+  }
+});
+
+test('Granola rejects ambiguous duplicate listing IDs before fetching details', async () => {
+  let duplicate = true;
+  let details = 0;
+  const f = await fixture({
+    registration: granolaMeetings,
+    provider: {
+      get: unused,
+      post: unused,
+      action({ id }) {
+        if (id === 'granola.list_meetings') {
+          return Promise.resolve({
+            meetings: duplicate ? [meeting('same'), meeting('same')] : [meeting('same')],
+          });
+        }
+        details++;
+        return Promise.resolve({ meetings: [meeting('same')] });
+      },
+    },
+  });
+  try {
+    await f.engine.tick();
+    expect(f.saved).toMatchObject({ status: 'retrying', checkpoint: {} });
+    expect(details).toBe(0);
+    expect(f.engine.api.status(owner).queue.pendingRecords).toBe(0);
+    duplicate = false;
+    f.queue();
+    await f.finish();
+    expect(f.records.map((record) => record.id)).toEqual(['same']);
+  } finally {
+    await f.close();
+  }
+});
