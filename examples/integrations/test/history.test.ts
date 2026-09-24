@@ -4,6 +4,7 @@ import { gmailThreads } from '../src/syncs/gmail/definition';
 import { historyStart } from '../src/syncs/history';
 import { slackThreads } from '../src/syncs/slack/definition';
 import { fixture, unused } from './fixture';
+import { email, profile, reply } from './gmail-fixture';
 
 test('history presets use calendar months, clamp month ends and leave All unbounded', () => {
   const now = new Date('2024-05-31T12:34:56.000Z');
@@ -37,81 +38,74 @@ for (const registration of [gmailThreads, slackThreads]) {
     async ({ history, count }) => {
       const dates = Object.values(agesInDays).map((days) => new Date(Date.now() - days * dayMs));
       const queries: JsonObject[] = [];
+      function gmailResponse(input: { path: string; query?: JsonObject }) {
+        const { path, query = {} } = input;
+        if (path.endsWith('/profile')) {
+          return reply(profile);
+        }
+        if (path.endsWith('/history')) {
+          return reply({ historyId: '100' });
+        }
+        if (!path.endsWith('/threads')) {
+          const id = path.split('/').at(-1)!;
+          return reply({
+            id,
+            messages: [email({ id, threadId: id, date: new Date(Number(id)).toISOString() })],
+          });
+        }
+        queries.push(query);
+        const search = String(query.q);
+        const oldest = Number(search.match(/after:(\d+)/)?.[1] ?? 0) * millisecondsPerSecond;
+        const latest = Number(search.match(/before:(\d+)/)?.[1]) * millisecondsPerSecond;
+        const matches = dates.filter((date) => date.getTime() > oldest && date.getTime() < latest);
+        const index = Number(query.pageToken ?? 0);
+        const date = matches[index];
+        return reply({
+          threads: date ? [{ id: String(date.getTime()) }] : [],
+          nextPageToken: index + 1 < matches.length ? String(index + 1) : null,
+        });
+      }
+      function slackResponse({ path, query = {} }: { path: string; query?: JsonObject }) {
+        let body: JsonObject;
+        if (path === '/auth.test') {
+          body = { team_id: 'team', user_id: 'alice', url: 'https://example.slack.com/' };
+        } else if (path === '/users.conversations') {
+          body = { channels: [{ id: 'general' }] };
+        } else if (path === '/conversations.info') {
+          body = { channel: { id: query.channel! } };
+        } else {
+          queries.push(query);
+          const matches = dates.filter(
+            (date) =>
+              date.getTime() / millisecondsPerSecond >= Number(query.oldest) &&
+              date.getTime() / millisecondsPerSecond <= Number(query.latest),
+          );
+          const index = Number(query.cursor ?? 0);
+          const date = matches[index];
+          body = {
+            messages: date
+              ? [
+                  {
+                    ts: `${Math.floor(date.getTime() / millisecondsPerSecond)}.000001`,
+                    text: 'Hello',
+                  },
+                ]
+              : [],
+            has_more: index + 1 < matches.length,
+            response_metadata: {
+              next_cursor: index + 1 < matches.length ? String(index + 1) : '',
+            },
+          };
+        }
+        return Promise.resolve({ status: 200, headers: {}, body: { ok: true, ...body } });
+      }
       const f = await fixture({
         registration,
         config: { history },
         provider: {
           post: unused,
-          action({ id, input }) {
-            if (id === 'gmail.get_profile') {
-              return Promise.resolve<JsonObject>({ emailAddress: 'alice@example.com' });
-            }
-            queries.push(input);
-            const query = String(input.query);
-            const oldest = Number(query.match(/after:(\d+)/)?.[1] ?? 0) * millisecondsPerSecond;
-            const latest = Number(query.match(/before:(\d+)/)?.[1]) * millisecondsPerSecond;
-            const matches = dates.filter(
-              (date) => date.getTime() > oldest && date.getTime() < latest,
-            );
-            const index = Number(input.pageToken ?? 0);
-            const date = matches[index];
-            return Promise.resolve<JsonObject>({
-              threads: date
-                ? [
-                    {
-                      threadId: String(index),
-                      messages: [
-                        {
-                          messageId: String(index),
-                          threadId: String(index),
-                          subject: 'Historical thread',
-                          sender: 'alice@example.com',
-                          to: 'sam@example.com',
-                          messageTimestamp: date.toISOString(),
-                          messageText: 'Hello',
-                          labelIds: [],
-                        },
-                      ],
-                    },
-                  ]
-                : [],
-              nextPageToken: index + 1 < matches.length ? String(index + 1) : null,
-            });
-          },
-          get({ path, query = {} }) {
-            let body: JsonObject;
-            if (path === '/auth.test') {
-              body = { team_id: 'team', user_id: 'alice', url: 'https://example.slack.com/' };
-            } else if (path === '/users.conversations') {
-              body = { channels: [{ id: 'general' }] };
-            } else if (path === '/conversations.info') {
-              body = { channel: { id: query.channel! } };
-            } else {
-              queries.push(query);
-              const matches = dates.filter(
-                (date) =>
-                  date.getTime() / millisecondsPerSecond >= Number(query.oldest) &&
-                  date.getTime() / millisecondsPerSecond <= Number(query.latest),
-              );
-              const index = Number(query.cursor ?? 0);
-              const date = matches[index];
-              body = {
-                messages: date
-                  ? [
-                      {
-                        ts: `${Math.floor(date.getTime() / millisecondsPerSecond)}.000001`,
-                        text: 'Hello',
-                      },
-                    ]
-                  : [],
-                has_more: index + 1 < matches.length,
-                response_metadata: {
-                  next_cursor: index + 1 < matches.length ? String(index + 1) : '',
-                },
-              };
-            }
-            return Promise.resolve({ status: 200, headers: {}, body: { ok: true, ...body } });
-          },
+          action: unused,
+          get: registration === gmailThreads ? gmailResponse : slackResponse,
         },
       });
       try {
@@ -120,7 +114,7 @@ for (const registration of [gmailThreads, slackThreads]) {
         await f.finish();
         expect(f.records).toHaveLength(count);
         if (registration === gmailThreads) {
-          expect(new Set(queries.map((query) => query.query)).size).toBe(1);
+          expect(new Set(queries.map((query) => query.q)).size).toBe(1);
         } else {
           expect(new Set(queries.map((query) => query.oldest)).size).toBe(1);
           expect(new Set(queries.map((query) => query.latest)).size).toBe(1);

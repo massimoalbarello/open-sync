@@ -16,14 +16,21 @@ export const threadSchema = z.strictObject({
   messages: z.array(messageSchema).min(1),
 });
 export const checkpointSchema = z.strictObject({
+  // Mailbox identity; survives completed iterations to reject a different account.
   account: z.string().nullable(),
+  // Frozen search for the initial/recovery backfill. Null afterwards selects history.list.
   query: z.string().nullable(),
+  // Native page position within either listing; cleared when that listing completes.
   pageToken: z.string().nullable(),
+  // Durable change token, captured BEFORE backfill and advanced only after history is exhausted.
+  // Unlike pageToken, this survives completed polls and catches changes during the backfill.
+  historyId: z.string().regex(/^\d+$/).nullable(),
 });
 export const initialCheckpoint: z.infer<typeof checkpointSchema> = {
   account: null,
   query: null,
   pageToken: null,
+  historyId: null,
 };
 
 const providerMessageSchema = z.object({
@@ -37,12 +44,7 @@ const providerMessageSchema = z.object({
   labelIds: z.array(z.string()),
   payload: payloadSchema,
 });
-export const responseSchema = z.object({
-  threads: z.array(
-    z.object({
-      threadId: z.string().min(1),
-      messages: z.array(providerMessageSchema).min(1),
-    }),
-  ),
-  nextPageToken: z.string().nullable().optional(),
+export const providerThreadSchema = z.object({
+  threadId: z.string().min(1),
+  messages: z.array(providerMessageSchema).min(1),
 });

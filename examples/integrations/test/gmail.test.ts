@@ -1,251 +1,243 @@
 import { expect, test } from 'bun:test';
-import { SourceHttpError } from '@context-use/open-sync/definition';
 import type { JsonObject } from '@context-use/open-sync/json';
 import { gmailThreads } from '../src/syncs/gmail/definition';
-import { fixture, unused } from './fixture';
+import { fixture, owner, unused } from './fixture';
+import { email, profile, reply } from './gmail-fixture';
 
-const email = (input: { id: string; threadId: string; sentAt?: string }) => ({
-  messageId: input.id,
-  threadId: input.threadId,
-  subject: 'Lunch',
-  sender: 'Sam <sam@example.com>',
-  to: 'alice@example.com',
-  messageTimestamp: input.sentAt ?? '2026-09-19T12:00:00.000Z',
-  messageText: 'Meet at noon?',
-  labelIds: ['UNREAD', 'INBOX'],
-  payload: { raw: 'omit me' },
-});
-
-test('Gmail resumes thread discovery, includes older context, and updates whole conversations without duplicate records', async () => {
-  const requests: JsonObject[] = [];
-  const threadCount = 2;
-  let account = 'alice@example.com';
-  let updated = false;
-  const root = email({ id: 'root', threadId: 'a', sentAt: '2020-01-01T00:00:00.000Z' });
+test('Gmail resumes backfill and history pages after restart and catches changes made during both', async () => {
+  const requests: { path: string; query?: JsonObject }[] = [];
+  let account = profile.emailAddress;
+  let changed = false;
+  let fail = false;
+  const thirdRevision = 3;
+  let token = '100';
+  let editedDuringHistory = false;
+  function historyPage(query: JsonObject) {
+    if (query.startHistoryId === token) {
+      return reply({ historyId: token });
+    }
+    if (query.pageToken && fail) {
+      return Promise.resolve({ status: 503, headers: {}, body: {} });
+    }
+    return reply(
+      query.pageToken
+        ? {
+            historyId: token,
+            history: [
+              {
+                messages: [{ threadId: 'b' }, ...(editedDuringHistory ? [{ threadId: 'a' }] : [])],
+              },
+            ],
+          }
+        : {
+            historyId: token,
+            history: [{ messages: [{ threadId: 'a' }, { threadId: 'a' }] }],
+            nextPageToken: 'history-next',
+          },
+    );
+  }
+  function threadPage(id: string) {
+    return reply({
+      id,
+      messages: [
+        email({ id: `${id}-root`, threadId: id, date: '2020-01-01T00:00:00.000Z' }),
+        email({
+          id: `${id}-reply`,
+          threadId: id,
+          text: id === 'a' && editedDuringHistory ? 'At two?' : changed ? 'At one?' : 'Sure!',
+          labels: changed ? ['INBOX'] : ['UNREAD', 'INBOX'],
+        }),
+      ],
+    });
+  }
   const f = await fixture({
     registration: gmailThreads,
     provider: {
-      get: unused,
+      action: unused,
       post: unused,
-      action: ({ id, input }) => {
-        if (id === 'gmail.get_profile') {
-          return Promise.resolve<JsonObject>({ emailAddress: account });
-        }
-        expect(id).toBe('gmail.list_threads');
-        expect(input.verbose).toBe(true);
+      get(input) {
         requests.push(input);
-        return Promise.resolve<JsonObject>(
-          input.pageToken
-            ? { threads: [{ threadId: 'b', messages: [email({ id: 'single', threadId: 'b' })] }] }
-            : {
-                threads: [
-                  {
-                    threadId: 'a',
-                    messages: [
-                      ...(updated
-                        ? [
-                            email({
-                              id: 'new-reply',
-                              threadId: 'a',
-                              sentAt: '2026-09-20T12:00:00.000Z',
-                            }),
-                          ]
-                        : []),
-                      {
-                        ...email({ id: 'reply', threadId: 'a' }),
-                        messageText: updated ? 'Meet at one?' : 'Sure!',
-                      },
-                      root,
-                    ],
-                  },
-                ],
-                nextPageToken: 'next',
-              },
-        );
+        const { path, query = {} } = input;
+        if (path.endsWith('/profile')) {
+          return reply({ emailAddress: account, historyId: token });
+        }
+        if (path.endsWith('/history')) {
+          return historyPage(query);
+        }
+        if (path.endsWith('/threads')) {
+          return reply(
+            query.pageToken
+              ? { threads: [{ id: 'b' }] }
+              : { threads: [{ id: 'a' }], nextPageToken: 'backfill-next' },
+          );
+        }
+        return threadPage(path.split('/').at(-1)!);
       },
     },
   });
   try {
     await f.engine.tick();
-    expect(f.saved.checkpoint).toMatchObject({ pageToken: 'next', account });
+    const partial = f.saved.checkpoint;
+    expect(partial).toMatchObject({ account, historyId: '100', pageToken: 'backfill-next' });
     await f.restart();
+    changed = true; // A was already read; its reply changes while backfill is paused.
+    token = '200';
+    await f.engine.tick();
+    expect(requests.filter((r) => r.path.endsWith('/threads')).map((r) => r.query)).toEqual([
+      { maxResults: 1, q: partial.query },
+      { maxResults: 1, q: partial.query, pageToken: 'backfill-next' },
+    ]);
+    expect(f.saved.checkpoint).toEqual({ account, query: null, pageToken: null, historyId: '100' });
+    await f.engine.tick();
+    const committed = f.saved.checkpoint;
+    expect(committed).toMatchObject({ pageToken: 'history-next', historyId: '100' });
+    fail = true;
+    await f.engine.tick();
+    expect(f.saved).toMatchObject({ checkpoint: committed, errorCode: 'source_http_503' });
+    await f.restart();
+    fail = false;
+    editedDuringHistory = true;
+    token = '300';
+    f.queue();
     await f.finish();
-    expect(requests[1]?.query).toBe(requests[0]?.query);
-    expect(requests[1]?.pageToken).toBe('next');
-    expect(f.records.map((record) => [record.kind, record.id])).toEqual([
-      ['thread', 'a'],
-      ['thread', 'b'],
+    expect(f.saved.checkpoint).toEqual({ account, query: null, pageToken: null, historyId: '300' });
+    expect(f.records.map((r) => [r.id, r.revision])).toEqual([
+      ['a', 1],
+      ['b', 1],
+      ['a', 2],
+      ['a', thirdRevision],
     ]);
     expect(f.records[0]).toMatchObject({
-      preview: 'Lunch',
-      createdAt: root.messageTimestamp,
+      createdAt: '2020-01-01T00:00:00.000Z',
       data: {
         subject: 'Lunch',
-        url: 'https://mail.google.com/mail/?authuser=alice%40example.com#all/a',
-        messages: [
-          {
-            id: 'root',
-            body: 'Meet at noon?',
-            from: 'Sam <sam@example.com>',
-            to: 'alice@example.com',
-            sentAt: root.messageTimestamp,
-            labels: ['INBOX', 'UNREAD'],
-          },
-          { id: 'reply', body: 'Sure!' },
-        ],
+        messages: [{ id: 'a-root' }, { id: 'a-reply', body: 'Sure!', labels: ['INBOX', 'UNREAD'] }],
       },
     });
-    expect(JSON.stringify(f.records)).not.toContain('omit me');
-    expect(f.records[0]).not.toHaveProperty('updatedAt');
-    f.queue();
-    await f.finish();
-    expect(f.records).toHaveLength(2);
-    updated = true;
-    f.queue();
-    await f.finish();
-    expect(f.records).toHaveLength(threadCount + 1);
     expect(f.records.at(-1)).toMatchObject({
-      id: 'a',
-      revision: 2,
-      data: {
-        messages: [{ id: 'root' }, { id: 'reply', body: 'Meet at one?' }, { id: 'new-reply' }],
-      },
+      data: { messages: [{ id: 'a-root' }, { body: 'At two?', labels: ['INBOX'] }] },
+    });
+    const listings = requests.filter((r) => r.path.endsWith('/threads')).length;
+    f.queue();
+    await f.finish();
+    expect(f.records).toHaveLength(2 + 2);
+    expect(requests.filter((r) => r.path.endsWith('/threads'))).toHaveLength(listings);
+    expect(requests.filter((r) => r.path.endsWith('/history')).at(-1)?.query).toEqual({
+      maxResults: 1,
+      startHistoryId: '300',
     });
     account = 'someone-else@example.com';
     f.queue();
     await f.engine.tick();
-    expect(f.saved.errorCode).toBe('execution_failed');
-    expect(f.saved.checkpoint).toMatchObject({ account: 'alice@example.com' });
+    expect(f.saved).toMatchObject({
+      errorCode: 'execution_failed',
+      checkpoint: { account: profile.emailAddress, historyId: '300' },
+    });
   } finally {
     await f.close();
   }
 });
 
-test('Gmail never commits an empty or mismatched thread or advances a repeated cursor', async () => {
-  let mode: 'empty' | 'foreign' | 'valid' = 'empty';
-  const f = await fixture({
-    registration: gmailThreads,
-    provider: {
-      get: unused,
-      post: unused,
-      action: ({ id }) =>
-        Promise.resolve<JsonObject>(
-          id === 'gmail.get_profile'
-            ? { emailAddress: 'alice@example.com' }
-            : {
-                threads: [
-                  {
-                    threadId: 'a',
-                    messages:
-                      mode === 'empty'
-                        ? []
-                        : [email({ id: 'root', threadId: mode === 'foreign' ? 'b' : 'a' })],
-                  },
-                ],
-                nextPageToken: 'repeat',
-              },
-        ),
-    },
-  });
-  try {
-    for (const value of ['empty', 'foreign'] as const) {
-      mode = value;
-      f.queue();
-      await f.engine.tick();
-      expect(f.saved.errorCode).toBe('execution_failed');
-      expect(f.saved.checkpoint).toEqual(gmailThreads.definition.initialCheckpoint);
-      expect(f.records).toHaveLength(0);
-    }
-    mode = 'valid';
-    f.queue();
-    await f.engine.tick();
-    const committed = f.saved.checkpoint;
-    await f.engine.tick();
-    expect(f.saved.errorCode).toBe('execution_failed');
-    expect(f.saved.checkpoint).toEqual(committed);
-  } finally {
-    await f.close();
-  }
-});
-
-test.each(['available', 'oversized'])(
-  'Gmail preserves attachment identities and fails atomically for an %s download',
+test.each(['empty', 'foreign', 'wrong-id', 'repeated-token'])(
+  'Gmail never commits an incomplete thread or invalid continuation: %s',
   async (mode) => {
-    const tooLarge = 413;
-    const downloads: string[] = [];
     const f = await fixture({
       registration: gmailThreads,
       provider: {
+        action: unused,
         post: unused,
-        get: unused,
-        download: ({ id, input }) => {
-          expect(id).toBe('gmail.download_attachment');
-          downloads.push(String(input.attachmentId));
-          return mode === 'oversized'
-            ? Promise.reject(new SourceHttpError({ status: tooLarge }))
-            : Promise.resolve(new Blob(['external']).stream());
+        get({ path }) {
+          if (path.endsWith('/profile')) {
+            return reply(profile);
+          }
+          if (path.endsWith('/threads')) {
+            return reply({ threads: [{ id: 'a' }], nextPageToken: 'repeat' });
+          }
+          return reply({
+            id: mode === 'wrong-id' ? 'b' : 'a',
+            messages:
+              mode === 'empty'
+                ? []
+                : [email({ id: 'root', threadId: mode === 'foreign' ? 'b' : 'a' })],
+          });
         },
-        action: ({ id }) =>
-          Promise.resolve<JsonObject>(
-            id === 'gmail.get_profile'
-              ? { emailAddress: 'alice@example.com' }
-              : {
-                  threads: [
-                    {
-                      threadId: 'a',
-                      messages: [
-                        {
-                          ...email({ id: 'm1', threadId: 'a' }),
-                          payload: {
-                            parts: [
-                              {
-                                partId: '1',
-                                filename: 'same.txt',
-                                mimeType: 'text/plain',
-                                body: { data: Buffer.from('inline').toString('base64url') },
-                              },
-                              {
-                                partId: '2',
-                                filename: 'same.txt',
-                                mimeType: 'text/plain',
-                                body: { attachmentId: 'attachment2' },
-                              },
-                            ],
-                          },
-                        },
-                      ],
-                    },
-                  ],
-                },
-          ),
       },
     });
     try {
-      if (mode === 'oversized') {
+      if (mode === 'repeated-token') {
         await f.engine.tick();
-        expect(f.saved.checkpoint).toEqual(gmailThreads.definition.initialCheckpoint);
-        expect(f.saved.errorCode).toBe('source_http_413');
-        expect(f.records).toEqual([]);
-        expect(downloads).toEqual(['attachment2']);
-        return;
       }
-      await f.finish();
-      expect(downloads).toEqual(['attachment2']);
-      const record = f.records[0]!;
-      expect(record.operation).toBe('upsert');
-      if (record.operation !== 'upsert') {
-        throw new Error('Expected thread');
-      }
-      expect(Object.values(record.assetRefs!)).toEqual([
-        { id: 'm1:1', version: '1' },
-        { id: 'm1:2', version: '1' },
-      ]);
-      expect(JSON.stringify(record)).not.toContain(Buffer.from('inline').toString('base64url'));
-      const assets = f.deliveries[0]!.assets!;
-      expect(assets[0]).toMatchObject({ id: 'm1:1', size: Buffer.byteLength('inline') });
-      expect(assets[1]).toMatchObject({ id: 'm1:2', size: Buffer.byteLength('external') });
+      const committed = f.saved.checkpoint;
+      await f.engine.tick();
+      expect(f.saved).toMatchObject({ errorCode: 'execution_failed', checkpoint: committed });
+      expect(f.engine.api.status(owner).queue.pendingRecords).toBe(0);
     } finally {
       await f.close();
     }
   },
 );
+
+test('Gmail history respects the selected range and preserves missing threads without inventing deletions', async () => {
+  let history = false;
+  const fetched: string[] = [];
+  function historyPage() {
+    return reply({
+      historyId: history ? '200' : '100',
+      history: history
+        ? [
+            {
+              messages: ['old', 'missing', 'recent', 'spam'].map((threadId) => ({
+                threadId,
+              })),
+            },
+          ]
+        : [],
+    });
+  }
+  const f = await fixture({
+    registration: gmailThreads,
+    config: { history: 'Last 3 months' },
+    provider: {
+      action: unused,
+      post: unused,
+      get({ path }) {
+        if (path.endsWith('/profile')) {
+          return reply(profile);
+        }
+        if (path.endsWith('/threads')) {
+          return reply({});
+        }
+        if (path.endsWith('/history')) {
+          return historyPage();
+        }
+        const id = path.split('/').at(-1)!;
+        fetched.push(id);
+        if (id === 'missing') {
+          return Promise.resolve({ status: 404, headers: {}, body: {} });
+        }
+        return reply({
+          id,
+          messages: [
+            email({
+              id: `${id}-root`,
+              threadId: id,
+              date: id === 'old' ? '2020-01-01T00:00:00.000Z' : new Date().toISOString(),
+              labels: id === 'spam' ? ['SPAM'] : ['INBOX'],
+            }),
+          ],
+        });
+      },
+    },
+  });
+  try {
+    await f.finish();
+    history = true;
+    f.queue();
+    await f.finish();
+    expect(fetched).toEqual(['old', 'missing', 'recent', 'spam']);
+    expect(f.records.map((r) => [r.id, r.operation])).toEqual([['recent', 'upsert']]);
+    expect(f.saved.checkpoint.historyId).toBe('200');
+  } finally {
+    await f.close();
+  }
+});

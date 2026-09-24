@@ -9,10 +9,16 @@ export const gmailThreads = {
     id: 'gmail.threads',
     name: 'Gmail threads',
     description:
-      'Complete email threads with activity within the selected history range, including older messages in each conversation. Rechecks for changes; does not infer deleted threads.',
+      'Complete email threads within the selected history range, including older conversation context. Backfills once, then follows Gmail history for replies and label changes; preserves unavailable threads.',
     provider: {
       service: 'gmail',
-      actions: ['gmail.get_profile', 'gmail.list_threads', 'gmail.download_attachment'],
+      actions: ['gmail.download_attachment'],
+      proxyPaths: [
+        '/users/me/profile',
+        '/users/me/threads',
+        '/users/me/threads/:id',
+        '/users/me/history',
+      ],
     },
     configSchema: jsonSchema(historyConfigSchema),
     checkpointSchema: jsonSchema(checkpointSchema),
