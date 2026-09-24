@@ -107,6 +107,12 @@ async function connectSource(input: {
   await page.getByText('Connected', { exact: true }).waitFor();
   await page.goto(`${origin}/syncs/${syncId}`);
   await page.getByRole('heading', { name: `${source.name} → Local SQLite`, exact: true }).waitFor();
+  if (source.service === 'granola') {
+    await page.getByText('connector request failed', { exact: true }).first().waitFor();
+    assert.equal((await readSync({ ...input, id: syncId })).status, 'retrying');
+    assert.deepEqual(await readDeliverables({ ...input, syncId }), []);
+    await page.getByRole('button', { name: 'Run now', exact: true }).click();
+  }
   await waitForSync({ ...input, id: syncId });
   await drainDeliveries({ ...input, syncId });
   await inspectReceivedJourney({ ...input, syncId, service: source.service, kind: source.kind });
