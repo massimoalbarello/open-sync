@@ -65,6 +65,9 @@ function gmailResponse(request: Request) {
       data: Buffer.from('external attachment').toString('base64url'),
     });
   }
+  if (url.pathname.endsWith('/history')) {
+    return Response.json({ historyId: '1' });
+  }
   if (url.pathname.endsWith('/threads')) {
     const query = url.searchParams.get('q') ?? '';
     const oldest = Number(query.match(/after:(\d+)/)?.[1] ?? 0);

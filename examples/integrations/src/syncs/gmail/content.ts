@@ -1,9 +1,9 @@
 import TurndownService from 'turndown';
 import type { z } from 'zod';
 import type { payloadSchema } from './attachments';
-import type { responseSchema } from './models';
+import type { providerThreadSchema } from './models';
 
-type Message = z.infer<typeof responseSchema>['threads'][number]['messages'][number];
+type Message = z.infer<typeof providerThreadSchema>['messages'][number];
 
 /** This example chooses Markdown and retains full structured messages. Other sources choose their own split. */
 export function threadContent(messages: Message[]) {
