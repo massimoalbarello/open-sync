@@ -287,56 +287,59 @@ test('Slack backfills historical threads across pages and restarts, preserves pr
   }
 });
 
-test.each(['missing-root', 'foreign-reply', 'missing-cursor', 'repeated-cursor'])(
-  'Slack does not deliver a thread with %s',
-  async (mode) => {
-    const f = await fixture({
-      registration: slackThreads,
-      provider: {
-        action: unused,
-        post: unused,
-        get: ({ path, query = {} }) => {
-          if (path === '/auth.test') {
-            return response({
-              team_id: 'team',
-              user_id: 'alice',
-              url: 'https://example.slack.com/',
-            });
-          }
-          if (path === '/users.conversations') {
-            return response({ channels: [{ id: 'a' }] });
-          }
-          if (path === '/conversations.history') {
-            return response({ messages: [root] });
-          }
-          if (mode === 'missing-root') {
-            return response({ messages: [reply({ ts: '1750000001.000001', text: 'Reply' })] });
-          }
-          if (mode === 'foreign-reply') {
-            return response({ messages: [root, { ts: '1750000001.000001', thread_ts: 'other' }] });
-          }
-          if (mode === 'missing-cursor') {
-            return response({ messages: [root], has_more: true });
-          }
+test.each([
+  'missing-root',
+  'foreign-reply',
+  'missing-cursor',
+  'repeated-cursor',
+  'limited-history',
+])('Slack does not deliver a thread with %s', async (mode) => {
+  const f = await fixture({
+    registration: slackThreads,
+    provider: {
+      action: unused,
+      post: unused,
+      get: ({ path, query = {} }) => {
+        if (path === '/auth.test') {
           return response({
-            messages: query.cursor ? [reply({ ts: '1750000001.000001', text: 'Reply' })] : [root],
-            has_more: true,
-            response_metadata: { next_cursor: 'repeat' },
+            team_id: 'team',
+            user_id: 'alice',
+            url: 'https://example.slack.com/',
           });
-        },
+        }
+        if (path === '/users.conversations') {
+          return response({ channels: [{ id: 'a' }] });
+        }
+        if (path === '/conversations.history') {
+          return response({ messages: [root], is_limited: mode === 'limited-history' });
+        }
+        if (mode === 'missing-root') {
+          return response({ messages: [reply({ ts: '1750000001.000001', text: 'Reply' })] });
+        }
+        if (mode === 'foreign-reply') {
+          return response({ messages: [root, { ts: '1750000001.000001', thread_ts: 'other' }] });
+        }
+        if (mode === 'missing-cursor') {
+          return response({ messages: [root], has_more: true });
+        }
+        return response({
+          messages: query.cursor ? [reply({ ts: '1750000001.000001', text: 'Reply' })] : [root],
+          has_more: true,
+          response_metadata: { next_cursor: 'repeat' },
+        });
       },
-    });
-    try {
-      const committed = f.saved.checkpoint;
-      await f.engine.tick();
-      expect(f.saved.errorCode).toBe('execution_failed');
-      expect(f.saved.checkpoint).toEqual(committed);
-      expect(f.records).toHaveLength(0);
-    } finally {
-      await f.close();
-    }
-  },
-);
+    },
+  });
+  try {
+    const committed = f.saved.checkpoint;
+    await f.engine.tick();
+    expect(f.saved.errorCode).toBe('execution_failed');
+    expect(f.saved.checkpoint).toEqual(committed);
+    expect(f.records).toHaveLength(0);
+  } finally {
+    await f.close();
+  }
+});
 
 test('Slack finishes every page of the last channel, crosses empty directory pages, and retains the frozen window on recovery', async () => {
   const directories: JsonObject[] = [];

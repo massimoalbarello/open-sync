@@ -59,6 +59,8 @@ export const initialCheckpoint: Checkpoint = {
 };
 export const paginationSchema = z.object({ next_cursor: z.string().optional() });
 export const historySchema = z.object({
+  // An explicit provider history limit is not an exhausted, complete scan.
+  is_limited: z.literal(false).optional(),
   messages: z.array(providerMessageSchema),
   has_more: z.boolean().optional(),
   response_metadata: paginationSchema.optional(),
