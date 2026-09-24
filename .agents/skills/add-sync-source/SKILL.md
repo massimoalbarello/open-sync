@@ -37,6 +37,21 @@ Follow the repository's engineering and compatibility guidance.
   ordering and scan boundaries where available; replay safely when recovery requires revisiting
   data. A missing item in a partial listing is not evidence of deletion.
 
+## Explain the checkpoint
+
+- Explain each field beside the source's checkpoint schema and why it survives a page, retry,
+  restart, or completed polling iteration. Distinguish a pagination cursor within an iteration
+  from a provider change token that can safely span iterations; do not assume they are equivalent.
+- When polling mutable results by their update timestamps without a provider change token, keep
+  the previous completed watermark while paging and freeze an `iterationStartedAt` before the
+  first request. Advance the watermark only when the whole iteration succeeds.
+  Using its start rather than its finish keeps edits made during the scan
+  eligible next time. Recover an expired page cursor without discarding that time window.
+- Explain the ordering and stopping condition, including timestamp ties and any overlap. Verify
+  that the actual endpoint supports them. A finite overlap is not a guarantee against arbitrary
+  late visibility, newly granted access to old records, or changes that do not update the queried
+  timestamp; state those limits rather than silently assuming a complete change feed.
+
 ## Keep output replayable
 
 - Use stable record IDs and deterministic content. Preserve upstream timestamps; avoid adding
@@ -61,7 +76,9 @@ Follow the repository's engineering and compatibility guidance.
 Test with the real engine and durable storage: fail after some data or an asset has been fetched,
 verify no partial records or advanced checkpoint are committed, then restart and finish the step.
 Cover resuming at the next provider page without re-fetching preceding listing pages, multi-page
-completion, replay without duplicate changes, and cursor recovery. For pagination exceptions,
+completion, replay without duplicate changes, and cursor recovery. For timestamp-based scans,
+cover cutoff ties across pages and an edit that moves ahead of the cursor during an interrupted
+iteration: it must remain eligible in the next iteration. For pagination exceptions,
 cover incomplete listings and the declared coverage limit. Check the source's update/deletion
 semantics and checkpoint compatibility. Implementations are registered by name; replace the sync
 for incompatible changes instead of silently reinterpreting its saved checkpoint.

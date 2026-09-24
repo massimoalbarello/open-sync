@@ -15,13 +15,11 @@ const pullPage = z.object({
     .max(10),
   pageInfo: z.object({ hasNextPage: z.boolean() }),
 });
-export async function discoverPulls(input: {
-  context: SyncContext;
-  checkpoint: Checkpoint;
-  seen: Set<string>;
-}) {
+export async function discoverPulls(input: { context: SyncContext; checkpoint: Checkpoint }) {
   const { context, checkpoint } = input;
-  const updates = checkpoint.phase === 'updates';
+  const updates = checkpoint.watermark !== null;
+  // Creation order keeps backfill stable under edits. Later iterations start at the
+  // newest update and stop at the watermark; reusing a completed cursor would miss edits.
   const order = updates
     ? '{field: UPDATED_AT, direction: DESC}'
     : '{field: CREATED_AT, direction: ASC}';
@@ -35,19 +33,28 @@ export async function discoverPulls(input: {
   if (page.pageInfo.hasNextPage && !page.edges.length) {
     throw new Error('Incomplete GitHub discovery pagination.');
   }
-  const overlapMs = 300_000;
-  const cutoff = checkpoint.watermark ? Date.parse(checkpoint.watermark) - overlapMs : 0;
-  const edges = [];
+  const seen = new Set(checkpoint.cursor ? [checkpoint.cursor] : []);
+  let previousUpdatedAt = Infinity;
   for (const edge of page.edges) {
-    if (updates && Date.parse(edge.node.updatedAt) < cutoff) {
-      return { edges, more: false };
-    }
     const key = edge.cursor;
-    if (input.seen.has(key)) {
+    if (seen.has(key)) {
       throw new Error('GitHub repeated a pull request cursor.');
     }
-    input.seen.add(key);
-    edges.push(edge);
+    seen.add(key);
+    const updatedAt = Date.parse(edge.node.updatedAt);
+    if (updates && updatedAt > previousUpdatedAt) {
+      throw new Error('GitHub returned pull requests out of update order.');
+    }
+    previousUpdatedAt = updatedAt;
   }
-  return { edges, more: page.pageInfo.hasNextPage };
+  // Include cutoff ties and overlap timestamp precision/brief visibility delays.
+  // Unchanged records in this window are suppressed by the engine's change detection.
+  // Old PRs newly made visible, or changes without updatedAt, require an explicit resync.
+  const overlapMs = 300_000;
+  const cutoff = checkpoint.watermark ? Date.parse(checkpoint.watermark) - overlapMs : null;
+  const edges =
+    cutoff === null
+      ? page.edges
+      : page.edges.filter(({ node }) => Date.parse(node.updatedAt) >= cutoff);
+  return { edges, more: page.pageInfo.hasNextPage && edges.length === page.edges.length };
 }

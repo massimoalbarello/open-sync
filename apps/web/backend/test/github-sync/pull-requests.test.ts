@@ -70,8 +70,8 @@ test('GitHub resumes committed pages after restart, then polls only updates sinc
     const completed = f.savedState().checkpoint;
     expect(completed).toMatchObject({
       cursor: null,
-      phase: 'updates',
-      watermark: (partial as { cycleStartedAt: string }).cycleStartedAt,
+      iterationStartedAt: null,
+      watermark: (partial as { iterationStartedAt: string }).iterationStartedAt,
     });
     const allRecords = 3;
     expect(f.delivered.flatMap((batch) => batch.records).length).toBe(allRecords);
@@ -167,7 +167,7 @@ test('partial results, repeated cursors and changed accounts cannot advance GitH
   }
 });
 
-test('cursor recovery preserves account and cycle identity after a committed page', async () => {
+test('cursor recovery preserves account and iteration identity after a committed page', async () => {
   const f = await fixture();
   const resource = { ...owner, id: f.sync.id };
   try {
@@ -177,12 +177,9 @@ test('cursor recovery preserves account and cycle identity after a committed pag
         ? { status: 200, headers: {}, body: { errors: [{ type: 'INVALID_CURSOR_ARGUMENTS' }] } }
         : reply(input);
     await f.engine.tick();
+    const committed = f.savedState().checkpoint;
     await f.engine.tick();
-    expect(f.savedState().checkpoint).toMatchObject({
-      cursor: null,
-      accountId: 'github-native-user-1',
-      watermark: null,
-    });
+    expect(f.savedState().checkpoint).toEqual({ ...committed, cursor: null });
     await f.restart();
     f.provider.respond = reply;
     f.provider.accountId = 'different-account';
@@ -199,7 +196,7 @@ test('cursor recovery preserves account and cycle identity after a committed pag
   }
 });
 
-test('an interrupted incremental poll retains its watermark and resumes the next complete page', async () => {
+test('an interrupted incremental poll retains its window across restart and catches edits to earlier pages next iteration', async () => {
   const f = await fixture();
   const resource = { ...owner, id: f.sync.id };
   try {
@@ -223,10 +220,15 @@ test('an interrupted incremental poll retains its watermark and resumes the next
     };
     f.engine.api.runNow(resource);
     await f.engine.tick();
+    const committed = f.savedState().checkpoint;
     await f.engine.tick();
-    const partial = f.savedState().checkpoint as { cycleStartedAt: string };
+    const partial = f.savedState().checkpoint as { iterationStartedAt: string };
+    expect(partial).toEqual(committed);
     expect(partial).toMatchObject({ cursor: 'cursor-b', watermark: baseline.watermark });
     await f.restart();
+    // A was already delivered; its edit moves ahead of the saved cursor during the pause.
+    f.pulls[0]!.body = 'Edited during the interrupted iteration';
+    f.pulls[0]!.updatedAt = new Date(Date.parse(partial.iterationStartedAt) + 1).toISOString();
     f.provider.respond = reply;
     f.requests.length = 0;
     f.engine.api.runNow(resource);
@@ -239,7 +241,8 @@ test('an interrupted incremental poll retains its watermark and resumes the next
     ).toEqual(['c']);
     expect(f.savedState().checkpoint).toMatchObject({
       cursor: null,
-      watermark: partial.cycleStartedAt,
+      iterationStartedAt: null,
+      watermark: partial.iterationStartedAt,
     });
     expect(
       f.delivered
@@ -247,6 +250,74 @@ test('an interrupted incremental poll retains its watermark and resumes the next
         .filter((record) => record.revision === 2)
         .map((record) => record.id),
     ).toEqual(['a', 'b', 'c']);
+    f.requests.length = 0;
+    f.engine.api.runNow(resource);
+    await f.engine.tick();
+    await f.engine.tick();
+    await f.engine.tick();
+    expect(
+      f.requests.find((request) => request.query.includes(discover))!.variables.after,
+    ).toBeNull();
+    expect(f.delivered.at(-1)!.records).toMatchObject([
+      { id: 'a', revision: 3, data: { body: 'Edited during the interrupted iteration' } },
+    ]);
+  } finally {
+    await f.close();
+  }
+});
+
+test('incremental polling rejects unordered pages, includes cutoff ties across pages, and stops before older history', async () => {
+  const f = await fixture();
+  const resource = { ...owner, id: f.sync.id };
+  try {
+    await f.engine.tick();
+    await f.engine.tick();
+    await f.engine.tick();
+    const baseline = f.savedState().checkpoint;
+    const overlapMs = 300_000;
+    const cutoff = Date.parse(baseline.watermark) - overlapMs;
+    for (const record of f.pulls) {
+      record.updatedAt = new Date(cutoff).toISOString();
+    }
+    f.pulls.push({ ...pull('older'), updatedAt: new Date(cutoff - 1).toISOString() });
+    const reply = f.provider.respond;
+    f.provider.respond = (input) =>
+      input.query.includes(discover)
+        ? {
+            status: 200,
+            headers: {},
+            body: {
+              data: {
+                viewer: {
+                  pullRequests: {
+                    edges: [f.pulls[3]!, f.pulls[0]!].map((node) => ({ cursor: node.id, node })),
+                    pageInfo: { hasNextPage: true },
+                  },
+                },
+              },
+            },
+          }
+        : reply(input);
+    f.engine.api.runNow(resource);
+    await f.engine.tick();
+    expect(f.savedState()).toMatchObject({ checkpoint: baseline, status: 'retrying' });
+    expect(f.engine.api.status(owner).queue.pendingRecords).toBe(0);
+    f.provider.respond = reply;
+    f.requests.length = 0;
+    f.engine.api.runNow(resource);
+    await f.engine.tick();
+    expect(f.savedState().checkpoint).toMatchObject({
+      cursor: 'cursor-b',
+      watermark: baseline.watermark,
+    });
+    await f.engine.tick();
+    await f.engine.tick();
+    expect(
+      f.requests
+        .filter((request) => request.query.includes(summary))
+        .map((request) => request.variables.id),
+    ).toEqual(['a', 'b', 'c']);
+    expect(f.savedState().checkpoint).toMatchObject({ cursor: null, iterationStartedAt: null });
   } finally {
     await f.close();
   }

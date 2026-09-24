@@ -4,7 +4,7 @@ import type { SyncRecord } from '@context-use/open-sync/record';
 import { historyStart } from '../../history';
 import { discoverPulls } from './discovery';
 import { ExpiredCursor } from './response';
-import { beginCycle, checkpointSchema, finishCycle } from './state';
+import { beginIteration, finishIteration } from './state';
 
 type Acquisition = {
   context: SyncContext;
@@ -14,16 +14,15 @@ type Acquisition = {
 /** Fetch every record in a discovery page before returning its cursor. */
 export async function acquire(input: Acquisition): Promise<SyncStep> {
   const { context } = input;
-  let checkpoint = await beginCycle(context);
+  let checkpoint = await beginIteration(context);
   try {
     const page = await discoverPulls({
       context,
       checkpoint,
-      seen: new Set(checkpoint.cursor ? [checkpoint.cursor] : []),
     });
     const oldest = historyStart({
       config: context.config,
-      now: new Date(checkpoint.cycleStartedAt!),
+      now: new Date(checkpoint.iterationStartedAt!),
     });
     const records: SyncRecord[] = [];
     for (const edge of page.edges) {
@@ -35,17 +34,18 @@ export async function acquire(input: Acquisition): Promise<SyncStep> {
     }
     return {
       records,
-      checkpoint: page.more ? checkpoint : finishCycle(checkpoint),
+      checkpoint: page.more ? checkpoint : finishIteration(checkpoint),
       complete: !page.more,
     };
   } catch (error) {
-    if (!(error instanceof ExpiredCursor)) {
+    if (!(error instanceof ExpiredCursor) || !checkpoint.cursor) {
       throw error;
     }
     return {
       records: [],
       complete: false,
-      checkpoint: { ...checkpointSchema.parse(context.checkpoint), cursor: null },
+      // Replay this iteration from its first page without changing its update window.
+      checkpoint: { ...checkpoint, cursor: null },
     };
   }
 }
