@@ -50,7 +50,13 @@ export interface SyncDefinition {
  */
 export interface SyncStep {
   records: readonly SyncRecord[];
+  /** Source-owned resume state, committed atomically with this page's records and outbox.
+   * Include any cross-iteration update boundary as well as the current page position.
+   */
   checkpoint: JsonValue;
+  /** False continues this iteration immediately; true schedules the next poll.
+   * Completion retains the returned checkpoint; the source clears any exhausted page cursor.
+   */
   complete: boolean;
 }
 export interface SyncContext {

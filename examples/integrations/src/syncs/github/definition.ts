@@ -8,7 +8,7 @@ export const githubPullRequests = {
   definition: {
     name: 'GitHub pull requests',
     description:
-      'Authored pull requests as structured JSON. Initial backfill, then incremental polls from the saved watermark with a five-minute overlap and daily reconciliation.',
+      'Authored pull requests as structured JSON. Initial backfill, then incremental polls from the saved watermark with a five-minute overlap.',
     id: 'github.pull-requests',
     provider: {
       service: 'github',
