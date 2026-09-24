@@ -1,7 +1,7 @@
 <div align="center">
   <h1><img src="apps/web/frontend/src/assets/open-sync.svg" alt="" width="32" height="32" align="absmiddle" /> Open Sync</h1>
   <p><em>Data sync from any source to any destination.</em></p>
-  <img src=".github/assets/open-sync-logo.gif" alt="Open Sync's two arrows illuminated by moving warm light" width="640" height="360" />
+  <img src=".github/assets/open-sync-logo.webp" alt="Open Sync's two arrows illuminated by moving warm light" width="720" height="405" />
   <br /><br />
 
 [![Deploy on nibrun](.github/assets/deploy-on-nibrun.svg)](https://app.nibrun.com/deploy?name=open-sync&binary=https%3A%2F%2Fgithub.com%2Fmassimoalbarello%2Fopen-sync%2Freleases%2Fdownload%2Fnibrun-latest%2Fopen-sync&port=3000&minimal)
