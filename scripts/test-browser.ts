@@ -1,5 +1,7 @@
 import { mkdir } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { virtualPasskeyBrowser } from '@repo/browser-testing/browser';
+import { isolatedCrontab } from '../packages/sync/test/cron-support';
 import {
   brandFallbackJourney,
   configureGithub,
@@ -10,7 +12,9 @@ import { startIsolatedApp } from './isolated-app';
 import { exampleSyncsJourney, githubSyncJourney, syncLifecycleJourney } from './sync-journey';
 
 const interactionTimeoutMs = 30_000;
+await using crontab = await isolatedCrontab();
 const app = await startIsolatedApp({
+  environment: { PATH: `${dirname(crontab.executable)}:${process.env.PATH}` },
   serverCommand: [
     'bun',
     'run',

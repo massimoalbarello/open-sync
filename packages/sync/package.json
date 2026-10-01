@@ -10,6 +10,7 @@
     "./json": "./src/models/json.ts",
     "./http": "./src/http/index.ts",
     "./engine": "./src/runtime.ts",
+    "./cron": "./src/cron.ts",
     "./build": "./src/build.ts",
     "./assets": "./src/models/asset.ts"
   },
@@ -26,9 +27,11 @@
     "@cfworker/json-schema": "4.1.1",
     "@oomol-lab/open-connector": "1.7.0",
     "elysia": "^1.4.30",
-    "minisearch": "^7.2.0"
+    "minisearch": "^7.2.0",
+    "proper-lockfile": "4.1.2"
   },
   "devDependencies": {
+    "@types/proper-lockfile": "4.1.4",
     "typescript": "catalog:"
   },
   "engines": {

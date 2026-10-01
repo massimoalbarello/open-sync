@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { createOpenSync, type OpenSyncRuntime } from '@context-use/open-sync';
+import { runCronCommand, startCrontab } from '@context-use/open-sync/cron';
 import { localDestination } from '@open-sync/examples/destinations/local';
 import { granolaClientRegistration } from '@open-sync/examples/providers/granola';
 import { createApp } from '#backend/app.ts';
@@ -16,6 +17,10 @@ import { FrontendAssetsService } from '#backend/services/frontend-assets/service
 import { ReceiverService } from '#backend/services/receiver/service.ts';
 import { syncDefinitions } from '#backend/sync-definitions.ts';
 
+if (await runCronCommand({ args: Bun.argv.slice(2) })) {
+  process.exit(0);
+}
+
 const env = loadEnv();
 const secret = await loadAuthSecret({
   dataFolder: env.DATA_FOLDER,
@@ -23,6 +28,24 @@ const secret = await loadAuthSecret({
 });
 const database = await createSqliteDatabase({ dataFolder: env.DATA_FOLDER });
 let sync: OpenSyncRuntime | undefined;
+let cron: Awaited<ReturnType<typeof startCrontab>> | undefined;
+let app: ReturnType<typeof createApp> | undefined;
+let stopping: Promise<void> | undefined;
+const stop = () => {
+  stopping ??= (async () => {
+    try {
+      await sync?.close();
+    } finally {
+      try {
+        await cron?.close();
+      } finally {
+        await app?.stop();
+        await database.close();
+      }
+    }
+  })();
+  return stopping;
+};
 try {
   await runMigrations({ db: database });
   const auth = createAuth({
@@ -62,7 +85,7 @@ try {
     onEvent: (event) => console.log(JSON.stringify({ event: 'sync.status', ...event })),
   });
   dashboard = new DashboardService(sync);
-  const app = createApp({
+  app = createApp({
     dashboard,
     auth,
     frontend: new FrontendAssetsService(new FrontendAssetsRepository()),
@@ -70,18 +93,24 @@ try {
     syncFetch: sync.fetch,
     origins,
   }).listen({ port: env.PORT, hostname: '0.0.0.0' });
-  sync.start();
+  if (env.SYNC_SCHEDULER === 'cron') {
+    cron = await startCrontab({
+      runtime: sync,
+      directory: join(env.DATA_FOLDER, '.cron'),
+      timeZone: env.NIBRUN_HOSTNAME ? 'UTC' : undefined,
+      command: Bun.isStandaloneExecutable
+        ? [process.execPath]
+        : [process.execPath, ...process.execArgv, Bun.main],
+      onError(error) {
+        console.error('Open Sync cron scheduling failed', error);
+        process.exitCode = 1;
+        void stop();
+      },
+    });
+  } else {
+    sync.start();
+  }
   console.log(`Open Sync listening on http://0.0.0.0:${app.server!.port}`);
-  let stopping = false;
-  const stop = async () => {
-    if (stopping) {
-      return;
-    }
-    stopping = true;
-    await app.stop();
-    await sync?.close();
-    await database.close();
-  };
   process.once('SIGTERM', () => {
     void stop();
   });
@@ -89,7 +118,6 @@ try {
     void stop();
   });
 } catch (error) {
-  await sync?.close();
-  await database.close();
+  await stop();
   throw error;
 }

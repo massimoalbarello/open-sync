@@ -16,7 +16,11 @@ const proc = Bun.spawn(
     'backend/src/main.ts',
   ],
   // stdio is inherited so the child keeps the terminal (TTY) and its output stays colored
-  { stdio: ['inherit', 'inherit', 'inherit'] },
+  {
+    stdio: ['inherit', 'inherit', 'inherit'],
+    // Development must not install persistent jobs into the developer's own crontab.
+    env: { ...process.env, SYNC_SCHEDULER: process.env.SYNC_SCHEDULER ?? 'timer' },
+  },
 );
 
 process.exit(await proc.exited);

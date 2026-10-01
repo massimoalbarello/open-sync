@@ -1,13 +1,23 @@
 // Copied into an isolated consumer by the package check; imports must resolve from the tarball.
 
+import { chmod, mkdir } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { createOpenSync, type OpenSyncOptions } from '@context-use/open-sync';
 import { assetPlaceholder, resolveAssetReference } from '@context-use/open-sync/assets';
+import { runCronCommand, startCrontab } from '@context-use/open-sync/cron';
 import type { SyncRegistration } from '@context-use/open-sync/definition';
 import type { Deliverable } from '@context-use/open-sync/delivery';
+
+if (await runCronCommand({ args: Bun.argv.slice(2) })) {
+  process.exit(0);
+}
 
 // Keep the installed provider runtime and credential persistence real; simulate only GitHub.
 const providerFetch = globalThis.fetch;
 const okStatus = 200;
+const PRIVATE_EXECUTABLE_MODE = 0o700;
+const AFTER_INTERVAL_MS = 150;
+const CRON_FIELDS = 5;
 globalThis.fetch = Object.assign((input: RequestInfo | URL) => {
   const url = input instanceof Request ? input.url : String(input);
   if (url !== 'https://api.github.com/user') {
@@ -128,6 +138,7 @@ if (Bun.isStandaloneExecutable) {
 }
 const empty = process.argv[2] === 'empty';
 const sync = await createOpenSync({ ...options, definitions: empty ? [] : [definition] });
+let cron: Awaited<ReturnType<typeof startCrontab>> | undefined;
 try {
   if (empty) {
     if ((await sync.providers.catalog(scope)).length) {
@@ -163,25 +174,61 @@ try {
       throw new Error('Provider connection was not created');
     }
     const destination = { type: 'local', input: {} };
-    await sync.api.createSync({
+    const created = await sync.api.createSync({
       ...scope,
       destination,
       config: {},
       definition: definition.definition.id,
       connection: { id: connection.id, service: connection.service },
+      intervalMs: 100,
     });
-    sync.start();
-    const timeoutMs = 5000;
-    const pollMs = 20;
-    const deadline = Date.now() + timeoutMs;
-    while (
-      (!received.length || sync.api.status(scope).queue.pendingRecords) &&
-      Date.now() < deadline
-    ) {
-      await Bun.sleep(pollMs);
-    }
+    // Exercise the installed API with a private crontab subprocess, including a compiled host
+    // launched from outside its source tree. No system crontab or public server is involved.
+    const directory = resolve('consumer-state/cron');
+    await mkdir(directory, { recursive: true });
+    const table = `${directory}/table`;
+    const crontabExecutable = `${directory}/crontab`;
+    await Bun.write(
+      crontabExecutable,
+      `#!/bin/sh
+if [ "$1" = "-l" ]; then
+  if [ -f '${table}' ]; then /bin/cat '${table}'; else exit 0; fi
+else
+  /bin/cat > '${table}'
+fi
+`,
+    );
+    await chmod(crontabExecutable, PRIVATE_EXECUTABLE_MODE);
+    cron = await startCrontab({
+      runtime: sync,
+      directory,
+      command: Bun.isStandaloneExecutable ? [process.execPath] : [process.execPath, Bun.main],
+      crontabExecutable,
+      onError: (error) => {
+        console.error(error);
+        process.exitCode = 1;
+      },
+    });
     if (received.length !== 1 || sync.api.status(scope).queue.pendingRecords !== 0) {
       throw new Error('Independent consumer did not receive its record');
+    }
+    const pollCount = sync.api.polls({ ...scope, id: created.id }).polls.length;
+    await Bun.sleep(AFTER_INTERVAL_MS);
+    if (sync.api.polls({ ...scope, id: created.id }).polls.length !== pollCount) {
+      throw new Error('The cron runtime installed an in-process polling timer');
+    }
+    const entry = (await Bun.file(table).text())
+      .split('\n')
+      .find((line) => line && !line.startsWith('#'))!;
+    const child = Bun.spawn(['/bin/sh', '-c', entry.split(' ').slice(CRON_FIELDS).join(' ')], {
+      stdout: 'inherit',
+      stderr: 'inherit',
+    });
+    if (
+      (await child.exited) ||
+      sync.api.polls({ ...scope, id: created.id }).polls.length !== pollCount + 1
+    ) {
+      throw new Error('The headless host cron command did not execute due work');
     }
     const catalog = await sync.fetch(new Request('http://host/embedded/providers'));
     if (
@@ -203,5 +250,6 @@ try {
   }
 } finally {
   await sync.close();
+  await cron?.close();
   globalThis.fetch = providerFetch;
 }

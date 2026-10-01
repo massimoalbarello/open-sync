@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startBinary } from '@repo/build-tools/binary-check';
 import { SQL } from 'bun';
+import { isolatedCrontab } from '../../../packages/sync/test/cron-support';
 
 test('standalone binary embeds frontend and migrations and preserves state on restart', async () => {
   const folder = await mkdtemp(join(tmpdir(), 'binary-test-'));
@@ -18,7 +19,7 @@ test('standalone binary embeds frontend and migrations and preserves state on re
     await using app = await startBinary({
       executable,
       cwd: folder,
-      env: { DATA_FOLDER: dataFolder, BASE_URL: 'http://localhost:3000' },
+      env: { DATA_FOLDER: dataFolder, BASE_URL: 'http://localhost:3000', SYNC_SCHEDULER: 'timer' },
     });
     expect((await app.request({ path: '/api/health' })).status).toBe(HTTP_OK);
     expect((await app.request({ path: '/api/auth/get-session' })).status).toBe(HTTP_OK);
@@ -53,7 +54,7 @@ test('standalone binary embeds frontend and migrations and preserves state on re
     await using restarted = await startBinary({
       executable,
       cwd: folder,
-      env: { DATA_FOLDER: dataFolder, BASE_URL: 'http://localhost:3000' },
+      env: { DATA_FOLDER: dataFolder, BASE_URL: 'http://localhost:3000', SYNC_SCHEDULER: 'timer' },
     });
     expect((await restarted.request({ path: '/api/health' })).status).toBe(HTTP_OK);
     expect(await Bun.file(join(dataFolder, '.better-auth-secret')).text()).toBe(secret);
@@ -64,4 +65,28 @@ test('standalone binary embeds frontend and migrations and preserves state on re
   } finally {
     await rm(folder, { recursive: true, force: true });
   }
+});
+
+test('standalone host defaults to crontab and handles its task before server initialization', async () => {
+  await using crontab = await isolatedCrontab();
+  const executable = join(import.meta.dir, '../dist/app');
+  const dataFolder = join(crontab.directory, 'data');
+  await using app = await startBinary({
+    executable,
+    cwd: crontab.directory,
+    env: { DATA_FOLDER: dataFolder, PATH: `${crontab.directory}:${process.env.PATH}` },
+  });
+  const taskTimeoutMs = 5_000;
+  const unusedData = join(crontab.directory, 'must-not-be-created');
+  const child = Bun.spawn([executable, '--open-sync-cron', join(dataFolder, '.cron/worker.sock')], {
+    env: { DATA_FOLDER: unusedData, PORT: 'invalid', SYNC_SCHEDULER: 'invalid' },
+    stdout: 'pipe',
+    stderr: 'pipe',
+    timeout: taskTimeoutMs,
+  });
+  expect(await new Response(child.stderr).text()).toBe('');
+  expect(await child.exited).toBe(0);
+  expect(await Bun.file(join(unusedData, 'app.db')).exists()).toBe(false);
+  expect((await app.request({ path: '/api/health' })).status).toBe(HTTP_OK);
+  await app.stop();
 });
