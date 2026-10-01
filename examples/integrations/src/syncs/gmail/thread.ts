@@ -4,10 +4,10 @@ import type { SyncRecord } from '@context-use/open-sync/record';
 import type { z } from 'zod';
 import { gmailAttachments } from './attachments';
 import { threadContent } from './content';
-import type { responseSchema } from './models';
+import type { providerThreadSchema } from './models';
 export async function threadRecord(input: {
   context: SyncContext;
-  thread: z.infer<typeof responseSchema>['threads'][number];
+  thread: z.infer<typeof providerThreadSchema>;
   account: string;
 }): Promise<SyncRecord> {
   const { context, thread } = input;
