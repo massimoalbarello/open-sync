@@ -203,6 +203,9 @@ function slackReplies(url: URL) {
   if (url.searchParams.get('oldest') || url.searchParams.get('latest')) {
     throw new Error('Thread messages must not be clipped to the discovery window');
   }
+  if (url.searchParams.get('cursor') === 'replies-2') {
+    return { messages: [], has_more: true, response_metadata: { next_cursor: 'replies-3' } };
+  }
   return url.searchParams.get('cursor')
     ? {
         messages: [

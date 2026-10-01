@@ -287,11 +287,68 @@ test('Slack backfills historical threads across pages and restarts, preserves pr
   }
 });
 
+test('Slack follows native reply cursors through empty and overlapping pages before committing', async () => {
+  const f = await fixture({
+    registration: slackThreads,
+    provider: {
+      action: unused,
+      post: unused,
+      get({ path, query = {} }) {
+        if (path === '/auth.test') {
+          return response({ team_id: 'team', user_id: 'alice', url: 'https://example.slack.com/' });
+        }
+        if (path === '/users.conversations') {
+          return response({ channels: [{ id: 'a' }] });
+        }
+        if (path === '/conversations.history') {
+          return response({ messages: [root] });
+        }
+        switch (query.cursor) {
+          case 'empty':
+            return response({ messages: [], response_metadata: { next_cursor: 'overlap' } });
+          case 'overlap':
+            return response({ messages: [root], response_metadata: { next_cursor: 'final' } });
+          case 'final':
+            return response({
+              messages: [
+                reply({ ts: '1750000001.000001', text: 'Sure!' }),
+                reply({ ts: '1750000002.000001', text: 'See you there' }),
+              ],
+            });
+          default:
+            return response({ messages: [root], response_metadata: { next_cursor: 'empty' } });
+        }
+      },
+    },
+  });
+  try {
+    await f.engine.tick();
+    expect(f.saved).toMatchObject({
+      status: 'succeeded',
+      checkpoint: { ...slackThreads.definition.initialCheckpoint, account: 'team:alice' },
+    });
+    await f.finish();
+    expect(f.records).toHaveLength(1);
+    expect(f.records[0]).toMatchObject({
+      data: {
+        messages: [
+          { id: rootTs, body: 'Lunch?' },
+          { id: '1750000001.000001', body: 'Sure!' },
+          { id: '1750000002.000001', body: 'See you there' },
+        ],
+      },
+    });
+  } finally {
+    await f.close();
+  }
+});
+
 test.each([
   'missing-root',
   'foreign-reply',
   'missing-cursor',
   'repeated-cursor',
+  'cursor-cycle',
   'limited-history',
 ])('Slack does not deliver a thread with %s', async (mode) => {
   const f = await fixture({
@@ -313,14 +370,18 @@ test.each([
         if (path === '/conversations.history') {
           return response({ messages: [root], is_limited: mode === 'limited-history' });
         }
-        if (mode === 'missing-root') {
-          return response({ messages: [reply({ ts: '1750000001.000001', text: 'Reply' })] });
-        }
-        if (mode === 'foreign-reply') {
-          return response({ messages: [root, { ts: '1750000001.000001', thread_ts: 'other' }] });
-        }
-        if (mode === 'missing-cursor') {
-          return response({ messages: [root], has_more: true });
+        switch (mode) {
+          case 'missing-root':
+            return response({ messages: [reply({ ts: '1750000001.000001', text: 'Reply' })] });
+          case 'foreign-reply':
+            return response({ messages: [root, { ts: '1750000001.000001', thread_ts: 'other' }] });
+          case 'missing-cursor':
+            return response({ messages: [root], has_more: true });
+          case 'cursor-cycle':
+            return response({
+              messages: [root],
+              response_metadata: { next_cursor: query.cursor === 'first' ? 'second' : 'first' },
+            });
         }
         return response({
           messages: query.cursor ? [reply({ ts: '1750000001.000001', text: 'Reply' })] : [root],

@@ -79,12 +79,12 @@ async function readReplies(input: { context: SyncContext; channelId: string; roo
     ) {
       throw new Error('Slack returned a message from a different thread.');
     }
-    const previousSize = merged.size;
     for (const message of response.messages) {
       merged.set(message.ts, normalize(message));
     }
     cursor = nextCursor({ response, previous: cursor });
-    if (cursor && (seen.has(cursor) || merged.size <= previousSize)) {
+    // Native cursors determine progress even when a page is empty or overlaps earlier results.
+    if (cursor && seen.has(cursor)) {
       throw new Error('Slack reply pagination made no progress.');
     }
     if (cursor) {
