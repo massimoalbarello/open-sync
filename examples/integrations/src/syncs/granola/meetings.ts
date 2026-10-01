@@ -1,6 +1,6 @@
 import type { SyncContext, SyncStep } from '@context-use/open-sync/definition';
 import type { SyncRecord } from '@context-use/open-sync/record';
-import { checkpointSchema, responseSchema } from './models';
+import { checkpointSchema, detailResponseSchema, responseSchema } from './models';
 
 // The connector limits get_meetings to ten IDs per request, not ten records per step.
 const detailRequestLimit = 10;
@@ -12,12 +12,16 @@ export async function step(context: SyncContext): Promise<SyncStep> {
     await context.provider.action({ id: 'granola.list_meetings', input: {} }),
   );
   // This OAuth MCP action has no native continuation. Finish its entire listing before yielding.
-  const meetingIds = [...new Set(listing.meetings.map((meeting) => meeting.id))].sort();
+  // The Connector rejects explicit MCP truncation before returning this listing.
+  const meetingIds = listing.meetings.map((meeting) => meeting.id).sort();
+  if (new Set(meetingIds).size !== meetingIds.length) {
+    throw new Error('Granola returned duplicate meeting IDs.');
+  }
   const records: SyncRecord[] = [];
   for (let offset = 0; offset < meetingIds.length; offset += detailRequestLimit) {
     context.signal.throwIfAborted();
     const ids = meetingIds.slice(offset, offset + detailRequestLimit);
-    const result = responseSchema.parse(
+    const result = detailResponseSchema.parse(
       await context.provider.action({ id: 'granola.get_meetings', input: { meeting_ids: ids } }),
     );
     const meetings = new Map(result.meetings.map((meeting) => [meeting.id, meeting]));
@@ -35,11 +39,11 @@ export async function step(context: SyncContext): Promise<SyncStep> {
           operation: 'upsert',
           kind: 'meeting',
           id,
-          content: { format: 'markdown', body: meeting.summary ?? '' },
+          content: { format: 'markdown', body: meeting.summary },
           ...(meeting.title ? { preview: meeting.title } : {}),
           data: {
             title: meeting.title,
-            notes: meeting.summary ?? '',
+            notes: meeting.summary,
             date: meeting.date ?? null,
             attendees: meeting.attendees ?? '',
           },
