@@ -10,7 +10,8 @@
     "./syncs/slack": "./src/syncs/slack/definition.ts",
     "./syncs/granola": "./src/syncs/granola/definition.ts",
     "./syncs/youtube": "./src/syncs/youtube/definition.ts",
-    "./destinations/local": "./src/destinations/local/definition.ts"
+    "./destinations/local": "./src/destinations/local/definition.ts",
+    "./syncs/googlecalendar": "./src/syncs/googlecalendar/definition.ts"
   },
   "files": [
     "src"
