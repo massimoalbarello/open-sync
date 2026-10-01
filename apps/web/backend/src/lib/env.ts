@@ -36,7 +36,7 @@ type Env = {
   NIBRUN_HOSTNAME: string | undefined;
   DATA_FOLDER: string;
   BETTER_AUTH_SECRET: string | undefined;
-  SYNC_SCHEDULER: 'cron' | 'timer';
+  SYNC_CRON: boolean;
 };
 
 function dataFolder({ environment, workingDirectory }: LoadEnvInput): string {
@@ -69,12 +69,12 @@ export function loadEnv({
   environment = process.env,
   workingDirectory = process.cwd(),
 }: Partial<LoadEnvInput> = {}): Env {
-  const scheduler = environment[BACKEND_ENVIRONMENT.syncScheduler] || 'cron';
-  if (scheduler !== 'cron' && scheduler !== 'timer') {
-    throw new Error('SYNC_SCHEDULER must be cron or timer.');
+  const cron = environment[BACKEND_ENVIRONMENT.syncCron] || '0';
+  if (cron !== '0' && cron !== '1') {
+    throw new Error('SYNC_CRON must be 0 or 1.');
   }
   return {
-    SYNC_SCHEDULER: scheduler,
+    SYNC_CRON: cron === '1',
     PORT: Number(
       optional({
         environment,

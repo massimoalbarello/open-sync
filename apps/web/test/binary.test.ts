@@ -11,6 +11,8 @@ import { SQL } from 'bun';
 import { isolatedCrontab } from '../../../packages/sync/test/cron-support';
 
 test('standalone binary embeds frontend and migrations and preserves state on restart', async () => {
+  await using crontab = await isolatedCrontab();
+  await Bun.write(join(crontab.directory, 'deny'), '');
   const folder = await mkdtemp(join(tmpdir(), 'binary-test-'));
   try {
     const executable = join(import.meta.dir, '../dist/app');
@@ -19,7 +21,12 @@ test('standalone binary embeds frontend and migrations and preserves state on re
     await using app = await startBinary({
       executable,
       cwd: folder,
-      env: { DATA_FOLDER: dataFolder, BASE_URL: 'http://localhost:3000', SYNC_SCHEDULER: 'timer' },
+      env: {
+        DATA_FOLDER: dataFolder,
+        BASE_URL: 'http://localhost:3000',
+        SYNC_CRON: '',
+        PATH: `${crontab.directory}:${process.env.PATH}`,
+      },
     });
     expect((await app.request({ path: '/api/health' })).status).toBe(HTTP_OK);
     expect((await app.request({ path: '/api/auth/get-session' })).status).toBe(HTTP_OK);
@@ -54,7 +61,12 @@ test('standalone binary embeds frontend and migrations and preserves state on re
     await using restarted = await startBinary({
       executable,
       cwd: folder,
-      env: { DATA_FOLDER: dataFolder, BASE_URL: 'http://localhost:3000', SYNC_SCHEDULER: 'timer' },
+      env: {
+        DATA_FOLDER: dataFolder,
+        BASE_URL: 'http://localhost:3000',
+        SYNC_CRON: '',
+        PATH: `${crontab.directory}:${process.env.PATH}`,
+      },
     });
     expect((await restarted.request({ path: '/api/health' })).status).toBe(HTTP_OK);
     expect(await Bun.file(join(dataFolder, '.better-auth-secret')).text()).toBe(secret);
@@ -62,24 +74,30 @@ test('standalone binary embeds frontend and migrations and preserves state on re
       HTTP_NOT_FOUND,
     );
     await restarted.stop();
+    expect(await crontab.table.exists()).toBe(false);
   } finally {
     await rm(folder, { recursive: true, force: true });
   }
 });
 
-test('standalone host defaults to crontab and handles its task before server initialization', async () => {
+test('standalone host opts into one cron job and handles its task before server initialization', async () => {
   await using crontab = await isolatedCrontab();
   const executable = join(import.meta.dir, '../dist/app');
   const dataFolder = join(crontab.directory, 'data');
   await using app = await startBinary({
     executable,
     cwd: crontab.directory,
-    env: { DATA_FOLDER: dataFolder, PATH: `${crontab.directory}:${process.env.PATH}` },
+    env: {
+      DATA_FOLDER: dataFolder,
+      PATH: `${crontab.directory}:${process.env.PATH}`,
+      SYNC_CRON: '1',
+    },
   });
+  expect(await crontab.table.text()).toContain('*/30 * * * *');
   const taskTimeoutMs = 5_000;
   const unusedData = join(crontab.directory, 'must-not-be-created');
   const child = Bun.spawn([executable, '--open-sync-cron', join(dataFolder, '.cron/worker.sock')], {
-    env: { DATA_FOLDER: unusedData, PORT: 'invalid', SYNC_SCHEDULER: 'invalid' },
+    env: { DATA_FOLDER: unusedData, PORT: 'invalid', SYNC_CRON: 'invalid' },
     stdout: 'pipe',
     stderr: 'pipe',
     timeout: taskTimeoutMs,

@@ -17,13 +17,8 @@ import { syncDefinitions } from '../apps/web/backend/src/sync-definitions';
 import { pull } from '../apps/web/backend/test/github-sync/fixture';
 import { localDestination } from '../examples/integrations/src/destinations/local/definition';
 import { granolaClientRegistration } from '../examples/integrations/src/providers/granola';
-import { runCronCommand, startCrontab } from '../packages/sync/src/cron';
 import { createOpenSync, type OpenSyncRuntime } from '../packages/sync/src/open-sync';
 import { exampleProviderResponse, githubFixtureRecordCount } from './example-provider-fixtures';
-
-if (await runCronCommand({ args: Bun.argv.slice(2) })) {
-  process.exit(0);
-}
 
 const fetchNetwork = globalThis.fetch;
 let oauthToken = 0;
@@ -123,7 +118,6 @@ async function startFixtureHost() {
   });
   const database = await createSqliteDatabase({ dataFolder: env.DATA_FOLDER });
   let sync: OpenSyncRuntime | undefined;
-  let cron: Awaited<ReturnType<typeof startCrontab>> | undefined;
   try {
     await runMigrations({ db: database });
     const auth = createAuth({
@@ -208,15 +202,7 @@ async function startFixtureHost() {
       syncFetch: sync.fetch,
       origins,
     }).listen({ port: env.PORT, hostname: '0.0.0.0' });
-    cron = await startCrontab({
-      runtime: sync,
-      directory: join(env.DATA_FOLDER, '.cron'),
-      command: [process.execPath, ...process.execArgv, Bun.main],
-      onError(error) {
-        console.error(error);
-        process.exit(1);
-      },
-    });
+    sync.start();
     console.log(`Open Sync listening on http://0.0.0.0:${app.server!.port}`);
     let stopping = false;
     const stop = async () => {
@@ -226,7 +212,6 @@ async function startFixtureHost() {
       stopping = true;
       await app.stop();
       await sync?.close();
-      await cron?.close();
       await database.close();
     };
     process.once('SIGTERM', () => {
@@ -237,7 +222,6 @@ async function startFixtureHost() {
     });
   } catch (error) {
     await sync?.close();
-    await cron?.close();
     await database.close();
     throw error;
   }

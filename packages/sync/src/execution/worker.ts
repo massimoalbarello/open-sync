@@ -11,11 +11,6 @@ export interface WorkerControl {
   cancelAcquisition(input: Resource): Promise<void>;
   cancelSync(input: Resource): Promise<void>;
 }
-/** A host scheduler owns future execution; immediate API actions still run in this worker. */
-export interface WorkerSchedule {
-  scheduleNext(at: number | undefined): Promise<void>;
-  onError(error: unknown): void;
-}
 export class Worker implements WorkerControl {
   readonly #lifetime = new AbortController();
   #timer?: ReturnType<typeof setTimeout>;
@@ -33,7 +28,6 @@ export class Worker implements WorkerControl {
   #capacityReleased = false;
   #cleanupTimer?: ReturnType<typeof setTimeout>;
   #closing?: Promise<void>;
-  #external?: WorkerSchedule;
   #draining?: Promise<void>;
   #drainRequested = false;
   constructor(
@@ -50,31 +44,23 @@ export class Worker implements WorkerControl {
       fail('closed');
     }
   }
-  start(schedule?: WorkerSchedule): void {
+  start(): void {
     this.ensureOpen();
     if (this.#started) {
-      if (schedule !== this.#external) {
-        fail('worker_already_started');
-      }
       return;
     }
     this.#started = true;
-    this.#external = schedule;
     this.completed();
   }
   wake(): void {
-    if (this.#external && this.#started && !this.#lifetime.signal.aborted) {
-      if (this.#draining) {
-        this.#drainRequested = true;
-        return;
-      }
-      void this.runDue().catch((error: unknown) => this.#external?.onError(error));
+    if (this.#draining) {
+      this.#drainRequested = true;
       return;
     }
     this.schedule(0);
   }
   private schedule(delay: number): void {
-    if (!this.#started || this.#external || this.#lifetime.signal.aborted) {
+    if (!this.#started || this.#draining || this.#lifetime.signal.aborted) {
       return;
     }
     clearTimeout(this.#timer);
@@ -104,6 +90,7 @@ export class Worker implements WorkerControl {
   /** Drain runnable pages and deliveries, sharing one run across concurrent host triggers. */
   runDue(): Promise<void> {
     this.ensureOpen();
+    clearTimeout(this.#timer);
     this.#drainRequested = true;
     this.#draining ??= Promise.resolve().then(() => this.drain());
     return this.#draining;
@@ -124,20 +111,12 @@ export class Worker implements WorkerControl {
           await new Promise<void>((resolve) => setImmediate(resolve));
           continue;
         }
-        await this.#external?.scheduleNext(this.nextDue());
-        if (!this.#drainRequested) {
-          return;
-        }
+        return;
       }
     } finally {
       this.#draining = undefined;
+      this.wake();
     }
-  }
-  private nextDue(): number | undefined {
-    const due = [this.input.acquisition.nextDue(), this.input.delivery.nextDue()].filter(
-      (value): value is number => value !== undefined,
-    );
-    return due.length ? Math.min(...due) : undefined;
   }
   private dispatch(): void {
     this.ensureOpen();
@@ -184,10 +163,6 @@ export class Worker implements WorkerControl {
     }
   }
   private completed(): void {
-    if (this.#external) {
-      this.wake();
-      return;
-    }
     this.wake();
     if (this.#started) {
       void this.cleanup().then(

@@ -2,7 +2,7 @@ import { syncApi } from './api';
 import { openDatabase } from './db/client';
 import { type Logger, safeLogger } from './execution/diagnostics';
 import type { ProviderGateway } from './execution/provider';
-import { Worker, type WorkerSchedule } from './execution/worker';
+import { Worker } from './execution/worker';
 import type { SyncRegistration } from './models/definition';
 import type { DestinationType } from './models/delivery';
 import { fail } from './models/error';
@@ -96,7 +96,7 @@ export function createSyncRuntime(options: SyncRuntimeOptions) {
     let closing: Promise<void> | undefined;
     return {
       api: syncApi(api),
-      start: (schedule?: WorkerSchedule) => worker.start(schedule),
+      start: () => worker.start(),
       runDue: () => worker.runDue(),
       tick: () => worker.tick(),
       close: () => {

@@ -93,23 +93,19 @@ try {
     syncFetch: sync.fetch,
     origins,
   }).listen({ port: env.PORT, hostname: '0.0.0.0' });
-  if (env.SYNC_SCHEDULER === 'cron') {
+  if (env.SYNC_CRON) {
     cron = await startCrontab({
       runtime: sync,
       directory: join(env.DATA_FOLDER, '.cron'),
-      timeZone: env.NIBRUN_HOSTNAME ? 'UTC' : undefined,
       command: Bun.isStandaloneExecutable
         ? [process.execPath]
         : [process.execPath, ...process.execArgv, Bun.main],
       onError(error) {
         console.error('Open Sync cron scheduling failed', error);
-        process.exitCode = 1;
-        void stop();
       },
     });
-  } else {
-    sync.start();
   }
+  sync.start();
   console.log(`Open Sync listening on http://0.0.0.0:${app.server!.port}`);
   process.once('SIGTERM', () => {
     void stop();

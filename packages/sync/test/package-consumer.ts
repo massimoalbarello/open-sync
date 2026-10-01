@@ -209,13 +209,14 @@ fi
         process.exitCode = 1;
       },
     });
+    await sync.runDue();
     if (received.length !== 1 || sync.api.status(scope).queue.pendingRecords !== 0) {
       throw new Error('Independent consumer did not receive its record');
     }
     const pollCount = sync.api.polls({ ...scope, id: created.id }).polls.length;
     await Bun.sleep(AFTER_INTERVAL_MS);
     if (sync.api.polls({ ...scope, id: created.id }).polls.length !== pollCount) {
-      throw new Error('The cron runtime installed an in-process polling timer');
+      throw new Error('Registering a cron job implicitly started the host worker');
     }
     const entry = (await Bun.file(table).text())
       .split('\n')

@@ -24,9 +24,7 @@ async function stopProcess(child: ReturnType<typeof Bun.spawn>) {
     clearTimeout(timer);
   }
 }
-export async function startIsolatedApp(
-  input: { serverCommand?: string[]; environment?: Record<string, string> } = {},
-) {
+export async function startIsolatedApp(input: { serverCommand?: string[] } = {}) {
   const port = availablePort();
   let frontendPort = availablePort();
   while (port === frontendPort) {
@@ -36,7 +34,6 @@ export async function startIsolatedApp(
   const dataFolder = await mkdtemp(join(tmpdir(), 'open-sync-isolated-'));
   const environment = {
     ...process.env,
-    ...input.environment,
     PORT: String(port),
     FRONTEND_PORT: String(frontendPort),
     BASE_URL: origin,

@@ -5,7 +5,6 @@ import { loadProviderKey } from './connector/encryption-key';
 import { connectorManagement } from './connector/management';
 import { openProviderDatabase } from './db/providers';
 import type { Logger } from './execution/diagnostics';
-import type { WorkerSchedule } from './execution/worker';
 import { createHttpApp } from './http/app';
 import type { SyncRegistration } from './models/definition';
 import type { DestinationType } from './models/delivery';
@@ -158,7 +157,7 @@ export async function createOpenSync(options: OpenSyncOptions): Promise<OpenSync
     return {
       api,
       providers: providerApi(providers),
-      start: (schedule) => runtime.start(schedule),
+      start: () => runtime.start(),
       runDue: () => runtime.runDue(),
       async fetch(request: Request): Promise<Response> {
         if (lifetime.signal.aborted) {
@@ -207,7 +206,7 @@ export interface OpenSyncRuntime {
   api: SyncApi;
   providers: ProviderApi;
   fetch(request: Request): Promise<Response>;
-  start(schedule?: WorkerSchedule): void;
+  start(): void;
   runDue(): Promise<void>;
   close(): Promise<void>;
 }

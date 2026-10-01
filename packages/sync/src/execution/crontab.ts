@@ -3,9 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { lock } from 'proper-lockfile';
 
-const MINUTE_MS = 60_000;
+const SCHEDULE = '*/30 * * * *';
 const COMMAND_TIMEOUT_MS = 10_000;
-const REGISTRATION_MARGIN_MS = 11_000;
 const NO_CRONTAB_EXIT_CODE = 1;
 const LOCK_STALE_MS = 30_000;
 const LOCK_RETRIES = 40;
@@ -22,8 +21,6 @@ export class Crontab {
       id: string;
       command: readonly string[];
       executable?: string;
-      /** Must match the cron daemon's timezone (nibrun uses UTC). */
-      timeZone: string;
     },
   ) {
     this.marker = `open-sync:${createHash('sha256').update(input.id).digest('hex')}`;
@@ -32,7 +29,13 @@ export class Crontab {
     }
     this.command = input.command.map(shellArgument).join(' ');
   }
-  schedule(at: number | undefined): Promise<void> {
+  install(): Promise<void> {
+    return this.update(`${SCHEDULE} ${this.command}\n`);
+  }
+  remove(): Promise<void> {
+    return this.update('');
+  }
+  private update(entry: string): Promise<void> {
     const operation = updating.then(async () => {
       // All Open Sync binaries for this OS user share one table, including separate hosts.
       const release = await lock(join(tmpdir(), `open-sync-crontab-${process.getuid!()}`), {
@@ -41,7 +44,7 @@ export class Crontab {
         retries: { retries: LOCK_RETRIES, minTimeout: LOCK_RETRY_MS, maxTimeout: LOCK_RETRY_MS },
       });
       try {
-        await this.replace(at);
+        await this.replace(entry);
       } finally {
         await release();
       }
@@ -49,12 +52,8 @@ export class Crontab {
     updating = operation.catch(() => undefined);
     return operation;
   }
-  private async replace(at: number | undefined): Promise<void> {
+  private async replace(entry: string): Promise<void> {
     const current = await this.read();
-    // Compute after reading: the write must finish before the selected minute begins.
-    const expression =
-      at === undefined ? undefined : cronExpression({ at, timeZone: this.input.timeZone });
-    const entry = expression === undefined ? '' : `${expression} ${this.command}\n`;
     const remaining = removeEntry({ text: current, marker: this.marker });
     const next = entry
       ? `# ${this.marker} begin\n${entry}# ${this.marker} end\n${remaining}`
@@ -95,30 +94,11 @@ export class Crontab {
 }
 
 function shellArgument(value: string): string {
-  // Cron processes percent signs before the shell; nibrun passes commands directly to sh.
-  // Refuse this ambiguous syntax instead of emitting a command that differs across hosts.
+  // Cron processes percent signs before shell quoting, so they cannot be literal arguments.
   if (/[\r\n\0%]/.test(value)) {
     throw new Error('Cron command arguments cannot contain newlines, NUL, or percent signs.');
   }
   return `'${value.replaceAll("'", "'\\''")}'`;
-}
-
-function cronExpression(input: { at: number; timeZone: string }): string {
-  if (!Number.isSafeInteger(input.at) || input.at < 0) {
-    throw new Error('Invalid next cron timestamp.');
-  }
-  const next =
-    Math.ceil(Math.max(input.at, Date.now() + REGISTRATION_MARGIN_MS) / MINUTE_MS) * MINUTE_MS;
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: input.timeZone,
-    minute: 'numeric',
-    hour: 'numeric',
-    hourCycle: 'h23',
-    day: 'numeric',
-    month: 'numeric',
-  }).formatToParts(next);
-  const field = (name: string) => Number(parts.find((part) => part.type === name)!.value);
-  return `${field('minute')} ${field('hour')} ${field('day')} ${field('month')} *`;
 }
 
 function removeEntry(input: { text: string; marker: string }): string {

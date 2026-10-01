@@ -23,9 +23,9 @@ test('a registered shell command invokes the existing headless runtime through i
       crontabExecutable: table.executable,
       onError: (error) => errors.push(error),
     });
-    const entry = (await table.table.text())
-      .split('\n')
-      .find((line) => line && !line.startsWith('#'))!;
+    const registered = await table.table.text();
+    expect(registered).toContain('*/30 * * * *');
+    const entry = registered.split('\n').find((line) => line && !line.startsWith('#'))!;
     const command = entry.split(' ').slice(CRON_FIELDS).join(' ');
     const children = Array.from({ length: 2 }, () =>
       Bun.spawn(['/bin/sh', '-c', command], { stdout: 'pipe', stderr: 'pipe' }),
@@ -47,6 +47,10 @@ test('a registered shell command invokes the existing headless runtime through i
         onError: () => {},
       }),
     ).rejects.toThrow('already owns');
+    await f.engine.api.setEnabled({ ...alpha, id: sync.id, enabled: false });
+    await runCronCommand({ args: ['--open-sync-cron', join(directory, 'worker.sock')] });
+    expect(f.engine.api.polls({ ...alpha, id: sync.id }).polls).toHaveLength(1);
+    expect(await table.table.text()).toBe(registered);
     expect(errors).toEqual([]);
     await f.engine.close();
     await cron.close();
@@ -127,4 +131,41 @@ test('a restarted host recovers a socket left by a killed process', async () => 
     }
     await f.close();
   }
+});
+
+test('a failed or missed invocation leaves the next recurring wake-up available', async () => {
+  await using table = await isolatedCrontab();
+  const directory = join(table.directory, 'worker');
+  const errors: unknown[] = [];
+  let attempts = 0;
+  await using cron = await startCrontab({
+    directory,
+    command: ['/host'],
+    crontabExecutable: table.executable,
+    runtime: {
+      runDue() {
+        attempts++;
+        return attempts === 1 ? Promise.reject(new Error('temporary failure')) : Promise.resolve();
+      },
+    },
+    onError: (error) => errors.push(error),
+  });
+  const registered = await table.table.text();
+  const expression = registered
+    .split('\n')
+    .find((line) => line && !line.startsWith('#'))!
+    .split(' ')
+    .slice(0, CRON_FIELDS)
+    .join(' ');
+  const missed = Date.parse('2030-01-02T03:00:00Z');
+  const next = Date.parse('2030-01-02T03:30:00Z');
+  expect(Bun.cron.parse(expression, missed + 1, { tz: 'UTC' })?.getTime()).toBe(next);
+  const args = ['--open-sync-cron', join(directory, 'worker.sock')];
+  await expect(runCronCommand({ args })).rejects.toThrow('503');
+  expect(await table.table.text()).toBe(registered);
+  expect(await runCronCommand({ args })).toBe(true);
+  expect(attempts).toBe(2);
+  expect(errors).toHaveLength(1);
+  expect(await table.table.text()).toBe(registered);
+  await cron.close();
 });

@@ -52,3 +52,12 @@ describe('backend environment', () => {
     ).toThrow('DATA_FOLDER must be inside /app/data on nibrun');
   });
 });
+
+test('timers remain the default on every host; cron requires an explicit opt-in', () => {
+  for (const nibrunHostname of [undefined, 'application-test.nibrun.app']) {
+    const environment = { [BACKEND_ENVIRONMENT.nibrunHostname]: nibrunHostname };
+    expect(loadEnv({ environment }).SYNC_CRON).toBe(false);
+    expect(loadEnv({ environment: { ...environment, SYNC_CRON: '1' } }).SYNC_CRON).toBe(true);
+  }
+  expect(() => loadEnv({ environment: { SYNC_CRON: 'unknown' } })).toThrow('SYNC_CRON');
+});

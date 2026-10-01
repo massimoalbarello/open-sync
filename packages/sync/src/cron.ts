@@ -2,7 +2,6 @@ import { chmod, lstat, mkdir, unlink } from 'node:fs/promises';
 import { request } from 'node:http';
 import { join, resolve } from 'node:path';
 import { Crontab } from './execution/crontab';
-import type { WorkerSchedule } from './execution/worker';
 
 const CRON_ARGUMENT = '--open-sync-cron';
 const PRIVATE_DIRECTORY_MODE = 0o700;
@@ -40,17 +39,15 @@ export async function runCronCommand(input: { args: readonly string[] }): Promis
   }
 }
 
-/** Standard crontab scheduling for any host binary, without web routes or provider-specific jobs. */
+/** Optional half-hourly wake-up for a running host on systems with crontab. The host owns runtime.start(). */
 export async function startCrontab(input: {
-  runtime: { start(schedule: WorkerSchedule): void; runDue(): Promise<void> };
+  runtime: { runDue(): Promise<void> };
   /** A private, stable directory owned by this runtime. */
   directory: string;
   /** The host's absolute binary path, or Bun followed by its absolute script path and arguments. */
   command: readonly string[];
-  /** Cron daemon timezone; defaults to the host process timezone. Use UTC on nibrun. */
-  timeZone?: string;
   crontabExecutable?: string;
-  /** Scheduling failures require host attention; for a supervised server, shut down and restart. */
+  /** Report a failed run; the recurring job remains registered for the next invocation. */
   onError(error: unknown): void;
 }) {
   const directory = resolve(input.directory);
@@ -61,7 +58,6 @@ export async function startCrontab(input: {
     id: directory,
     command: [...input.command, CRON_ARGUMENT, socket],
     executable: input.crontabExecutable,
-    timeZone: input.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
   });
   await removeStaleSocket(socket);
   let closed = false;
@@ -93,7 +89,7 @@ export async function startCrontab(input: {
     closing ??= (async () => {
       closed = true;
       try {
-        await table.schedule(undefined);
+        await table.remove();
       } finally {
         await server.stop(true);
       }
@@ -102,11 +98,7 @@ export async function startCrontab(input: {
   };
   try {
     await chmod(socket, PRIVATE_SOCKET_MODE);
-    input.runtime.start({
-      scheduleNext: (at) => (closed ? Promise.resolve() : table.schedule(at)),
-      onError: input.onError,
-    });
-    await input.runtime.runDue();
+    await table.install();
     return { close, [Symbol.asyncDispose]: close };
   } catch (error) {
     await close();
