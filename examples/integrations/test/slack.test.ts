@@ -221,7 +221,9 @@ test('Slack backfills historical threads across pages and restarts, preserves pr
         (value) => value === null || typeof value !== 'object',
       ),
     ).toBe(true);
-    const latest = (f.saved.checkpoint as { latest: string }).latest;
+    const startedAt = f.saved.checkpoint.iterationStartedAt;
+    const millisecondsPerSecond = 1000;
+    const latest = String(Date.parse(startedAt) / millisecondsPerSecond);
     const discovered = directories.length;
     await f.restart();
     await f.engine.tick();
@@ -285,53 +287,214 @@ test('Slack backfills historical threads across pages and restarts, preserves pr
   }
 });
 
-test.each(['missing-root', 'foreign-reply', 'missing-cursor', 'repeated-cursor'])(
-  'Slack does not deliver a thread with %s',
-  async (mode) => {
-    const f = await fixture({
-      registration: slackThreads,
-      provider: {
-        action: unused,
-        post: unused,
-        get: ({ path, query = {} }) => {
-          if (path === '/auth.test') {
+test('Slack follows native reply cursors through empty and overlapping pages before committing', async () => {
+  const f = await fixture({
+    registration: slackThreads,
+    provider: {
+      action: unused,
+      post: unused,
+      get({ path, query = {} }) {
+        if (path === '/auth.test') {
+          return response({ team_id: 'team', user_id: 'alice', url: 'https://example.slack.com/' });
+        }
+        if (path === '/users.conversations') {
+          return response({ channels: [{ id: 'a' }] });
+        }
+        if (path === '/conversations.history') {
+          return response({ messages: [root] });
+        }
+        switch (query.cursor) {
+          case 'empty':
+            return response({ messages: [], response_metadata: { next_cursor: 'overlap' } });
+          case 'overlap':
+            return response({ messages: [root], response_metadata: { next_cursor: 'final' } });
+          case 'final':
             return response({
-              team_id: 'team',
-              user_id: 'alice',
-              url: 'https://example.slack.com/',
+              messages: [
+                reply({ ts: '1750000001.000001', text: 'Sure!' }),
+                reply({ ts: '1750000002.000001', text: 'See you there' }),
+              ],
             });
-          }
-          if (path === '/users.conversations') {
-            return response({ channels: [{ id: 'a' }] });
-          }
-          if (path === '/conversations.history') {
-            return response({ messages: [root] });
-          }
-          if (mode === 'missing-root') {
-            return response({ messages: [reply({ ts: '1750000001.000001', text: 'Reply' })] });
-          }
-          if (mode === 'foreign-reply') {
-            return response({ messages: [root, { ts: '1750000001.000001', thread_ts: 'other' }] });
-          }
-          if (mode === 'missing-cursor') {
-            return response({ messages: [root], has_more: true });
-          }
-          return response({
-            messages: query.cursor ? [reply({ ts: '1750000001.000001', text: 'Reply' })] : [root],
-            has_more: true,
-            response_metadata: { next_cursor: 'repeat' },
-          });
-        },
+          default:
+            return response({ messages: [root], response_metadata: { next_cursor: 'empty' } });
+        }
+      },
+    },
+  });
+  try {
+    await f.engine.tick();
+    expect(f.saved).toMatchObject({
+      status: 'succeeded',
+      checkpoint: { ...slackThreads.definition.initialCheckpoint, account: 'team:alice' },
+    });
+    await f.finish();
+    expect(f.records).toHaveLength(1);
+    expect(f.records[0]).toMatchObject({
+      data: {
+        messages: [
+          { id: rootTs, body: 'Lunch?' },
+          { id: '1750000001.000001', body: 'Sure!' },
+          { id: '1750000002.000001', body: 'See you there' },
+        ],
       },
     });
-    try {
-      const committed = f.saved.checkpoint;
-      await f.engine.tick();
-      expect(f.saved.errorCode).toBe('execution_failed');
-      expect(f.saved.checkpoint).toEqual(committed);
-      expect(f.records).toHaveLength(0);
-    } finally {
-      await f.close();
-    }
-  },
-);
+  } finally {
+    await f.close();
+  }
+});
+
+test.each([
+  'missing-root',
+  'foreign-reply',
+  'missing-cursor',
+  'repeated-cursor',
+  'cursor-cycle',
+  'limited-history',
+])('Slack does not deliver a thread with %s', async (mode) => {
+  const f = await fixture({
+    registration: slackThreads,
+    provider: {
+      action: unused,
+      post: unused,
+      get: ({ path, query = {} }) => {
+        if (path === '/auth.test') {
+          return response({
+            team_id: 'team',
+            user_id: 'alice',
+            url: 'https://example.slack.com/',
+          });
+        }
+        if (path === '/users.conversations') {
+          return response({ channels: [{ id: 'a' }] });
+        }
+        if (path === '/conversations.history') {
+          return response({ messages: [root], is_limited: mode === 'limited-history' });
+        }
+        switch (mode) {
+          case 'missing-root':
+            return response({ messages: [reply({ ts: '1750000001.000001', text: 'Reply' })] });
+          case 'foreign-reply':
+            return response({ messages: [root, { ts: '1750000001.000001', thread_ts: 'other' }] });
+          case 'missing-cursor':
+            return response({ messages: [root], has_more: true });
+          case 'cursor-cycle':
+            return response({
+              messages: [root],
+              response_metadata: { next_cursor: query.cursor === 'first' ? 'second' : 'first' },
+            });
+        }
+        return response({
+          messages: query.cursor ? [reply({ ts: '1750000001.000001', text: 'Reply' })] : [root],
+          has_more: true,
+          response_metadata: { next_cursor: 'repeat' },
+        });
+      },
+    },
+  });
+  try {
+    const committed = f.saved.checkpoint;
+    await f.engine.tick();
+    expect(f.saved.errorCode).toBe('execution_failed');
+    expect(f.saved.checkpoint).toEqual(committed);
+    expect(f.records).toHaveLength(0);
+  } finally {
+    await f.close();
+  }
+});
+
+test('Slack finishes every page of the last channel, crosses empty directory pages, and retains the frozen window on recovery', async () => {
+  const directories: JsonObject[] = [];
+  const histories: JsonObject[] = [];
+  let fail = false;
+  let account = 'alice';
+  const f = await fixture({
+    registration: slackThreads,
+    config: { history: 'Last 3 months' },
+    provider: {
+      action: unused,
+      post: unused,
+      get({ path, query = {} }) {
+        switch (path) {
+          case '/auth.test':
+            return response({
+              team_id: 'team',
+              user_id: account,
+              url: 'https://example.slack.com/',
+            });
+          case '/users.conversations':
+            directories.push(query);
+            return response(
+              query.cursor
+                ? { channels: [{ id: 'last' }] }
+                : { channels: [], response_metadata: { next_cursor: 'last-directory' } },
+            );
+          case '/conversations.info':
+            return response({ channel: { id: 'last' } });
+          case '/conversations.history':
+            histories.push(query);
+            if (fail) {
+              return response({ ok: false, error: 'invalid_cursor' });
+            }
+            return response({
+              messages: [
+                {
+                  ts: query.cursor ? '1789819200.000001' : '1789819200.000002',
+                  text: 'Same second',
+                },
+              ],
+              ...(query.cursor ? {} : { response_metadata: { next_cursor: 'last-history' } }),
+            });
+          default:
+            return unused();
+        }
+      },
+    },
+  });
+  try {
+    await f.engine.tick(); // An empty directory page can still have a continuation.
+    const startedAt = f.saved.checkpoint.iterationStartedAt;
+    expect(f.saved.checkpoint).toEqual({
+      account: 'team:alice',
+      iterationStartedAt: startedAt,
+      directoryCursor: 'last-directory',
+      channelId: null,
+      messageCursor: null,
+    });
+    await f.engine.tick();
+    const committed = f.saved.checkpoint;
+    expect(committed).toEqual({
+      account: 'team:alice',
+      iterationStartedAt: startedAt,
+      directoryCursor: null,
+      channelId: 'last',
+      messageCursor: 'last-history',
+    });
+    await f.restart();
+    fail = true;
+    await f.engine.tick();
+    expect(f.saved.checkpoint).toEqual({ ...committed, messageCursor: null });
+    expect(directories).toHaveLength(2);
+    account = 'bob';
+    f.queue();
+    await f.engine.tick();
+    expect(f.saved.errorCode).toBe('execution_failed');
+    expect(f.saved.checkpoint.account).toBe('team:alice');
+    account = 'alice';
+    fail = false;
+    f.queue();
+    await f.finish();
+    expect(directories).toHaveLength(2);
+    expect(new Set(histories.map((query) => query.oldest)).size).toBe(1);
+    expect(new Set(histories.map((query) => query.latest)).size).toBe(1);
+    expect(f.saved.checkpoint).toEqual({
+      ...slackThreads.definition.initialCheckpoint,
+      account: 'team:alice',
+    });
+    expect(f.records.map((r) => r.id)).toEqual([
+      'last:1789819200.000002',
+      'last:1789819200.000001',
+    ]);
+  } finally {
+    await f.close();
+  }
+});

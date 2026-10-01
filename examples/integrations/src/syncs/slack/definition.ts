@@ -9,7 +9,7 @@ export const slackThreads = {
     id: 'slack.threads',
     name: 'Slack threads',
     description:
-      'Complete threads from joined channels within the selected history range, including all replies in chronological order. Rechecks for edits and new replies; excludes DMs and deletion detection.',
+      'Complete threads whose roots appear in joined-channel history within the selected range, including all replies. Rescans that range for edits and replies; excludes DMs and deletion detection.',
     provider: {
       service: 'slack',
       actions: ['slack.download_file'],

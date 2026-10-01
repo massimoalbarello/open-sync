@@ -19,18 +19,19 @@ const historyPageSize = 15;
 
 /** One history page, including every reply and asset reference, is an atomic step. */
 export async function step(context: SyncContext): Promise<SyncStep> {
+  const iterationStartedAt = new Date().toISOString();
   const identity = z
     .object({ team_id: z.string(), user_id: z.string(), url: z.url() })
     .parse(await request({ context, path: '/auth.test' }));
   const account = `${identity.team_id}:${identity.user_id}`;
-  const saved = beginCycle({ context, account });
+  const saved = beginIteration({ context, account, iterationStartedAt });
   context.signal.throwIfAborted();
   try {
     const { channel, checkpoint } = await readChannel({ context, checkpoint: saved });
     const page = channel
       ? await readHistory({ context, checkpoint, channel, workspaceUrl: identity.url })
       : { records: [], cursor: null };
-    const complete = !page.cursor && checkpoint.directoryComplete;
+    const complete = !page.cursor && !checkpoint.directoryCursor;
     return {
       records: page.records,
       checkpoint: complete
@@ -88,7 +89,7 @@ async function readChannel(input: { context: SyncContext; checkpoint: Checkpoint
   }
   return {
     channel: response.channels[0],
-    checkpoint: { ...checkpoint, directoryCursor: cursor, directoryComplete: !cursor },
+    checkpoint: { ...checkpoint, directoryCursor: cursor },
   };
 }
 
@@ -99,14 +100,19 @@ async function readHistory(input: {
   workspaceUrl: string;
 }) {
   const { context, checkpoint, channel } = input;
+  const startedAt = new Date(checkpoint.iterationStartedAt!);
+  const oldest = historyStart({ config: context.config, now: startedAt });
+  // History is ordered by message creation, not modification. Revisit the selected
+  // range on each poll to observe edits/replies; a last-message watermark would miss them.
+  // Roots outside this range, inaccessible messages, and deletions are not discovered.
   const response = historySchema.parse(
     await request({
       context,
       path: '/conversations.history',
       query: {
         channel: channel.id,
-        oldest: checkpoint.oldest!,
-        latest: checkpoint.latest!,
+        oldest: String(oldest ? oldest.getTime() / millisecondsPerSecond : 0),
+        latest: String(startedAt.getTime() / millisecondsPerSecond),
         inclusive: true,
         limit: historyPageSize,
         ...(checkpoint.messageCursor ? { cursor: checkpoint.messageCursor } : {}),
@@ -146,17 +152,18 @@ function recover(input: { checkpoint: Checkpoint; error: unknown }) {
   throw error;
 }
 
-function beginCycle(input: { context: SyncContext; account: string }) {
+function beginIteration(input: {
+  context: SyncContext;
+  account: string;
+  iterationStartedAt: string;
+}) {
   const checkpoint = checkpointSchema.parse(input.context.checkpoint);
   if (checkpoint.account && checkpoint.account !== input.account) {
     throw new Error('Slack account changed. Create a new sync.');
   }
-  const now = new Date();
-  const oldest = historyStart({ config: input.context.config, now });
   return {
     ...checkpoint,
     account: input.account,
-    oldest: checkpoint.oldest ?? String(oldest ? oldest.getTime() / millisecondsPerSecond : 0),
-    latest: checkpoint.latest ?? String(now.getTime() / millisecondsPerSecond),
+    iterationStartedAt: checkpoint.iterationStartedAt ?? input.iterationStartedAt,
   };
 }
