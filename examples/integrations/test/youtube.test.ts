@@ -31,6 +31,7 @@ test('YouTube backfills, resumes exactly at the next page, and polls only the fi
       tails: {},
       directoryPageToken: 'directory-b',
       playlistId: 'a',
+      playlistTitle: 'Playlist a',
       itemPageToken: 'opaque-fifty',
     });
     await f.restart();
@@ -48,6 +49,7 @@ test('YouTube backfills, resumes exactly at the next page, and polls only the fi
       account: 'owner',
       directoryPageToken: null,
       playlistId: null,
+      playlistTitle: null,
       itemPageToken: null,
       tails: {
         a: { pageToken: 'opaque-hundred', itemCount: archiveCount },
@@ -104,7 +106,7 @@ test('YouTube backfills, resumes exactly at the next page, and polls only the fi
     source.listings.set('c', [item({ playlistId: 'c', index: 0 })]);
     f.queue();
     await f.finish();
-    expect(f.records.filter((record) => record.id.startsWith('c'))).toHaveLength(2);
+    expect(f.records.filter((record) => record.id.startsWith('c'))).toHaveLength(1);
   } finally {
     await f.close();
   }
@@ -133,7 +135,7 @@ test.each(['empty', 'full'] as const)(
             ]
           : [['a', null]],
       );
-      expect(f.records).toHaveLength(count + 2);
+      expect(f.records).toHaveLength(count + 1);
     } finally {
       await f.close();
     }
@@ -254,6 +256,7 @@ test('YouTube expired directory tokens replay discovery while retaining every co
       tails,
       directoryPageToken: null,
       playlistId: null,
+      playlistTitle: null,
       itemPageToken: null,
     });
     await f.restart();
@@ -271,7 +274,7 @@ test('YouTube expired directory tokens replay discovery while retaining every co
 });
 
 test.each(['foreign-item', 'duplicate-item', 'truncated', 'quota', 'forbidden'] as const)(
-  'YouTube %s response does not commit partial playlist output or advance the checkpoint',
+  'YouTube %s response does not commit partial video output or advance the checkpoint',
   async (mode) => {
     const source = youtubeFixture();
     source.intercept = ({ path }) => {

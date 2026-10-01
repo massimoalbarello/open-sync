@@ -23,6 +23,9 @@ export const checkpointSchema = z.strictObject({
   directoryPageToken: z.string().min(1).nullable(),
   // Only the active resource identity, never a discovered ID list or response body.
   playlistId: z.string().min(1).nullable(),
+  // Playlist title is active stream context needed to make complete video records
+  // after restart; it is cleared with the active identity when paging finishes.
+  playlistTitle: z.string().nullable(),
   // Native continuation inside the active playlist; committed with the complete
   // page's records. Cleared when that playlist is exhausted, but the final page's
   // request token survives in tails for the next poll. Expiry requires explicit reset.
@@ -34,6 +37,7 @@ export const initialCheckpoint: Checkpoint = {
   tails: {},
   directoryPageToken: null,
   playlistId: null,
+  playlistTitle: null,
   itemPageToken: null,
 };
 export const paginationSchema = z.object({

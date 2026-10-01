@@ -31,7 +31,7 @@ export function item({ playlistId, index }: { playlistId: string; index: number 
   };
 }
 export const archiveCount = 121;
-export const archiveRecordCount = archiveCount + 2 + 1;
+export const archiveRecordCount = archiveCount + 1;
 const badRequest = 400;
 const notFound = 404;
 const ok = 200;

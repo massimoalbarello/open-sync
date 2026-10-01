@@ -9,12 +9,7 @@ import {
   pageSize,
   paginationSchema,
 } from './models';
-import {
-  playlistItemRecord,
-  playlistRecord,
-  providerPlaylistItemSchema,
-  providerPlaylistSchema,
-} from './records';
+import { playlistItemRecord, providerPlaylistItemSchema, providerPlaylistSchema } from './records';
 import { ExpiredPageToken, PlaylistNotFound, ResetRequired, request } from './request';
 
 const channelsPath = '/youtube/v3/channels';
@@ -92,7 +87,9 @@ async function readItems(input: { context: SyncContext; checkpoint: Checkpoint }
     count: page.items.length,
   });
   return {
-    records: page.items.map(playlistItemRecord),
+    records: page.items.map((item) =>
+      playlistItemRecord({ item, playlistTitle: checkpoint.playlistTitle! }),
+    ),
     checkpoint: itemPageToken
       ? checkpoint
       : {
@@ -121,11 +118,10 @@ async function readPlaylist(input: { context: SyncContext; checkpoint: Checkpoin
       context,
       path: playlistsPath,
       query: {
-        part: 'snippet,status',
+        part: 'snippet',
         mine: true,
         maxResults: 1,
-        fields:
-          'nextPageToken,pageInfo(totalResults),items(id,snippet(title,description,channelId,channelTitle,publishedAt),status(privacyStatus))',
+        fields: 'nextPageToken,pageInfo(totalResults),items(id,snippet(title,channelId))',
         ...(checkpoint.directoryPageToken ? { pageToken: checkpoint.directoryPageToken } : {}),
       },
     }),
@@ -140,11 +136,12 @@ async function readPlaylist(input: { context: SyncContext; checkpoint: Checkpoin
     throw new Error('YouTube returned a playlist owned by another channel.');
   }
   return {
-    records: playlist ? [playlistRecord(playlist)] : [],
+    records: [] as SyncRecord[],
     checkpoint: {
       ...checkpoint,
       directoryPageToken,
       playlistId: playlist?.id ?? null,
+      playlistTitle: playlist?.snippet.title ?? null,
       itemPageToken: playlist ? (checkpoint.tails[playlist.id]?.pageToken ?? null) : null,
     },
   };
@@ -192,6 +189,7 @@ function finish(input: {
       : {
           ...input.checkpoint,
           playlistId: input.itemPageToken ? input.checkpoint.playlistId : null,
+          playlistTitle: input.itemPageToken ? input.checkpoint.playlistTitle : null,
           itemPageToken: input.itemPageToken,
         },
     complete,
