@@ -78,7 +78,16 @@ export async function oauthConnector(input: {
       runtimeToken: 'fixture-runtime',
       authorizeConnection: (scope) => Promise.resolve(scope.ownerId === alpha.ownerId),
     });
-    return { client, connection, alias, request, connector, files, close };
+    return {
+      client,
+      connection,
+      alias,
+      request,
+      connector,
+      files,
+      close,
+      authorizationUrl: data.authorizationUrl,
+    };
   } catch (error) {
     await close();
     throw error;
