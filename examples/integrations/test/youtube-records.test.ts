@@ -5,6 +5,7 @@ test('YouTube membership identity preserves separate playlists and uses the uplo
   const snippet = {
     title: 'A video',
     playlistId: 'playlist-one',
+    position: 0,
     publishedAt: '2020-01-02T03:04:05Z',
     resourceId: { kind: 'youtube#video' as const, videoId: 'video-one' },
     channelTitle: 'Playlist owner',
@@ -52,6 +53,7 @@ test('YouTube unavailable video memberships keep their timestamp and missing upl
         snippet: {
           title: 'Private video',
           playlistId: 'playlist',
+          position: 0,
           publishedAt: '2020-01-02T03:04:05Z',
           resourceId: { kind: 'youtube#video', videoId: 'video' },
         },
