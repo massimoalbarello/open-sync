@@ -13,15 +13,6 @@ const headOfQueue = `NOT EXISTS (SELECT 1 FROM deliveries prior
 
 export class SqliteDeliveries implements DeliveryRepository {
   constructor(private readonly db: Database) {}
-  nextDue(): number | undefined {
-    return (
-      this.db
-        .query<{ due: number | null }, []>(`SELECT MIN(
-      CASE WHEN d.state='leased' THEN MAX(d.due_at,d.expires_at) ELSE d.due_at END) AS due
-      FROM deliveries d WHERE d.state!='blocked' AND ${headOfQueue}`)
-        .get()?.due ?? undefined
-    );
-  }
   claim(leaseMs: number): DeliveryLease | undefined {
     return this.db
       .transaction(() => {

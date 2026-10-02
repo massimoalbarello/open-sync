@@ -1,6 +1,5 @@
 import { join } from 'node:path';
 import { createOpenSync, type OpenSyncRuntime } from '@context-use/open-sync';
-import { runCronCommand, startCrontab } from '@context-use/open-sync/cron';
 import { localDestination } from '@open-sync/examples/destinations/local';
 import { granolaClientRegistration } from '@open-sync/examples/providers/granola';
 import { createApp } from '#backend/app.ts';
@@ -17,10 +16,6 @@ import { FrontendAssetsService } from '#backend/services/frontend-assets/service
 import { ReceiverService } from '#backend/services/receiver/service.ts';
 import { syncDefinitions } from '#backend/sync-definitions.ts';
 
-if (await runCronCommand({ args: Bun.argv.slice(2) })) {
-  process.exit(0);
-}
-
 const env = loadEnv();
 const secret = await loadAuthSecret({
   dataFolder: env.DATA_FOLDER,
@@ -28,7 +23,6 @@ const secret = await loadAuthSecret({
 });
 const database = await createSqliteDatabase({ dataFolder: env.DATA_FOLDER });
 let sync: OpenSyncRuntime | undefined;
-let cron: Awaited<ReturnType<typeof startCrontab>> | undefined;
 let app: ReturnType<typeof createApp> | undefined;
 let stopping: Promise<void> | undefined;
 const stop = () => {
@@ -36,12 +30,8 @@ const stop = () => {
     try {
       await sync?.close();
     } finally {
-      try {
-        await cron?.close();
-      } finally {
-        await app?.stop();
-        await database.close();
-      }
+      await app?.stop();
+      await database.close();
     }
   })();
   return stopping;
@@ -93,19 +83,7 @@ try {
     syncFetch: sync.fetch,
     origins,
   }).listen({ port: env.PORT, hostname: '0.0.0.0' });
-  if (env.SYNC_CRON) {
-    cron = await startCrontab({
-      runtime: sync,
-      directory: join(env.DATA_FOLDER, '.cron'),
-      command: Bun.isStandaloneExecutable
-        ? [process.execPath]
-        : [process.execPath, ...process.execArgv, Bun.main],
-      onError(error) {
-        console.error('Open Sync cron scheduling failed', error);
-      },
-    });
-  }
-  sync.start();
+  await sync.start();
   console.log(`Open Sync listening on http://0.0.0.0:${app.server!.port}`);
   process.once('SIGTERM', () => {
     void stop();

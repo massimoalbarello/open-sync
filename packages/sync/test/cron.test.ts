@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test';
 import { mkdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { runCronCommand, startCrontab } from '../src/cron';
-import { isolatedCrontab } from './cron-support';
+import { startCrontab } from '../src/execution/cron';
+import { isolatedCrontab, runRegisteredCron } from './cron-support';
 import { alpha, configure, runtime } from './support';
 
 const CRON_FIELDS = 5;
@@ -19,7 +19,6 @@ test('a registered shell command invokes the existing headless runtime through i
     await using cron = await startCrontab({
       runtime: f.engine,
       directory,
-      command: [process.execPath, join(import.meta.dir, 'cron-command.ts')],
       crontabExecutable: table.executable,
       onError: (error) => errors.push(error),
     });
@@ -42,13 +41,12 @@ test('a registered shell command invokes the existing headless runtime through i
       startCrontab({
         runtime: f.engine,
         directory,
-        command: ['/ignored'],
         crontabExecutable: table.executable,
         onError: () => {},
       }),
     ).rejects.toThrow('already owns');
     await f.engine.api.setEnabled({ ...alpha, id: sync.id, enabled: false });
-    await runCronCommand({ args: ['--open-sync-cron', join(directory, 'worker.sock')] });
+    await runRegisteredCron(table.table);
     expect(f.engine.api.polls({ ...alpha, id: sync.id }).polls).toHaveLength(1);
     expect(await table.table.text()).toBe(registered);
     expect(errors).toEqual([]);
@@ -58,11 +56,6 @@ test('a registered shell command invokes the existing headless runtime through i
   } finally {
     await f.close();
   }
-});
-
-test('cron command handling leaves unrelated host arguments alone and fails on malformed tasks', async () => {
-  expect(await runCronCommand({ args: ['serve'] })).toBe(false);
-  await expect(runCronCommand({ args: ['--open-sync-cron'] })).rejects.toThrow('requires');
 });
 
 test('registration failure closes the socket and leaves unrelated crontab entries intact', async () => {
@@ -77,7 +70,6 @@ test('registration failure closes the socket and leaves unrelated crontab entrie
       startCrontab({
         runtime: f.engine,
         directory,
-        command: ['/host'],
         crontabExecutable: table.executable,
         onError: () => {},
       }),
@@ -117,11 +109,10 @@ test('a restarted host recovers a socket left by a killed process', async () => 
     await using cron = await startCrontab({
       runtime: f.engine,
       directory,
-      command: ['/host'],
       crontabExecutable: table.executable,
       onError: () => {},
     });
-    expect(await runCronCommand({ args: ['--open-sync-cron', socket] })).toBe(true);
+    await runRegisteredCron(table.table);
     await f.engine.close();
     await cron.close();
   } finally {
@@ -140,7 +131,6 @@ test('a failed or missed invocation leaves the next recurring wake-up available'
   let attempts = 0;
   await using cron = await startCrontab({
     directory,
-    command: ['/host'],
     crontabExecutable: table.executable,
     runtime: {
       runDue() {
@@ -160,12 +150,28 @@ test('a failed or missed invocation leaves the next recurring wake-up available'
   const missed = Date.parse('2030-01-02T03:00:00Z');
   const next = Date.parse('2030-01-02T03:30:00Z');
   expect(Bun.cron.parse(expression, missed + 1, { tz: 'UTC' })?.getTime()).toBe(next);
-  const args = ['--open-sync-cron', join(directory, 'worker.sock')];
-  await expect(runCronCommand({ args })).rejects.toThrow('503');
+  await expect(runRegisteredCron(table.table)).rejects.toThrow('503');
   expect(await table.table.text()).toBe(registered);
-  expect(await runCronCommand({ args })).toBe(true);
+  await runRegisteredCron(table.table);
   expect(attempts).toBe(2);
   expect(errors).toHaveLength(1);
   expect(await table.table.text()).toBe(registered);
   await cron.close();
+});
+
+test('runtime startup reports cron registration failure before starting sync work', async () => {
+  await using table = await isolatedCrontab();
+  const f = runtime();
+  try {
+    const sync = await configure(f.engine);
+    await Bun.write(join(table.directory, 'deny'), '');
+    await expect(f.engine.start({ crontabExecutable: table.executable })).rejects.toThrow(
+      'permission denied',
+    );
+    expect(f.engine.api.polls({ ...alpha, id: sync.id }).polls).toHaveLength(0);
+    await f.engine.close();
+    expect(await table.table.exists()).toBe(false);
+  } finally {
+    await f.close();
+  }
 });

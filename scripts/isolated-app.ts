@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { isolatedCrontab } from '../packages/sync/test/cron-support';
 
 const START_TIMEOUT_MS = 60_000;
 const PROBE_TIMEOUT_MS = 1_000;
@@ -32,8 +33,10 @@ export async function startIsolatedApp(input: { serverCommand?: string[] } = {})
   }
   const origin = `http://localhost:${frontendPort}`;
   const dataFolder = await mkdtemp(join(tmpdir(), 'open-sync-isolated-'));
+  const crontab = await isolatedCrontab();
   const environment = {
     ...process.env,
+    PATH: `${crontab.directory}:${process.env.PATH}`,
     PORT: String(port),
     FRONTEND_PORT: String(frontendPort),
     BASE_URL: origin,
@@ -77,6 +80,7 @@ export async function startIsolatedApp(input: { serverCommand?: string[] } = {})
     await stopProcess(child);
     await stopProcess(frontend);
     await rm(dataFolder, { recursive: true, force: true });
+    await crontab[Symbol.asyncDispose]();
   };
   try {
     await ready();

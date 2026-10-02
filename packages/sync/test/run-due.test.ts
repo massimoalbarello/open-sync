@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
 import { createSyncRuntime } from '../src/runtime';
+import { isolatedCrontab, runRegisteredCron } from './cron-support';
 import { accepted, alpha, beta, configure, fixture, runtime, storage } from './support';
 
 const RECORD_COUNT = 3;
@@ -58,7 +59,8 @@ test('one host trigger drains all due syncs and deliveries, coalesces overlap, a
   }
 });
 
-test('an external check joins the running timer worker and leaves its normal scheduling active', async () => {
+test('cron joins startup work and remains the only automatic polling trigger', async () => {
+  await using table = await isolatedCrontab();
   const entered = Promise.withResolvers<void>();
   const release = Promise.withResolvers<void>();
   let steps = 0;
@@ -76,14 +78,14 @@ test('an external check joins the running timer worker and leaves its normal sch
     },
   });
   try {
-    const sync = await f.engine.api.createSync({
+    await f.engine.api.createSync({
       ...alpha,
       definition: 'test',
       config: { count: 1 },
       destination: { type: 'local', input: {} },
       intervalMs: POLL_INTERVAL_MS,
     });
-    f.engine.start();
+    await f.engine.start({ crontabExecutable: table.executable });
     await entered.promise;
     const running = f.engine.runDue();
     expect(f.engine.runDue()).toBe(running);
@@ -91,7 +93,9 @@ test('an external check joins the running timer worker and leaves its normal sch
     await running;
     expect(steps).toBe(1);
     await Bun.sleep(AFTER_INTERVAL_MS);
-    expect(f.engine.api.polls({ ...alpha, id: sync.id }).polls.length).toBeGreaterThan(1);
+    expect(steps).toBe(1);
+    await runRegisteredCron(table.table);
+    expect(steps).toBe(2);
   } finally {
     release.resolve();
     await f.close();

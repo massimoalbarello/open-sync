@@ -9,7 +9,6 @@ export const BACKEND_ENVIRONMENT = {
   dataFolder: 'DATA_FOLDER',
   authSecret: 'BETTER_AUTH_SECRET',
   nibrunHostname: 'NIBRUN_HOSTNAME',
-  syncCron: 'SYNC_CRON',
 } as const;
 
 export type BackendEnvironmentVariable =

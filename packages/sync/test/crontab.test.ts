@@ -19,11 +19,13 @@ test('one recurring crontab entry preserves other hosts and unrelated jobs', asy
   });
   await Promise.all([first.install(), second.install()]);
   const table = await f.table.text();
-  expect(table).toContain("*/30 * * * * '/app/host' 'a b' 'it'\\''s' '$(do-not-execute)'\n");
-  expect(table).toContain("*/30 * * * * '/app/other'\n");
+  expect(table).toContain(
+    "*/30 * * * * BUN_BE_BUN=1 '/app/host' 'a b' 'it'\\''s' '$(do-not-execute)'\n",
+  );
+  expect(table).toContain("*/30 * * * * BUN_BE_BUN=1 '/app/other'\n");
   expect(table.endsWith(unrelated)).toBe(true);
   await first.install();
-  expect(await f.table.text()).toContain("*/30 * * * * '/app/host'");
+  expect(await f.table.text()).toContain("*/30 * * * * BUN_BE_BUN=1 '/app/host'");
   expect((await f.table.text()).match(/\/app\/host/g)).toHaveLength(1);
   await first.remove();
   expect(await f.table.text()).toContain('/app/other');

@@ -157,7 +157,7 @@ export async function createOpenSync(options: OpenSyncOptions): Promise<OpenSync
     return {
       api,
       providers: providerApi(providers),
-      start: () => runtime.start(),
+      start: (input) => runtime.start(input),
       runDue: () => runtime.runDue(),
       async fetch(request: Request): Promise<Response> {
         if (lifetime.signal.aborted) {
@@ -206,7 +206,8 @@ export interface OpenSyncRuntime {
   api: SyncApi;
   providers: ProviderApi;
   fetch(request: Request): Promise<Response>;
-  start(): void;
+  /** Register one half-hourly Unix cron job and start processing work. */
+  start(input?: { crontabExecutable?: string }): Promise<void>;
   runDue(): Promise<void>;
   close(): Promise<void>;
 }

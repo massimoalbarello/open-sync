@@ -4,13 +4,8 @@ import { chmod, mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createOpenSync, type OpenSyncOptions } from '@context-use/open-sync';
 import { assetPlaceholder, resolveAssetReference } from '@context-use/open-sync/assets';
-import { runCronCommand, startCrontab } from '@context-use/open-sync/cron';
 import type { SyncRegistration } from '@context-use/open-sync/definition';
 import type { Deliverable } from '@context-use/open-sync/delivery';
-
-if (await runCronCommand({ args: Bun.argv.slice(2) })) {
-  process.exit(0);
-}
 
 // Keep the installed provider runtime and credential persistence real; simulate only GitHub.
 const providerFetch = globalThis.fetch;
@@ -138,7 +133,6 @@ if (Bun.isStandaloneExecutable) {
 }
 const empty = process.argv[2] === 'empty';
 const sync = await createOpenSync({ ...options, definitions: empty ? [] : [definition] });
-let cron: Awaited<ReturnType<typeof startCrontab>> | undefined;
 try {
   if (empty) {
     if ((await sync.providers.catalog(scope)).length) {
@@ -199,16 +193,7 @@ fi
 `,
     );
     await chmod(crontabExecutable, PRIVATE_EXECUTABLE_MODE);
-    cron = await startCrontab({
-      runtime: sync,
-      directory,
-      command: Bun.isStandaloneExecutable ? [process.execPath] : [process.execPath, Bun.main],
-      crontabExecutable,
-      onError: (error) => {
-        console.error(error);
-        process.exitCode = 1;
-      },
-    });
+    await sync.start({ crontabExecutable });
     await sync.runDue();
     if (received.length !== 1 || sync.api.status(scope).queue.pendingRecords !== 0) {
       throw new Error('Independent consumer did not receive its record');
@@ -216,7 +201,7 @@ fi
     const pollCount = sync.api.polls({ ...scope, id: created.id }).polls.length;
     await Bun.sleep(AFTER_INTERVAL_MS);
     if (sync.api.polls({ ...scope, id: created.id }).polls.length !== pollCount) {
-      throw new Error('Registering a cron job implicitly started the host worker');
+      throw new Error('An in-process timer bypassed the cron schedule');
     }
     const entry = (await Bun.file(table).text())
       .split('\n')
@@ -251,6 +236,5 @@ fi
   }
 } finally {
   await sync.close();
-  await cron?.close();
   globalThis.fetch = providerFetch;
 }

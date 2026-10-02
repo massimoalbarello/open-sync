@@ -12,7 +12,6 @@ import { isolatedCrontab } from '../../../packages/sync/test/cron-support';
 
 test('standalone binary embeds frontend and migrations and preserves state on restart', async () => {
   await using crontab = await isolatedCrontab();
-  await Bun.write(join(crontab.directory, 'deny'), '');
   const folder = await mkdtemp(join(tmpdir(), 'binary-test-'));
   try {
     const executable = join(import.meta.dir, '../dist/app');
@@ -24,7 +23,6 @@ test('standalone binary embeds frontend and migrations and preserves state on re
       env: {
         DATA_FOLDER: dataFolder,
         BASE_URL: 'http://localhost:3000',
-        SYNC_CRON: '',
         PATH: `${crontab.directory}:${process.env.PATH}`,
       },
     });
@@ -64,7 +62,6 @@ test('standalone binary embeds frontend and migrations and preserves state on re
       env: {
         DATA_FOLDER: dataFolder,
         BASE_URL: 'http://localhost:3000',
-        SYNC_CRON: '',
         PATH: `${crontab.directory}:${process.env.PATH}`,
       },
     });
@@ -74,13 +71,13 @@ test('standalone binary embeds frontend and migrations and preserves state on re
       HTTP_NOT_FOUND,
     );
     await restarted.stop();
-    expect(await crontab.table.exists()).toBe(false);
+    expect(await crontab.table.text()).toBe('');
   } finally {
     await rm(folder, { recursive: true, force: true });
   }
 });
 
-test('standalone host opts into one cron job and handles its task before server initialization', async () => {
+test('a standalone host registers cron automatically and its task never initializes a second app', async () => {
   await using crontab = await isolatedCrontab();
   const executable = join(import.meta.dir, '../dist/app');
   const dataFolder = join(crontab.directory, 'data');
@@ -90,14 +87,17 @@ test('standalone host opts into one cron job and handles its task before server 
     env: {
       DATA_FOLDER: dataFolder,
       PATH: `${crontab.directory}:${process.env.PATH}`,
-      SYNC_CRON: '1',
     },
   });
   expect(await crontab.table.text()).toContain('*/30 * * * *');
   const taskTimeoutMs = 5_000;
   const unusedData = join(crontab.directory, 'must-not-be-created');
-  const child = Bun.spawn([executable, '--open-sync-cron', join(dataFolder, '.cron/worker.sock')], {
-    env: { DATA_FOLDER: unusedData, PORT: 'invalid', SYNC_CRON: 'invalid' },
+  const fields = 5;
+  const entry = (await crontab.table.text())
+    .split('\n')
+    .find((line) => line && !line.startsWith('#'))!;
+  const child = Bun.spawn(['/bin/sh', '-c', entry.split(' ').slice(fields).join(' ')], {
+    env: { DATA_FOLDER: unusedData, PORT: 'invalid' },
     stdout: 'pipe',
     stderr: 'pipe',
     timeout: taskTimeoutMs,

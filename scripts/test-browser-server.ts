@@ -202,7 +202,7 @@ async function startFixtureHost() {
       syncFetch: sync.fetch,
       origins,
     }).listen({ port: env.PORT, hostname: '0.0.0.0' });
-    sync.start();
+    await sync.start();
     console.log(`Open Sync listening on http://0.0.0.0:${app.server!.port}`);
     let stopping = false;
     const stop = async () => {

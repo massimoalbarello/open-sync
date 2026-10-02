@@ -10,7 +10,6 @@
     "./json": "./src/models/json.ts",
     "./http": "./src/http/index.ts",
     "./engine": "./src/runtime.ts",
-    "./cron": "./src/cron.ts",
     "./build": "./src/build.ts",
     "./assets": "./src/models/asset.ts"
   },

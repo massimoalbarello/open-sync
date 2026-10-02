@@ -40,3 +40,17 @@ if (process.argv[2] === '-l') {
     },
   };
 }
+
+/** Execute the exact command registered in the private table, as the OS cron daemon would. */
+export async function runRegisteredCron(table: Bun.BunFile) {
+  const fields = 5;
+  const entry = (await table.text()).split('\n').find((line) => line && !line.startsWith('#'))!;
+  const child = Bun.spawn(['/bin/sh', '-c', entry.split(' ').slice(fields).join(' ')], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const [code, error] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+  if (code) {
+    throw new Error(error || `Cron command failed: ${code}`);
+  }
+}

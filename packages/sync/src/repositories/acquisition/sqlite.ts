@@ -20,14 +20,6 @@ export class SqliteAcquisition implements AcquisitionRepository {
       .query("UPDATE syncs SET next_due_at=? WHERE enabled=1 AND status='waiting_for_capacity'")
       .run(Date.now());
   }
-  nextDue(): number | undefined {
-    return (
-      this.input.db
-        .query<{ due: number | null }, []>(`
-      SELECT MIN(COALESCE(expires_at,next_due_at)) AS due FROM syncs WHERE enabled=1`)
-        .get()?.due ?? undefined
-    );
-  }
   claim(leaseMs: number) {
     return claimAcquisition({ ...this.input, leaseMs });
   }

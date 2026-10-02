@@ -27,7 +27,7 @@ export class Crontab {
     if (!input.command.length) {
       throw new Error('A cron task needs an executable command.');
     }
-    this.command = input.command.map(shellArgument).join(' ');
+    this.command = `BUN_BE_BUN=1 ${input.command.map(shellArgument).join(' ')}`;
   }
   install(): Promise<void> {
     return this.update(`${SCHEDULE} ${this.command}\n`);

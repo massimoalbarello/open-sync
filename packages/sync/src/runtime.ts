@@ -1,5 +1,6 @@
 import { syncApi } from './api';
 import { openDatabase } from './db/client';
+import { startCrontab } from './execution/cron';
 import { type Logger, safeLogger } from './execution/diagnostics';
 import type { ProviderGateway } from './execution/provider';
 import { Worker } from './execution/worker';
@@ -93,14 +94,43 @@ export function createSyncRuntime(options: SyncRuntimeOptions) {
       limits,
       timeoutMs: timing.timeoutMs,
     });
+    let starting: Promise<void> | undefined;
+    let cron: Awaited<ReturnType<typeof startCrontab>> | undefined;
     let closing: Promise<void> | undefined;
     return {
       api: syncApi(api),
-      start: () => worker.start(),
+      /** Requires a working Unix crontab service. Registration failures reject startup. */
+      start(input: { crontabExecutable?: string } = {}): Promise<void> {
+        worker.ensureOpen();
+        if (closing) {
+          fail('closed');
+        }
+        starting ??= (async () => {
+          cron = await startCrontab({
+            runtime: worker,
+            directory: `${options.databasePath}.cron`,
+            crontabExecutable: input.crontabExecutable,
+            onError: () => log({ code: 'runtime_failed' }),
+          });
+          worker.start();
+        })();
+        return starting;
+      },
       runDue: () => worker.runDue(),
       tick: () => worker.tick(),
       close: () => {
-        closing ??= worker.close().finally(() => db.close());
+        closing ??= (async () => {
+          try {
+            await starting?.catch(() => undefined);
+            await worker.close();
+          } finally {
+            try {
+              await cron?.close();
+            } finally {
+              db.close();
+            }
+          }
+        })();
         return closing;
       },
     };

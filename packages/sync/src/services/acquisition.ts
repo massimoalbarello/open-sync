@@ -27,9 +27,6 @@ export class AcquisitionService {
   capacityReleased() {
     this.input.repository.capacityReleased();
   }
-  nextDue() {
-    return this.input.repository.nextDue();
-  }
   claim() {
     return this.input.repository.claim(this.input.timing.leaseMs);
   }
