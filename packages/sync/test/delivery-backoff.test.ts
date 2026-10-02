@@ -1,23 +1,19 @@
 import { expect, spyOn, test } from 'bun:test';
-import type { SyncContext } from '../src/models/definition';
 import { createSyncRuntime } from '../src/runtime';
 import { accepted, alpha, configure, fixture, page, storage } from './support';
 
-test('source and delivery failures use the same durable exponential backoff', async () => {
+test('delivery failures retain exponential backoff independently of source polling', async () => {
   const files = storage();
   let now = Date.now();
   const clock = spyOn(Date, 'now').mockImplementation(() => now);
-  let failingSource = '';
   const engine = createSyncRuntime({
     databasePath: files.path,
     definitions: [
       {
         ...fixture,
         load: () => ({
-          step(context: SyncContext) {
-            return context.syncId === failingSource
-              ? Promise.reject(new Error('temporary'))
-              : Promise.resolve({ ...page, complete: true });
+          step() {
+            return Promise.resolve({ ...page, complete: true });
           },
         }),
       },
@@ -27,8 +23,6 @@ test('source and delivery failures use the same durable exponential backoff', as
     },
   });
   try {
-    const source = await configure(engine);
-    failingSource = source.id;
     const destinationSync = await configure(engine);
     await engine.tick();
     await engine.tick();
@@ -45,13 +39,13 @@ test('source and delivery failures use the same durable exponential backoff', as
     });
     for (const delay of delays) {
       const due = now + delay;
-      expect(engine.api.sync({ ...alpha, id: source.id }).nextDueAt).toBe(due);
+      await engine.runDue();
       expect(
         engine.api.deliveries({ ...alpha, syncId: destinationSync.id }).deliveries[0]
           ?.nextAttemptAt,
       ).toBe(due);
       now = due;
-      await engine.tick();
+      await engine.runDue();
     }
   } finally {
     await engine.close();

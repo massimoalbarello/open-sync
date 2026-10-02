@@ -6,9 +6,9 @@ export interface AcquisitionLease extends Scope {
   sync: Sync;
   generation: number;
   force: boolean;
-  failureCount: number;
 }
 export interface AcquisitionRepository {
+  poll(): void;
   capacityReleased(): void;
   claim(leaseMs: number): AcquisitionLease | undefined;
   hasCapacity(): boolean;
@@ -17,8 +17,6 @@ export interface AcquisitionRepository {
     lease: AcquisitionLease;
     state: Exclude<SyncStatus, 'running' | 'disabled'>;
     errorCode?: string;
-    delay: number;
-    failureCount?: number;
     pause?: boolean;
   }): void;
 }

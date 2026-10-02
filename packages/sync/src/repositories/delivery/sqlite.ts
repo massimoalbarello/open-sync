@@ -59,9 +59,9 @@ export class SqliteDeliveries implements DeliveryRepository {
           // Capacity is global; all paused acquisitions can compete for the released budget.
           this.db
             .query(
-              "UPDATE syncs SET next_due_at=? WHERE enabled=1 AND status='waiting_for_capacity'",
+              "UPDATE syncs SET status='ready' WHERE enabled=1 AND status='waiting_for_capacity'",
             )
-            .run(Date.now());
+            .run();
         } else {
           this.db
             .query(

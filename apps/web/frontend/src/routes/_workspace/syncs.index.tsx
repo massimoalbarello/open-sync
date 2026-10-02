@@ -49,11 +49,7 @@ function Syncs() {
                 <p className="text-muted-foreground text-sm">
                   {source?.provider && !sync.connection
                     ? 'Waiting for authorization'
-                    : statusLabel(sync.status)}{' '}
-                  ·{' '}
-                  {sync.enabled
-                    ? `Next poll ${new Date(sync.nextDueAt).toLocaleString()}`
-                    : 'Paused'}
+                    : statusLabel(sync.status)}
                 </p>
               </Link>
             </li>

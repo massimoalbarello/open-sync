@@ -27,6 +27,7 @@ export class Worker implements WorkerControl {
   #capacityReleased = false;
   #closing?: Promise<void>;
   #draining?: Promise<void>;
+  #polling = false;
   #drainRequested = false;
   #resume?: () => void;
   constructor(
@@ -55,7 +56,7 @@ export class Worker implements WorkerControl {
     if ((!this.#started && !this.#draining) || this.#lifetime.signal.aborted) {
       return;
     }
-    void this.runDue().catch(() => this.input.log({ code: 'runtime_failed' }));
+    void this.requestDrain().catch(() => this.input.log({ code: 'runtime_failed' }));
   }
   /** A deterministic dispatch round for hosts/tests that do not start the background worker. */
   tick(): Promise<void> {
@@ -65,9 +66,16 @@ export class Worker implements WorkerControl {
       this.cleanup(),
     );
   }
-  /** Drain runnable pages and deliveries, sharing one run across concurrent host triggers. */
+  /** Poll enabled syncs and drain runnable work, sharing a round across concurrent host triggers. */
   runDue(): Promise<void> {
     this.ensureOpen();
+    if (!this.#polling) {
+      this.input.acquisition.poll();
+      this.#polling = true;
+    }
+    return this.requestDrain();
+  }
+  private requestDrain(): Promise<void> {
     this.#drainRequested = true;
     this.#resume?.();
     this.#draining ??= Promise.resolve().then(() => this.drain());
@@ -98,6 +106,7 @@ export class Worker implements WorkerControl {
     } finally {
       this.#resume = undefined;
       this.#draining = undefined;
+      this.#polling = false;
     }
   }
   private dispatch(): void {

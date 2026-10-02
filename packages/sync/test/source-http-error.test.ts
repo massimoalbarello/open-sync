@@ -1,10 +1,9 @@
-import { expect, spyOn, test } from 'bun:test';
+import { expect, test } from 'bun:test';
 import type { SyncEvent } from '../src/execution/diagnostics';
 import { SourceHttpError, type SyncContext } from '../src/models/definition';
 import { createSyncRuntime } from '../src/runtime';
 import { accepted, alpha, configure, fixture, page, savedSync, storage } from './support';
 
-const retryMs = 30_000;
 const rateLimited = 429;
 const forbidden = 403;
 const unavailable = 503;
@@ -20,11 +19,9 @@ test.each(
     unavailable: 503,
     gatewayTimeout: 504,
   }),
-)('HTTP %s backs off at the shared engine boundary', async (status) => {
+)('HTTP %s retries on the next polling round', async (status) => {
   const files = storage();
   const events: SyncEvent[] = [];
-  const now = Date.now();
-  const clock = spyOn(Date, 'now').mockReturnValue(now);
   const engine = createSyncRuntime({
     databasePath: files.path,
     definitions: [
@@ -46,16 +43,16 @@ test.each(
       checkpoint: 0,
       status: 'retrying',
       errorCode: `source_http_${status}`,
-      nextDueAt: now + retryMs,
     });
     expect(events[0]?.fields).toEqual({
       httpStatus: status,
-      failureCount: 1,
-      retryAfterMs: retryMs,
     });
+    await engine.tick();
+    expect(events).toHaveLength(1);
+    await engine.runDue();
+    expect(events).toHaveLength(2);
   } finally {
     await engine.close();
-    clock.mockRestore();
     files.close();
   }
 });
@@ -108,7 +105,7 @@ test.each(
     });
     await engine.close();
     engine = createSyncRuntime(options);
-    await engine.tick();
+    await engine.runDue();
     expect(seen).toEqual([0, 1]);
     rejected = false;
     await engine.api.setEnabled({ ...scope, enabled: true });
@@ -129,8 +126,6 @@ test.each([rateLimited, forbidden, unavailable])(
   async (status) => {
     const files = storage();
     const events: SyncEvent[] = [];
-    let now = Date.now();
-    const clock = spyOn(Date, 'now').mockImplementation(() => now);
     let rejected = true;
     const options = {
       databasePath: files.path,
@@ -165,38 +160,34 @@ test.each([rateLimited, forbidden, unavailable])(
     try {
       const sync = await configure(engine);
       const scope = { ...alpha, id: sync.id };
-      const delays = Object.values({ first: 30_000, second: 60_000, third: 120_000 });
+      const rounds = 3;
       await engine.tick();
-      for (const [index, delay] of delays.entries()) {
-        await engine.tick();
+      for (let round = 0; round < rounds; round++) {
+        await engine.runDue();
         expect(savedSync({ path: files.path, scope: scope })).toMatchObject({
           enabled: status !== forbidden,
           checkpoint: 1,
           status: status === forbidden ? 'disabled' : 'retrying',
           errorCode: `source_http_${status}`,
-          nextDueAt: now + delay,
         });
         expect(events.at(-1)?.fields).toEqual({
           httpStatus: status,
-          failureCount: index + 1,
-          ...(status === forbidden ? { paused: true } : { retryAfterMs: delay }),
+          ...(status === forbidden ? { paused: true } : {}),
         });
         await engine.close();
         engine = createSyncRuntime(options);
-        now += delay;
         if (status === forbidden) {
           await engine.api.setEnabled({ ...scope, enabled: true });
         }
       }
       rejected = false;
-      await engine.tick();
+      await engine.runDue();
       expect(savedSync({ path: files.path, scope: scope })).toMatchObject({
         enabled: true,
         status: 'succeeded',
       });
     } finally {
       await engine.close();
-      clock.mockRestore();
       files.close();
     }
   },

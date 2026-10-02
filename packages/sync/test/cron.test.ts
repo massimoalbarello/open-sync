@@ -3,7 +3,7 @@ import { mkdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { startCron } from '../src/execution/cron';
 import { isolatedScheduler, runRegisteredCron } from './cron-support';
-import { alpha, configure, runtime } from './support';
+import { alpha, configure, fixture, runtime } from './support';
 
 const CRON_FIELDS = 5;
 const PRIVATE_DIRECTORY_MODE = 0o700;
@@ -11,13 +11,34 @@ const PRIVATE_SOCKET_MODE = 0o600;
 
 test('a registered shell command invokes the existing headless runtime through its private socket', async () => {
   await using table = await isolatedScheduler();
-  const f = runtime();
+  const overlapping = Promise.withResolvers<void>();
+  const f = runtime({
+    registration: {
+      ...fixture,
+      load: () => ({
+        async step(context) {
+          await overlapping.promise;
+          return (await fixture.load()).step(context);
+        },
+      }),
+    },
+  });
+  let invocations = 0;
   const directory = join(table.directory, 'worker');
   const errors: unknown[] = [];
   try {
     const sync = await configure(f.engine);
     await using cron = await startCron({
-      runtime: f.engine,
+      runtime: {
+        runDue() {
+          const running = f.engine.runDue();
+          // Both shell processes must reach the host before either poll can finish.
+          if (++invocations === 2) {
+            overlapping.resolve();
+          }
+          return running;
+        },
+      },
       directory,
       onError: (error) => errors.push(error),
     });
@@ -52,6 +73,7 @@ test('a registered shell command invokes the existing headless runtime through i
     await cron.close();
     expect(await table.table.text()).toBe('');
   } finally {
+    overlapping.resolve();
     await f.close();
   }
 });

@@ -11,8 +11,6 @@ export interface Sync {
   destination: { type: string; config: JsonObject };
   enabled: boolean;
   checkpoint: JsonValue;
-  intervalMs: number;
-  nextDueAt: number;
   status: SyncStatus;
   errorCode: string | null;
 }
@@ -21,7 +19,6 @@ export interface CreateSync extends Scope {
   connection?: ConnectionRef;
   config: JsonObject;
   destination: { type: string; input: JsonObject };
-  intervalMs?: number;
   enabled?: boolean;
 }
 
@@ -51,8 +48,6 @@ export interface SyncSummary {
   destinationType: string;
   connection?: ConnectionRef;
   enabled: boolean;
-  intervalMs: number;
-  nextDueAt: number;
   status: SyncStatus;
   errorCode: string | null;
 }
@@ -63,8 +58,6 @@ export function summarizeSync(sync: Sync): SyncSummary {
     destinationType: sync.destination.type,
     connection: sync.connection,
     enabled: sync.enabled,
-    intervalMs: sync.intervalMs,
-    nextDueAt: sync.nextDueAt,
     status: sync.status,
     errorCode: sync.errorCode,
   };

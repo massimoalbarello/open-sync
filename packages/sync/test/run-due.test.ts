@@ -4,8 +4,7 @@ import { isolatedScheduler, runRegisteredCron } from './cron-support';
 import { accepted, alpha, beta, configure, fixture, runtime, storage } from './support';
 
 const RECORD_COUNT = 3;
-const POLL_INTERVAL_MS = 100;
-const AFTER_INTERVAL_MS = 150;
+const IDLE_OBSERVATION_MS = 150;
 
 test('one host trigger drains all due syncs and deliveries, coalesces overlap, and respects pauses', async () => {
   const files = storage();
@@ -33,7 +32,6 @@ test('one host trigger drains all due syncs and deliveries, coalesces overlap, a
           definition: 'test',
           config: { count: RECORD_COUNT },
           destination: { type: 'local', input: {} },
-          intervalMs: POLL_INTERVAL_MS,
         }),
       })),
     );
@@ -45,8 +43,7 @@ test('one host trigger drains all due syncs and deliveries, coalesces overlap, a
       expect(engine.api.status(scope).queue.pendingRecords).toBe(0);
       expect(engine.api.polls({ ...scope, id: sync.id }).polls).toHaveLength(1);
     }
-    // A host may choose its own timer or external scheduler without starting background work.
-    await Bun.sleep(AFTER_INTERVAL_MS);
+    // Every host trigger polls again, without waiting for a per-sync deadline.
     const [paused, active] = syncs;
     await engine.api.setEnabled({ ...paused!.scope, id: paused!.sync.id, enabled: false });
     expect(engine.api.polls({ ...active!.scope, id: active!.sync.id }).polls).toHaveLength(1);
@@ -83,7 +80,6 @@ test('cron joins startup work and remains the only automatic polling trigger', a
       definition: 'test',
       config: { count: 1 },
       destination: { type: 'local', input: {} },
-      intervalMs: POLL_INTERVAL_MS,
     });
     await f.engine.start();
     await entered.promise;
@@ -92,7 +88,7 @@ test('cron joins startup work and remains the only automatic polling trigger', a
     release.resolve();
     await running;
     expect(steps).toBe(1);
-    await Bun.sleep(AFTER_INTERVAL_MS);
+    await Bun.sleep(IDLE_OBSERVATION_MS);
     expect(steps).toBe(1);
     await runRegisteredCron(table.table);
     expect(steps).toBe(2);
@@ -125,6 +121,124 @@ test('shutdown interrupts a host trigger waiting for due work', async () => {
     await entered.promise;
     await f.engine.close();
     await running;
+  } finally {
+    await f.close();
+  }
+});
+
+test('manual wake-ups leave completed syncs idle and overlapping cron triggers share one poll', async () => {
+  await using table = await isolatedScheduler();
+  const blocked = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const calls: number[] = [];
+  const f = runtime({
+    registration: {
+      ...fixture,
+      load: () => ({
+        async step({ config }) {
+          calls.push(Number(config.count));
+          if (config.count === 2) {
+            blocked.resolve();
+            await release.promise;
+          }
+          return { records: [], checkpoint: 0, complete: true };
+        },
+      }),
+    },
+  });
+  const create = (count: number) =>
+    f.engine.api.createSync({
+      ...alpha,
+      definition: 'test',
+      config: { count },
+      destination: { type: 'local', input: {} },
+    });
+  try {
+    const first = await create(1);
+    await f.engine.runDue();
+    await f.engine.start();
+    await create(2);
+    await blocked.promise;
+    expect(calls).toEqual([1, 2]);
+    const cron = f.engine.runDue();
+    // Starting a cron round during a manual drain still includes the previously completed sync.
+    // Wait for its committed poll while the other sync remains in flight.
+    await until(
+      () =>
+        f.engine.api.polls({ ...alpha, id: first.id }).polls.length === 2 &&
+        f.engine.api.sync({ ...alpha, id: first.id }).status === 'succeeded',
+    );
+    expect(f.engine.runDue()).toBe(cron);
+    release.resolve();
+    await cron;
+    expect(calls).toEqual([1, 2, 1]);
+    const afterManualPolls = 3;
+    f.engine.api.runNow({ ...alpha, id: first.id });
+    await until(
+      () =>
+        f.engine.api.polls({ ...alpha, id: first.id }).polls.length === afterManualPolls &&
+        f.engine.api.sync({ ...alpha, id: first.id }).status === 'succeeded',
+    );
+    expect(calls).toEqual([1, 2, 1, 1]);
+    await runRegisteredCron(table.table);
+    expect(calls.filter((count) => count === 2)).toHaveLength(2);
+  } finally {
+    release.resolve();
+    await f.close();
+  }
+});
+
+async function until(check: () => boolean) {
+  const timeoutMs = 5_000;
+  const deadline = Date.now() + timeoutMs;
+  while (!check()) {
+    if (Date.now() >= deadline) {
+      throw new Error('Sync did not reach the expected state');
+    }
+    await Bun.sleep(1);
+  }
+}
+
+test('each cron round attempts healthy and failed syncs exactly once', async () => {
+  const calls: number[] = [];
+  let failing = true;
+  const f = runtime({
+    registration: {
+      ...fixture,
+      load: () => ({
+        step({ config }) {
+          calls.push(Number(config.count));
+          if (config.count === 2 && failing) {
+            return Promise.reject(new Error('temporary failure'));
+          }
+          return Promise.resolve({ records: [], checkpoint: 0, complete: true });
+        },
+      }),
+    },
+  });
+  try {
+    const syncs = await Promise.all(
+      [1, 2].map((count) =>
+        f.engine.api.createSync({
+          ...alpha,
+          definition: 'test',
+          config: { count },
+          destination: { type: 'local', input: {} },
+        }),
+      ),
+    );
+    await f.engine.runDue();
+    await f.engine.runDue();
+    expect(calls.filter((count) => count === 1)).toHaveLength(2);
+    expect(calls.filter((count) => count === 2)).toHaveLength(2);
+    const scope = { ...alpha, id: syncs[1]!.id };
+    expect(f.engine.api.sync(scope).status).toBe('retrying');
+    await f.engine.tick();
+    expect(calls.filter((count) => count === 2)).toHaveLength(2);
+    failing = false;
+    await f.engine.runDue();
+    expect(calls.filter((count) => count === 2)).toEqual([2, 2, 2]);
+    expect(f.engine.api.sync(scope).status).toBe('succeeded');
   } finally {
     await f.close();
   }

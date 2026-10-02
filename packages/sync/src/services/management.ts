@@ -4,7 +4,7 @@ import type { ConnectionRef } from '../models/definition';
 import { fail } from '../models/error';
 import type { Resource, Scope } from '../models/identity';
 import type { JsonObject } from '../models/json';
-import { positive, type QueueLimits } from '../models/limits';
+import type { QueueLimits } from '../models/limits';
 import type { Registry } from '../models/registry';
 import { type CreateSync, summarizeSync } from '../models/sync';
 import { identifier, validate } from '../models/validation';
@@ -67,9 +67,6 @@ export class SyncManagement {
     this.guard(input);
     const { definition } = this.input.registry.definition(input.definition);
     const config = validate({ value: input.config, schema: definition.configSchema }) as JsonObject;
-    if (input.intervalMs !== undefined) {
-      positive(input.intervalMs);
-    }
     if (definition.provider && (input.connection || input.enabled !== false)) {
       await bindProvider({
         actorId: input.actorId,

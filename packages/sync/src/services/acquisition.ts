@@ -4,7 +4,7 @@ import { bindProvider, type ProviderGateway } from '../execution/provider';
 import { assetKey, type SourceAssets } from '../models/asset';
 import { SyncError } from '../models/error';
 import { canonicalJson } from '../models/json';
-import { retryDelay, type Timing } from '../models/limits';
+import type { Timing } from '../models/limits';
 import type { Registry } from '../models/registry';
 import { retryableStatus } from '../models/source-http-error';
 import { identifier } from '../models/validation';
@@ -24,6 +24,9 @@ export class AcquisitionService {
       log: Logger;
     },
   ) {}
+  poll() {
+    this.input.repository.poll();
+  }
   capacityReleased() {
     this.input.repository.capacityReleased();
   }
@@ -31,11 +34,11 @@ export class AcquisitionService {
     return this.input.repository.claim(this.input.timing.leaseMs);
   }
   async execute(input: { lease: AcquisitionLease; signal: AbortSignal }): Promise<void> {
-    const { repository, timing } = this.input;
+    const { repository } = this.input;
     const { lease } = input;
     try {
       if (!repository.hasCapacity()) {
-        this.finish({ lease, state: 'waiting_for_capacity', delay: timing.retryMs });
+        this.finish({ lease, state: 'waiting_for_capacity' });
         return;
       }
       await abortable({ signal: input.signal, run: () => this.consume(input) });
@@ -44,20 +47,15 @@ export class AcquisitionService {
     }
   }
   private failed(input: { lease: AcquisitionLease; signal: AbortSignal; error: unknown }): void {
-    const { timing, log } = this.input;
+    const { log } = this.input;
     const { lease, signal, error } = input;
     const code = signal.aborted
       ? abortCode(signal)
       : error instanceof SyncError
         ? error.code
         : 'execution_failed';
-    const failed = !['paused', 'interrupted', 'waiting_for_capacity'].includes(code);
-    const failureCount = failed ? lease.failureCount + 1 : lease.failureCount;
     const status = error instanceof SyncError ? error.status : undefined;
     const pause = !signal.aborted && status !== undefined && !retryableStatus(status);
-    const delay = failed
-      ? retryDelay({ attempt: failureCount, retryMs: timing.retryMs })
-      : timing.retryMs;
     log({
       code,
       ownerId: lease.ownerId,
@@ -65,8 +63,7 @@ export class AcquisitionService {
       fields: {
         ...(error instanceof SyncError ? error.diagnostics : {}),
         ...(status === undefined ? {} : { httpStatus: status }),
-        failureCount,
-        ...(pause ? { paused: true } : { retryAfterMs: delay }),
+        ...(pause ? { paused: true } : {}),
       },
     });
     this.finish({
@@ -78,8 +75,6 @@ export class AcquisitionService {
             ? 'interrupted'
             : 'retrying',
       errorCode: code === 'waiting_for_capacity' ? undefined : code,
-      delay,
-      failureCount,
       pause,
     });
   }
