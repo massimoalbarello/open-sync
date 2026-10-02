@@ -126,6 +126,58 @@ test('a standalone host registers cron automatically and its task never initiali
   await app.stop();
 });
 
+test('compiled cron dispatch does not load the normal server module', async () => {
+  await using directory = await isolatedCrontab();
+  const executable = join(directory.directory, 'entrypoint');
+  const marker = 'normal-server-module-loaded';
+  const result = await Bun.build({
+    entrypoints: [join(import.meta.dir, '../backend/src/entrypoint.ts')],
+    compile: { outfile: executable, execArgv: ['--smol'] },
+    splitting: true,
+    target: 'bun',
+    plugins: [
+      {
+        name: 'detect-server-import',
+        setup(build) {
+          build.onLoad({ filter: /backend\/src\/main\.ts$/ }, () => ({
+            contents: `throw new Error(${JSON.stringify(marker)}); export function startServer() {}`,
+            loader: 'ts',
+          }));
+        },
+      },
+    ],
+  });
+  expect(result.success).toBe(true);
+  const socket = join(directory.directory, 'worker.sock');
+  let requests = 0;
+  const worker = Bun.serve({
+    unix: socket,
+    fetch(request) {
+      expect(request.method).toBe('POST');
+      expect(new URL(request.url).pathname).toBe('/run');
+      requests += 1;
+      return new Response(null, { status: HTTP_OK });
+    },
+  });
+  try {
+    const title = `open-sync-${Buffer.from(socket).toString('base64url')}`;
+    const cron = Bun.spawn([executable, `--cron-title=${title}`], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: 5_000,
+    });
+    expect(await new Response(cron.stderr).text()).toBe('');
+    expect(await cron.exited).toBe(0);
+    expect(requests).toBe(1);
+
+    const normal = Bun.spawn([executable], { stdout: 'pipe', stderr: 'pipe', timeout: 5_000 });
+    expect(await new Response(normal.stderr).text()).toContain(marker);
+    expect(await normal.exited).toBe(1);
+  } finally {
+    await worker.stop(true);
+  }
+});
+
 test.skipIf(process.platform !== 'linux')(
   'a standalone host never accepts connections when cron registration fails',
   async () => {
