@@ -158,6 +158,7 @@ export async function createOpenSync(options: OpenSyncOptions): Promise<OpenSync
       api,
       providers: providerApi(providers),
       start: () => runtime.start(),
+      runDue: () => runtime.runDue(),
       async fetch(request: Request): Promise<Response> {
         if (lifetime.signal.aborted) {
           return new Response(null, { status: 503 });
@@ -205,7 +206,12 @@ export interface OpenSyncRuntime {
   api: SyncApi;
   providers: ProviderApi;
   fetch(request: Request): Promise<Response>;
-  start(): void;
+  /**
+   * Register one half-hourly OS job and start processing work.
+   * Compiled hosts must call runOpenSyncCron() from @context-use/open-sync/cron before initialization.
+   */
+  start(): Promise<void>;
+  runDue(): Promise<void>;
   close(): Promise<void>;
 }
 export type { ProviderApi, SyncApi } from './api';

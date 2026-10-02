@@ -2,12 +2,19 @@
 
 import { createOpenSync, type OpenSyncOptions } from '@context-use/open-sync';
 import { assetPlaceholder, resolveAssetReference } from '@context-use/open-sync/assets';
+import { runOpenSyncCron } from '@context-use/open-sync/cron';
 import type { SyncRegistration } from '@context-use/open-sync/definition';
 import type { Deliverable } from '@context-use/open-sync/delivery';
+import { isolatedScheduler, runRegisteredCron } from './cron-support';
+
+if (await runOpenSyncCron()) {
+  process.exit(0);
+}
 
 // Keep the installed provider runtime and credential persistence real; simulate only GitHub.
 const providerFetch = globalThis.fetch;
 const okStatus = 200;
+const AFTER_INTERVAL_MS = 150;
 globalThis.fetch = Object.assign((input: RequestInfo | URL) => {
   const url = input instanceof Request ? input.url : String(input);
   if (url !== 'https://api.github.com/user') {
@@ -127,6 +134,7 @@ if (Bun.isStandaloneExecutable) {
   }
 }
 const empty = process.argv[2] === 'empty';
+await using scheduler = await isolatedScheduler();
 const sync = await createOpenSync({ ...options, definitions: empty ? [] : [definition] });
 try {
   if (empty) {
@@ -163,25 +171,29 @@ try {
       throw new Error('Provider connection was not created');
     }
     const destination = { type: 'local', input: {} };
-    await sync.api.createSync({
+    const created = await sync.api.createSync({
       ...scope,
       destination,
       config: {},
       definition: definition.definition.id,
       connection: { id: connection.id, service: connection.service },
+      intervalMs: 100,
     });
-    sync.start();
-    const timeoutMs = 5000;
-    const pollMs = 20;
-    const deadline = Date.now() + timeoutMs;
-    while (
-      (!received.length || sync.api.status(scope).queue.pendingRecords) &&
-      Date.now() < deadline
-    ) {
-      await Bun.sleep(pollMs);
-    }
+    // Exercise the installed API with a private crontab subprocess, including a compiled host
+    // launched from outside its source tree. No system crontab or public server is involved.
+    await sync.start();
+    await sync.runDue();
     if (received.length !== 1 || sync.api.status(scope).queue.pendingRecords !== 0) {
       throw new Error('Independent consumer did not receive its record');
+    }
+    const pollCount = sync.api.polls({ ...scope, id: created.id }).polls.length;
+    await Bun.sleep(AFTER_INTERVAL_MS);
+    if (sync.api.polls({ ...scope, id: created.id }).polls.length !== pollCount) {
+      throw new Error('An in-process timer bypassed the cron schedule');
+    }
+    await runRegisteredCron(scheduler.table);
+    if (sync.api.polls({ ...scope, id: created.id }).polls.length !== pollCount + 1) {
+      throw new Error('The headless host cron command did not execute due work');
     }
     const catalog = await sync.fetch(new Request('http://host/embedded/providers'));
     if (

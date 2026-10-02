@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const root = join(import.meta.dir, '..');
+const workspace = await Bun.file(join(root, 'package.json')).json();
 const temporary = await mkdtemp(join(tmpdir(), 'open-sync-package-'));
 const execution = await mkdtemp(join(tmpdir(), 'open-sync-executable-'));
 const packages = [
@@ -33,6 +34,10 @@ try {
         '@context-use/open-sync': './sync.tgz',
         '@open-sync/examples': './syncs.tgz',
       },
+      devDependencies: {
+        '@types/bun': workspace.devDependencies['@types/bun'],
+        typescript: workspace.workspaces.catalog.typescript,
+      },
     }),
   );
   await run({ cwd: temporary, command: ['bun', 'install', '--ignore-scripts'] });
@@ -40,6 +45,20 @@ try {
     join(temporary, 'consumer.ts'),
     await readFile(join(root, 'packages/sync/test/package-consumer.ts')),
   );
+  await copyFile(
+    join(root, 'packages/sync/test/cron-support.ts'),
+    join(temporary, 'cron-support.ts'),
+  );
+  await copyFile(join(root, 'packages/typescript-config/base.json'), join(temporary, 'base.json'));
+  await writeFile(
+    join(temporary, 'tsconfig.json'),
+    JSON.stringify({
+      extends: './base.json',
+      compilerOptions: { lib: ['ESNext', 'DOM', 'DOM.Iterable'] },
+      include: ['consumer.ts'],
+    }),
+  );
+  await run({ cwd: temporary, command: ['bun', 'run', '--bun', 'tsc', '--noEmit'] });
   await run({ cwd: temporary, command: ['bun', 'consumer.ts'] });
   await writeFile(
     join(temporary, 'build.ts'),

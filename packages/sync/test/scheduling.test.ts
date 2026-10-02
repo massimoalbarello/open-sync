@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import type { SyncRegistration } from '../src/models/definition';
 import { createSyncRuntime } from '../src/runtime';
+import { isolatedScheduler, runRegisteredCron } from './cron-support';
 import {
   accepted,
   alpha,
@@ -24,6 +25,7 @@ async function until(check: () => boolean) {
 }
 
 test('waiting sources and deliveries do not stop other steps, even at the same destination', async () => {
+  await using _table = await isolatedScheduler();
   const files = storage();
   const heldSource = Promise.withResolvers<void>();
   const heldDelivery = Promise.withResolvers<void>();
@@ -77,13 +79,15 @@ test('waiting sources and deliveries do not stop other steps, even at the same d
     }
     slowSource = installs[0]!.id;
     slowDelivery = installs[1]!.id;
-    engine.start();
-    engine.start();
+    await engine.start();
+    await engine.start();
     await until(() => delivered.filter((id) => id === installs[2]!.id).length === syncCount);
     expect(
       savedSync({ path: files.path, scope: { ...alpha, id: installs[0]!.id } }).checkpoint,
     ).toBe(0);
     expect(delivered).not.toContain(slowDelivery);
+    const added = await configure(engine);
+    await until(() => delivered.filter((id) => id === added.id).length === syncCount);
     heldSource.resolve();
     heldDelivery.resolve();
     await until(
@@ -91,7 +95,7 @@ test('waiting sources and deliveries do not stop other steps, even at the same d
         engine.api.status(alpha).queue.pendingRecords === 0 &&
         engine.api.sync({ ...alpha, id: installs[0]!.id }).status === 'succeeded',
     );
-    expect(delivered).toHaveLength(syncCount * syncCount);
+    expect(delivered).toHaveLength((syncCount + 1) * syncCount);
   } finally {
     heldSource.resolve();
     heldDelivery.resolve();
@@ -101,6 +105,7 @@ test('waiting sources and deliveries do not stop other steps, even at the same d
 });
 
 test('an uncooperative step times out, releases its slot, and cannot commit a late result', async () => {
+  await using _table = await isolatedScheduler();
   const files = storage();
   const late = Promise.withResolvers<typeof page>();
   let held = '';
@@ -124,7 +129,7 @@ test('an uncooperative step times out, releases its slot, and cannot commit a la
     const first = await configure(engine);
     held = first.id;
     const other = await configure(engine);
-    engine.start();
+    await engine.start();
     await until(
       () =>
         engine.api.sync({ ...alpha, id: other.id }).status === 'succeeded' &&
@@ -141,7 +146,8 @@ test('an uncooperative step times out, releases its slot, and cannot commit a la
   }
 });
 
-test('idle workers wake for new work and retries wait until their persisted due time', async () => {
+test('new work starts immediately but a future retry waits for the next cron check', async () => {
+  await using table = await isolatedScheduler();
   const files = storage();
   const times: number[] = [];
   const retryMs = 50;
@@ -163,11 +169,15 @@ test('idle workers wake for new work and retries wait until their persisted due 
     },
   });
   try {
-    engine.start();
+    await engine.start();
     await Bun.sleep(1);
     await configure(engine);
+    await until(() => times.length === 1);
+    await Bun.sleep(retryMs * 2);
+    expect(times).toHaveLength(1);
+    await runRegisteredCron(table.table);
     const deliveries = 4;
-    await until(() => times.length === deliveries);
+    expect(times).toHaveLength(deliveries);
     expect(times[1]! - times[0]!).toBeGreaterThanOrEqual(retryMs);
     expect(engine.api.status(alpha).queue.pendingRecords).toBe(0);
   } finally {

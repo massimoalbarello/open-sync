@@ -10,7 +10,6 @@ export interface AcquisitionLease extends Scope {
 }
 export interface AcquisitionRepository {
   capacityReleased(): void;
-  nextDue(): number | undefined;
   claim(leaseMs: number): AcquisitionLease | undefined;
   hasCapacity(): boolean;
   commit(input: { lease: AcquisitionLease; page: SyncStep; definition: SyncDefinition }): void;

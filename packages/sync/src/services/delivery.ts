@@ -20,9 +20,6 @@ export class DeliveryService {
   claim() {
     return this.input.repository.claim(this.input.timing.leaseMs);
   }
-  nextDue() {
-    return this.input.repository.nextDue();
-  }
   async execute(input: { lease: DeliveryLease; signal: AbortSignal }): Promise<boolean> {
     const { repository, registry, timing } = this.input;
     const { lease, signal } = input;

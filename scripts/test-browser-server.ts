@@ -194,6 +194,7 @@ async function startFixtureHost() {
       onEvent: (event) => console.log(JSON.stringify({ event: 'sync.status', ...event })),
     });
     dashboard = new DashboardService(sync);
+    await sync.start();
     const app = createApp({
       dashboard,
       auth,
@@ -202,7 +203,6 @@ async function startFixtureHost() {
       syncFetch: sync.fetch,
       origins,
     }).listen({ port: env.PORT, hostname: '0.0.0.0' });
-    sync.start();
     console.log(`Open Sync listening on http://0.0.0.0:${app.server!.port}`);
     let stopping = false;
     const stop = async () => {

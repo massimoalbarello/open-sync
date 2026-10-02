@@ -16,80 +16,84 @@ import { FrontendAssetsService } from '#backend/services/frontend-assets/service
 import { ReceiverService } from '#backend/services/receiver/service.ts';
 import { syncDefinitions } from '#backend/sync-definitions.ts';
 
-const env = loadEnv();
-const secret = await loadAuthSecret({
-  dataFolder: env.DATA_FOLDER,
-  environmentSecret: env.BETTER_AUTH_SECRET,
-});
-const database = await createSqliteDatabase({ dataFolder: env.DATA_FOLDER });
-let sync: OpenSyncRuntime | undefined;
-try {
-  await runMigrations({ db: database });
-  const auth = createAuth({
-    database,
-    baseUrl: env.BASE_URL,
-    nibrunHostname: env.NIBRUN_HOSTNAME,
-    secret: secret.value,
+export async function startServer(): Promise<void> {
+  const env = loadEnv();
+  const secret = await loadAuthSecret({
+    dataFolder: env.DATA_FOLDER,
+    environmentSecret: env.BETTER_AUTH_SECRET,
   });
-  const origins = [
-    ...new Set([
-      env.BASE_URL.origin,
-      ...(env.NIBRUN_HOSTNAME ? [`https://${env.NIBRUN_HOSTNAME}`] : []),
-    ]),
-  ];
-  const receiver = new ReceiverService(
-    await SqliteReceiver.open({
-      db: database,
-      assetDirectory: join(env.DATA_FOLDER, 'received-assets'),
-    }),
-  );
-  let dashboard: DashboardService;
-  sync = await createOpenSync({
-    dataDirectory: env.DATA_FOLDER,
-    publicUrl: new URL('/api/open-sync', env.BASE_URL).href,
-    authorize: (request) => authorizeSyncRequest({ auth, origins, request }),
-    canConfigureProviders: (scope) => Promise.resolve(scope.actorId === scope.ownerId),
-    authorizationRedirect: ({ service, outcome }) =>
-      `/providers/${encodeURIComponent(service)}${outcome === 'failed' ? '?authorization=failed' : ''}`,
-    definitions: syncDefinitions,
-    oauthClientRegistrations: { granola: granolaClientRegistration({ fetch }) },
-    onProviderConnected: (input) => dashboard.connectWaiting(input),
-    destinationTypes: {
-      local: localDestination({
-        accept: (input) => receiver.accept(input),
-      }),
-    },
-    onEvent: (event) => console.log(JSON.stringify({ event: 'sync.status', ...event })),
-  });
-  dashboard = new DashboardService(sync);
-  const app = createApp({
-    dashboard,
-    auth,
-    frontend: new FrontendAssetsService(new FrontendAssetsRepository()),
-    receiver,
-    syncFetch: sync.fetch,
-    origins,
-  }).listen({ port: env.PORT, hostname: '0.0.0.0' });
-  sync.start();
-  console.log(`Open Sync listening on http://0.0.0.0:${app.server!.port}`);
-  let stopping = false;
-  const stop = async () => {
-    if (stopping) {
-      return;
-    }
-    stopping = true;
-    await app.stop();
-    await sync?.close();
-    await database.close();
+  const database = await createSqliteDatabase({ dataFolder: env.DATA_FOLDER });
+  let sync: OpenSyncRuntime | undefined;
+  let app: ReturnType<typeof createApp> | undefined;
+  let stopping: Promise<void> | undefined;
+  const stop = () => {
+    stopping ??= (async () => {
+      try {
+        await sync?.close();
+      } finally {
+        await app?.stop();
+        await database.close();
+      }
+    })();
+    return stopping;
   };
-  process.once('SIGTERM', () => {
-    void stop();
-  });
-  process.once('SIGINT', () => {
-    void stop();
-  });
-} catch (error) {
-  await sync?.close();
-  await database.close();
-  throw error;
+  try {
+    await runMigrations({ db: database });
+    const auth = createAuth({
+      database,
+      baseUrl: env.BASE_URL,
+      nibrunHostname: env.NIBRUN_HOSTNAME,
+      secret: secret.value,
+    });
+    const origins = [
+      ...new Set([
+        env.BASE_URL.origin,
+        ...(env.NIBRUN_HOSTNAME ? [`https://${env.NIBRUN_HOSTNAME}`] : []),
+      ]),
+    ];
+    const receiver = new ReceiverService(
+      await SqliteReceiver.open({
+        db: database,
+        assetDirectory: join(env.DATA_FOLDER, 'received-assets'),
+      }),
+    );
+    let dashboard: DashboardService;
+    sync = await createOpenSync({
+      dataDirectory: env.DATA_FOLDER,
+      publicUrl: new URL('/api/open-sync', env.BASE_URL).href,
+      authorize: (request) => authorizeSyncRequest({ auth, origins, request }),
+      canConfigureProviders: (scope) => Promise.resolve(scope.actorId === scope.ownerId),
+      authorizationRedirect: ({ service, outcome }) =>
+        `/providers/${encodeURIComponent(service)}${outcome === 'failed' ? '?authorization=failed' : ''}`,
+      definitions: syncDefinitions,
+      oauthClientRegistrations: { granola: granolaClientRegistration({ fetch }) },
+      onProviderConnected: (input) => dashboard.connectWaiting(input),
+      destinationTypes: {
+        local: localDestination({
+          accept: (input) => receiver.accept(input),
+        }),
+      },
+      onEvent: (event) => console.log(JSON.stringify({ event: 'sync.status', ...event })),
+    });
+    dashboard = new DashboardService(sync);
+    await sync.start();
+    app = createApp({
+      dashboard,
+      auth,
+      frontend: new FrontendAssetsService(new FrontendAssetsRepository()),
+      receiver,
+      syncFetch: sync.fetch,
+      origins,
+    }).listen({ port: env.PORT, hostname: '0.0.0.0' });
+    console.log(`Open Sync listening on http://0.0.0.0:${app.server!.port}`);
+    process.once('SIGTERM', () => {
+      void stop();
+    });
+    process.once('SIGINT', () => {
+      void stop();
+    });
+  } catch (error) {
+    await stop();
+    throw error;
+  }
 }

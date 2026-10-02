@@ -13,7 +13,6 @@ export interface WorkerControl {
 }
 export class Worker implements WorkerControl {
   readonly #lifetime = new AbortController();
-  #timer?: ReturnType<typeof setTimeout>;
   #started = false;
   readonly #acquisitions = new Map<
     Promise<void>,
@@ -26,8 +25,10 @@ export class Worker implements WorkerControl {
   #cleaning?: Promise<void>;
   #cleanupRequested = false;
   #capacityReleased = false;
-  #cleanupTimer?: ReturnType<typeof setTimeout>;
   #closing?: Promise<void>;
+  #draining?: Promise<void>;
+  #drainRequested = false;
+  #resume?: () => void;
   constructor(
     private readonly input: {
       acquisition: AcquisitionService;
@@ -48,30 +49,13 @@ export class Worker implements WorkerControl {
       return;
     }
     this.#started = true;
-    this.completed();
+    this.wake();
   }
   wake(): void {
-    this.schedule(0);
-  }
-  private schedule(delay: number): void {
-    if (!this.#started || this.#lifetime.signal.aborted) {
+    if ((!this.#started && !this.#draining) || this.#lifetime.signal.aborted) {
       return;
     }
-    clearTimeout(this.#timer);
-    // Yield to the event loop even when another step is immediately runnable.
-    const maxTimerDelay = 2_147_483_647;
-    this.#timer = setTimeout(
-      () => {
-        this.#timer = undefined;
-        try {
-          this.dispatch();
-        } catch {
-          this.input.log({ code: 'runtime_failed' });
-          this.schedule(this.input.timing.retryMs);
-        }
-      },
-      Math.min(delay, maxTimerDelay),
-    );
+    void this.runDue().catch(() => this.input.log({ code: 'runtime_failed' }));
   }
   /** A deterministic dispatch round for hosts/tests that do not start the background worker. */
   tick(): Promise<void> {
@@ -80,6 +64,41 @@ export class Worker implements WorkerControl {
     return Promise.all([...this.#acquisitions.keys(), ...this.#deliveries.keys()]).then(() =>
       this.cleanup(),
     );
+  }
+  /** Drain runnable pages and deliveries, sharing one run across concurrent host triggers. */
+  runDue(): Promise<void> {
+    this.ensureOpen();
+    this.#drainRequested = true;
+    this.#resume?.();
+    this.#draining ??= Promise.resolve().then(() => this.drain());
+    return this.#draining;
+  }
+  private async drain(): Promise<void> {
+    try {
+      while (!this.#lifetime.signal.aborted) {
+        this.#drainRequested = false;
+        const changed = Promise.withResolvers<void>();
+        this.#resume = changed.resolve;
+        this.dispatch();
+        const active = this.#acquisitions.size + this.#deliveries.size;
+        if (active) {
+          await changed.promise;
+        }
+        await this.cleanup();
+        if (this.#lifetime.signal.aborted) {
+          return;
+        }
+        if (active || this.#drainRequested) {
+          // Continue pages immediately, while allowing cancellation and host requests to run.
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          continue;
+        }
+        return;
+      }
+    } finally {
+      this.#resume = undefined;
+      this.#draining = undefined;
+    }
   }
   private dispatch(): void {
     this.ensureOpen();
@@ -95,7 +114,7 @@ export class Worker implements WorkerControl {
         .catch(() => this.input.log({ code: 'acquisition_failed' }))
         .finally(() => {
           this.#acquisitions.delete(task);
-          this.completed();
+          this.wake();
         });
       this.#acquisitions.set(task, { ownerId: lease.ownerId, syncId: lease.sync.id, abort });
     }
@@ -113,33 +132,9 @@ export class Worker implements WorkerControl {
         .catch(() => this.input.log({ code: 'delivery_failed' }))
         .finally(() => {
           this.#deliveries.delete(task);
-          this.completed();
+          this.wake();
         });
       this.#deliveries.set(task, { ownerId: lease.ownerId, syncId: lease.delivery.syncId, abort });
-    }
-    const due = [
-      this.#acquisitions.size < timing.sourceConcurrency ? acquisition.nextDue() : undefined,
-      this.#deliveries.size < timing.deliveryConcurrency ? delivery.nextDue() : undefined,
-    ].filter((value): value is number => value !== undefined);
-    if (due.length) {
-      this.schedule(Math.max(0, Math.min(...due) - Date.now()));
-    }
-  }
-  private completed(): void {
-    this.wake();
-    if (this.#started) {
-      void this.cleanup().then(
-        () => this.wake(),
-        () => {
-          this.input.log({ code: 'cleanup_failed' });
-          if (!this.#lifetime.signal.aborted && !this.#cleanupTimer) {
-            this.#cleanupTimer = setTimeout(() => {
-              this.#cleanupTimer = undefined;
-              this.completed();
-            }, this.input.timing.retryMs);
-          }
-        },
-      );
     }
   }
   private cleanup(): Promise<void> {
@@ -157,8 +152,6 @@ export class Worker implements WorkerControl {
         this.#capacityReleased = false;
         this.input.acquisition.capacityReleased();
       }
-      clearTimeout(this.#cleanupTimer);
-      this.#cleanupTimer = undefined;
     } finally {
       this.#cleaning = undefined;
     }
@@ -172,7 +165,7 @@ export class Worker implements WorkerControl {
   }
   async cancelAcquisition(input: Resource): Promise<void> {
     await this.cancelTasks({ scope: input, tasks: this.#acquisitions });
-    this.completed();
+    this.wake();
   }
   async cancelSync(input: Resource): Promise<void> {
     await Promise.all([
@@ -180,7 +173,7 @@ export class Worker implements WorkerControl {
       this.cancelTasks({ scope: input, tasks: this.#deliveries }),
     ]);
     this.#capacityReleased = true;
-    this.completed();
+    this.wake();
     await this.cleanup().catch(() => this.input.log({ code: 'cleanup_failed' }));
   }
   private async cancelTasks({
@@ -204,10 +197,10 @@ export class Worker implements WorkerControl {
     return this.#closing;
   }
   private async stop(): Promise<void> {
-    clearTimeout(this.#timer);
-    clearTimeout(this.#cleanupTimer);
     this.#lifetime.abort('interrupted');
+    this.#resume?.();
     await Promise.allSettled([...this.#acquisitions.keys(), ...this.#deliveries.keys()]);
+    await this.#draining?.catch(() => undefined);
     await this.cleanup();
   }
 }

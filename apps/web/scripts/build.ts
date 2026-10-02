@@ -12,7 +12,7 @@ const syncBuild = await getOpenSyncBuildOptions({
 try {
   const result = await Bun.build({
     plugins: syncBuild.plugins,
-    entrypoints: [join(import.meta.dir, '../backend/src/main.ts')],
+    entrypoints: [join(import.meta.dir, '../backend/src/entrypoint.ts')],
     compile: {
       outfile: join(import.meta.dir, '../dist/app'),
       execArgv: ['--smol'],

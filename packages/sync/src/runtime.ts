@@ -1,5 +1,6 @@
 import { syncApi } from './api';
 import { openDatabase } from './db/client';
+import { startCron } from './execution/cron';
 import { type Logger, safeLogger } from './execution/diagnostics';
 import type { ProviderGateway } from './execution/provider';
 import { Worker } from './execution/worker';
@@ -93,13 +94,42 @@ export function createSyncRuntime(options: SyncRuntimeOptions) {
       limits,
       timeoutMs: timing.timeoutMs,
     });
+    let starting: Promise<void> | undefined;
+    let cron: Awaited<ReturnType<typeof startCron>> | undefined;
     let closing: Promise<void> | undefined;
     return {
       api: syncApi(api),
-      start: () => worker.start(),
+      /** Requires a working OS scheduler supported by Bun.cron. Registration failures reject startup. */
+      start(): Promise<void> {
+        worker.ensureOpen();
+        if (closing) {
+          fail('closed');
+        }
+        starting ??= (async () => {
+          cron = await startCron({
+            runtime: worker,
+            directory: `${options.databasePath}.cron`,
+            onError: () => log({ code: 'runtime_failed' }),
+          });
+          worker.start();
+        })();
+        return starting;
+      },
+      runDue: () => worker.runDue(),
       tick: () => worker.tick(),
       close: () => {
-        closing ??= worker.close().finally(() => db.close());
+        closing ??= (async () => {
+          try {
+            await starting?.catch(() => undefined);
+            await worker.close();
+          } finally {
+            try {
+              await cron?.close();
+            } finally {
+              db.close();
+            }
+          }
+        })();
         return closing;
       },
     };

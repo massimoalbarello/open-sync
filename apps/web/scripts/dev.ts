@@ -13,7 +13,7 @@ const proc = Bun.spawn(
     `PUBLIC_FRONTEND_DIR_NAME="${DEV_PUBLIC_FRONTEND_DIR_NAME}"`,
     '--define',
     'DB_MIGRATIONS_DIR_NAME="migrations"',
-    'backend/src/main.ts',
+    'backend/src/entrypoint.ts',
   ],
   // stdio is inherited so the child keeps the terminal (TTY) and its output stays colored
   { stdio: ['inherit', 'inherit', 'inherit'] },
