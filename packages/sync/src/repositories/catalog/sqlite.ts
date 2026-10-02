@@ -7,8 +7,6 @@ import type { CreateSync, SyncPoll } from '../../models/sync';
 import { readSync } from '../rows';
 import type { CatalogRepository } from './contract';
 
-const defaultIntervalMs = 60_000;
-
 export class SqliteCatalog implements CatalogRepository {
   constructor(private readonly db: Database) {}
   createSync(
@@ -19,8 +17,8 @@ export class SqliteCatalog implements CatalogRepository {
   ) {
     const id = `sync_${crypto.randomUUID()}`;
     this.db
-      .query(`INSERT INTO syncs (owner_id,id,definition_id,connection,config,destination_type,destination_config,enabled,checkpoint,interval_ms,next_due_at,status)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .query(`INSERT INTO syncs (owner_id,id,definition_id,connection,config,destination_type,destination_config,enabled,checkpoint,status)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`)
       .run(
         input.ownerId,
         id,
@@ -31,8 +29,6 @@ export class SqliteCatalog implements CatalogRepository {
         canonicalJson(input.destination.config).json,
         Number(input.enabled ?? true),
         canonicalJson(input.initialCheckpoint).json,
-        input.intervalMs ?? defaultIntervalMs,
-        Date.now(),
         input.enabled === false ? 'disabled' : 'ready',
       );
     return this.sync({ ...input, id });
@@ -69,8 +65,8 @@ export class SqliteCatalog implements CatalogRepository {
         }
         this.db
           .query(`UPDATE syncs SET connection=?,enabled=1,
-        status='ready',error_code=NULL,next_due_at=? WHERE owner_id=? AND id=?`)
-          .run(canonicalJson(input.connection).json, Date.now(), input.ownerId, input.id);
+        status='ready',error_code=NULL,retry_at=NULL WHERE owner_id=? AND id=?`)
+          .run(canonicalJson(input.connection).json, input.ownerId, input.id);
         return this.sync(input);
       })
       .immediate();
@@ -88,12 +84,11 @@ export class SqliteCatalog implements CatalogRepository {
           .run(input.enabled ? 'ready' : 'disabled', input.ownerId, input.id);
         this.db
           .query(
-            `UPDATE syncs SET enabled=?,status=?,error_code=NULL,next_due_at=?,generation=generation+1,expires_at=NULL WHERE owner_id=? AND id=?`,
+            `UPDATE syncs SET enabled=?,status=?,error_code=NULL,retry_at=NULL,generation=generation+1,expires_at=NULL WHERE owner_id=? AND id=?`,
           )
           .run(
             Number(input.enabled),
             input.enabled ? 'ready' : 'disabled',
-            Date.now(),
             input.ownerId,
             input.id,
           );
@@ -115,8 +110,8 @@ export class SqliteCatalog implements CatalogRepository {
           fail('busy');
         }
         this.db
-          .query(`UPDATE syncs SET next_due_at=? WHERE owner_id=? AND id=?`)
-          .run(Date.now(), input.ownerId, input.id);
+          .query(`UPDATE syncs SET status='ready',retry_at=NULL WHERE owner_id=? AND id=?`)
+          .run(input.ownerId, input.id);
       })
       .immediate();
   }
@@ -132,9 +127,9 @@ export class SqliteCatalog implements CatalogRepository {
           .run(Date.now(), input.ownerId, input.id);
         this.db
           .query(
-            `UPDATE syncs SET checkpoint=?,status='ready',error_code=NULL,next_due_at=?,resync=1,failure_count=0,generation=generation+1,expires_at=NULL WHERE owner_id=? AND id=?`,
+            `UPDATE syncs SET checkpoint=?,status='ready',error_code=NULL,retry_at=NULL,resync=1,failure_count=0,generation=generation+1,expires_at=NULL WHERE owner_id=? AND id=?`,
           )
-          .run(canonicalJson(input.checkpoint).json, Date.now(), input.ownerId, input.id);
+          .run(canonicalJson(input.checkpoint).json, input.ownerId, input.id);
       })
       .immediate();
   }
@@ -150,8 +145,8 @@ export class SqliteCatalog implements CatalogRepository {
           .run(input.ownerId, input.id);
         this.db.query('DELETE FROM syncs WHERE owner_id=? AND id=?').run(input.ownerId, input.id);
         this.db
-          .query(`UPDATE syncs SET next_due_at=? WHERE enabled=1 AND status='waiting_for_capacity'`)
-          .run(Date.now());
+          .query(`UPDATE syncs SET retry_at=NULL WHERE enabled=1 AND status='waiting_for_capacity'`)
+          .run();
       })
       .immediate();
   }

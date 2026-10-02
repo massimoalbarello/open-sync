@@ -24,6 +24,9 @@ export class AcquisitionService {
       log: Logger;
     },
   ) {}
+  poll() {
+    this.input.repository.poll();
+  }
   capacityReleased() {
     this.input.repository.capacityReleased();
   }

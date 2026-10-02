@@ -148,7 +148,7 @@ test('connector failures use engine backoff despite timing headers and retain on
     const secondDelay = 60_000;
     expect(savedSync({ path: files.path, scope: scope })).toMatchObject({
       checkpoint: 0,
-      nextDueAt: now + firstDelay,
+      retryAt: now + firstDelay,
     });
     now += firstDelay;
     const providerDelay = 120_000;
@@ -156,7 +156,7 @@ test('connector failures use engine backoff despite timing headers and retain on
     await engine.tick();
     expect(savedSync({ path: files.path, scope: scope })).toMatchObject({
       checkpoint: 0,
-      nextDueAt: now + secondDelay,
+      retryAt: now + secondDelay,
     });
     expect(events.at(-1)?.fields).toMatchObject({
       httpStatus: rateLimited,

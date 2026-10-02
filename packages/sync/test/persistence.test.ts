@@ -13,7 +13,7 @@ test.each([false, true])(
       const before = f.catalog.sync({ ...alpha, id: f.sync.id });
       const pollsBefore = f.catalog.polls({ ...alpha, id: f.sync.id });
       f.db.exec(
-        "CREATE TRIGGER fail_checkpoint BEFORE UPDATE OF next_due_at ON syncs BEGIN SELECT RAISE(ABORT,'injected'); END;",
+        "CREATE TRIGGER fail_checkpoint BEFORE UPDATE OF retry_at ON syncs BEGIN SELECT RAISE(ABORT,'injected'); END;",
       );
       expect(() =>
         f.acquisition.commit({

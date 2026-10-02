@@ -16,7 +16,6 @@ import {
 import { SyncAccount } from './-syncs/sync-account';
 import { PendingDeliverables, PollHistory, ReceivedDeliverables } from './-syncs/sync-activity';
 
-const millisecondsPerMinute = 60_000;
 export const Route = createFileRoute('/_workspace/syncs/$id')({
   validateSearch: (
     search: Record<string, unknown>,
@@ -145,10 +144,6 @@ function SyncDetail() {
             <dl className="grid grid-cols-[auto_1fr] gap-x-8 gap-y-3 text-sm">
               <dt className="text-muted-foreground">Status</dt>
               <dd>{sync.status.replaceAll('_', ' ')}</dd>
-              <dt className="text-muted-foreground">Sync interval</dt>
-              <dd>{sync.intervalMs / millisecondsPerMinute} minutes</dd>
-              <dt className="text-muted-foreground">Next scheduled run</dt>
-              <dd>{nextRun(sync)}</dd>
             </dl>
             <nav
               aria-label="Sync activity"
@@ -183,16 +178,6 @@ function SyncDetail() {
       )}
     </SectionPage>
   );
-}
-
-function nextRun(sync: { enabled: boolean; status: string; nextDueAt: number }) {
-  if (!sync.enabled) {
-    return 'Paused';
-  }
-  if (sync.status === 'running') {
-    return 'After the current run completes';
-  }
-  return new Date(sync.nextDueAt).toLocaleString();
 }
 
 function syncTitle({

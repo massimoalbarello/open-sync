@@ -4,7 +4,6 @@ import type { JsonObject } from '@context-use/open-sync/json';
 
 import { BadRequestError } from '#backend/lib/errors.ts';
 
-const pollIntervalMs = 900_000;
 export type CreateSync = {
   source: string;
   config?: JsonObject;
@@ -53,7 +52,6 @@ export class DashboardService {
       destination: input.destination,
       config,
       connection,
-      intervalMs: pollIntervalMs,
       enabled: !definition.provider || !!connection,
     });
     // Authorization may finish in another tab between the status check and persistence.

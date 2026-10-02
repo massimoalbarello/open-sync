@@ -9,6 +9,7 @@ export interface AcquisitionLease extends Scope {
   failureCount: number;
 }
 export interface AcquisitionRepository {
+  poll(): void;
   capacityReleased(): void;
   claim(leaseMs: number): AcquisitionLease | undefined;
   hasCapacity(): boolean;

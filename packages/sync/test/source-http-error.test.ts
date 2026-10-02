@@ -46,7 +46,7 @@ test.each(
       checkpoint: 0,
       status: 'retrying',
       errorCode: `source_http_${status}`,
-      nextDueAt: now + retryMs,
+      retryAt: now + retryMs,
     });
     expect(events[0]?.fields).toEqual({
       httpStatus: status,
@@ -174,7 +174,7 @@ test.each([rateLimited, forbidden, unavailable])(
           checkpoint: 1,
           status: status === forbidden ? 'disabled' : 'retrying',
           errorCode: `source_http_${status}`,
-          nextDueAt: now + delay,
+          retryAt: now + delay,
         });
         expect(events.at(-1)?.fields).toEqual({
           httpStatus: status,

@@ -60,9 +60,9 @@ For a compiled binary, follow the [sample entrypoint](apps/web/backend/src/entry
 `splitting: true`. This keeps the temporary cron process from loading the server modules. It asks
 the running app to process due syncs, waits for completion, and exits.
 
-Use `sync.providers` to connect accounts. Create a destination with `sync.api.createDestination()`,
-then link a source to it with `sync.api.createInstallation()`. Supply their `config` values,
-a provider `connection` when needed, and `intervalMs` for the sync schedule. Pass the acting user's
+Use `sync.providers` to connect accounts, then create a sync with `sync.api.createSync()`.
+Supply the source `definition`, its `config`, the `destination`, and a provider `connection`
+when needed. All enabled syncs poll on the shared cron schedule. Pass the acting user's
 `actorId` and data owner's `ownerId` from your host's authentication.
 
 See the [sample host](apps/web/backend/src/main.ts),

@@ -14,7 +14,7 @@ if (await runOpenSyncCron()) {
 // Keep the installed provider runtime and credential persistence real; simulate only GitHub.
 const providerFetch = globalThis.fetch;
 const okStatus = 200;
-const AFTER_INTERVAL_MS = 150;
+const IDLE_OBSERVATION_MS = 150;
 globalThis.fetch = Object.assign((input: RequestInfo | URL) => {
   const url = input instanceof Request ? input.url : String(input);
   if (url !== 'https://api.github.com/user') {
@@ -177,7 +177,6 @@ try {
       config: {},
       definition: definition.definition.id,
       connection: { id: connection.id, service: connection.service },
-      intervalMs: 100,
     });
     // Exercise the installed API with a private crontab subprocess, including a compiled host
     // launched from outside its source tree. No system crontab or public server is involved.
@@ -187,7 +186,7 @@ try {
       throw new Error('Independent consumer did not receive its record');
     }
     const pollCount = sync.api.polls({ ...scope, id: created.id }).polls.length;
-    await Bun.sleep(AFTER_INTERVAL_MS);
+    await Bun.sleep(IDLE_OBSERVATION_MS);
     if (sync.api.polls({ ...scope, id: created.id }).polls.length !== pollCount) {
       throw new Error('An in-process timer bypassed the cron schedule');
     }

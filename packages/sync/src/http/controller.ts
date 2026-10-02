@@ -15,7 +15,6 @@ const syncBody = t.Object({
   config,
   destination: t.Object({ type: identifier, input: config }),
   connection: t.Optional(t.Object({ id: identifier, service: identifier })),
-  intervalMs: t.Optional(t.Integer({ minimum: 1 })),
   enabled: t.Optional(t.Boolean()),
 });
 const resourceParams = { params: t.Object({ id: identifier }) };

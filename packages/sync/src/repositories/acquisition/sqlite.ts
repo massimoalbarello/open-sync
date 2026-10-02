@@ -15,10 +15,15 @@ import { writeRecord } from './records';
 
 export class SqliteAcquisition implements AcquisitionRepository {
   constructor(private readonly input: { db: Database; limits: QueueLimits }) {}
+  poll(): void {
+    this.input.db
+      .query("UPDATE syncs SET status='ready' WHERE enabled=1 AND status='succeeded'")
+      .run();
+  }
   capacityReleased(): void {
     this.input.db
-      .query("UPDATE syncs SET next_due_at=? WHERE enabled=1 AND status='waiting_for_capacity'")
-      .run(Date.now());
+      .query("UPDATE syncs SET retry_at=NULL WHERE enabled=1 AND status='waiting_for_capacity'")
+      .run();
   }
   claim(leaseMs: number) {
     return claimAcquisition({ ...this.input, leaseMs });
@@ -52,7 +57,7 @@ export class SqliteAcquisition implements AcquisitionRepository {
         db,
         lease: input.lease,
         state: page.complete ? 'succeeded' : 'ready',
-        delay: page.complete ? sync.intervalMs : 0,
+        delay: 0,
         failureCount: page.complete ? 0 : undefined,
       });
     }).immediate();

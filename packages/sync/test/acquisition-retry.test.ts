@@ -132,7 +132,7 @@ test('source failures back off durably despite partial progress, then reset on s
         checkpoint: 1,
         status: 'retrying',
         errorCode: 'execution_failed',
-        nextDueAt: now + delay,
+        retryAt: now + delay,
       });
       expect(events.at(-1)?.fields?.retryAfterMs).toBe(delay);
       const attempts = events.length;
@@ -160,7 +160,7 @@ test('source failures back off durably despite partial progress, then reset on s
     await engine.tick();
     await engine.tick();
     await engine.tick();
-    expect(engine.api.sync({ ...beta, id: other.id }).nextDueAt).toBe(now + retryMs);
+    expect(engine.api.sync({ ...beta, id: other.id }).retryAt).toBe(now + retryMs);
     await engine.api.setEnabled({ ...beta, id: other.id, enabled: false });
 
     failing = false;
@@ -170,7 +170,7 @@ test('source failures back off durably despite partial progress, then reset on s
     failing = true;
     engine.api.runNow(scope);
     await engine.tick();
-    expect(engine.api.sync(scope).nextDueAt).toBe(now + retryMs);
+    expect(engine.api.sync(scope).retryAt).toBe(now + retryMs);
     expect(events.at(-1)?.fields?.failureCount).toBe(1);
   } finally {
     await engine.close();
@@ -226,26 +226,26 @@ test.each(['records', 'assets'])(
       const sync = await configure(engine);
       const scope = { ...alpha, id: sync.id };
       await engine.tick();
-      expect(engine.api.sync(scope).nextDueAt).toBe(now + retryMs);
+      expect(engine.api.sync(scope).retryAt).toBe(now + retryMs);
       expect(events.at(-1)?.fields).toMatchObject({ httpStatus: 429, retryAfterMs: retryMs });
       expect(JSON.stringify(events)).not.toContain('private upstream payload');
       now += retryMs;
       await engine.tick();
       const secondDelay = 60_000;
-      expect(engine.api.sync(scope).nextDueAt).toBe(now + secondDelay);
+      expect(engine.api.sync(scope).retryAt).toBe(now + secondDelay);
       now += secondDelay;
       failing = false;
       await engine.tick();
       expect(savedSync({ path: files.path, scope: scope })).toMatchObject({
         status: 'ready',
-        nextDueAt: now,
+        retryAt: null,
       });
       await engine.close();
       engine = createSyncRuntime(options);
       failing = true;
       await engine.tick();
       const thirdDelay = 120_000;
-      expect(engine.api.sync(scope).nextDueAt).toBe(now + thirdDelay);
+      expect(engine.api.sync(scope).retryAt).toBe(now + thirdDelay);
     } finally {
       await engine.close();
       clock.mockRestore();

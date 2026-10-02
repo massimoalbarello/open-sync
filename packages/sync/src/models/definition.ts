@@ -54,7 +54,7 @@ export interface SyncStep {
    * Include any cross-iteration update boundary as well as the current page position.
    */
   checkpoint: JsonValue;
-  /** False continues this iteration immediately; true schedules the next poll.
+  /** False continues this iteration immediately; true waits for the shared cron or a manual run.
    * Completion retains the returned checkpoint; the source clears any exhausted page cursor.
    */
   complete: boolean;

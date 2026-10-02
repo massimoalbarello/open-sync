@@ -45,7 +45,7 @@ test('source and delivery failures use the same durable exponential backoff', as
     });
     for (const delay of delays) {
       const due = now + delay;
-      expect(engine.api.sync({ ...alpha, id: source.id }).nextDueAt).toBe(due);
+      expect(engine.api.sync({ ...alpha, id: source.id }).retryAt).toBe(due);
       expect(
         engine.api.deliveries({ ...alpha, syncId: destinationSync.id }).deliveries[0]
           ?.nextAttemptAt,
