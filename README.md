@@ -52,7 +52,13 @@ bun add @context-use/open-sync
    and your host's authorization functions.
 2. Route requests to `sync.fetch(request)` and set `publicUrl` to that route's full URL
    (for example, `https://your-app.com/api/open-sync`). This also handles provider authorization callbacks.
-3. Call `sync.start()` when your server starts and `await sync.close()` when it shuts down.
+3. Call `await sync.start()` before accepting requests and `await sync.close()` when shutting down.
+
+Startup registers one half-hourly OS job through `Bun.cron`; Linux hosts need a running cron service.
+For a compiled binary, follow the [sample entrypoint](apps/web/backend/src/entrypoint.ts): handle
+`runOpenSyncCron()` before dynamically importing the normal server code, and compile with
+`splitting: true`. This keeps the temporary cron process from loading the server modules. It asks
+the running app to process due syncs, waits for completion, and exits.
 
 Use `sync.providers` to connect accounts. Create a destination with `sync.api.createDestination()`,
 then link a source to it with `sync.api.createInstallation()`. Supply their `config` values,
