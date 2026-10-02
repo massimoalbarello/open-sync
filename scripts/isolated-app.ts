@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { cronTitle } from '../packages/sync/src/execution/cron-invocation';
 import { isolatedCrontab } from '../packages/sync/test/cron-support';
 
 const START_TIMEOUT_MS = 60_000;
@@ -79,6 +80,11 @@ export async function startIsolatedApp(input: { serverCommand?: string[] } = {})
     stopped = true;
     await stopProcess(child);
     await stopProcess(frontend);
+    // Linux uses the private crontab fixture. On macOS Bun registers with launchd, and the
+    // development watcher may kill its child before asynchronous shutdown finishes.
+    if (process.platform === 'darwin') {
+      await Bun.cron.remove(cronTitle(join(dataFolder, 'sync.db.cron/worker.sock')));
+    }
     await rm(dataFolder, { recursive: true, force: true });
     await crontab[Symbol.asyncDispose]();
   };
