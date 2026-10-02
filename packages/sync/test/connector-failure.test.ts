@@ -1,4 +1,4 @@
-import { expect, spyOn, test } from 'bun:test';
+import { expect, test } from 'bun:test';
 import { createConnectorClient } from '../src/connector/client';
 import { connectorFailure } from '../src/connector/failure';
 import type { SyncEvent } from '../src/execution/diagnostics';
@@ -77,11 +77,9 @@ function client(response: () => Promise<Response>) {
   });
 }
 
-test('connector failures use engine backoff despite timing headers and retain only safe scoped diagnostics', async () => {
+test('connector failures retry on the next poll despite timing headers and retain safe scoped diagnostics', async () => {
   const files = storage();
   const events: SyncEvent[] = [];
-  let now = Date.now();
-  const clock = spyOn(Date, 'now').mockImplementation(() => now);
   let retryAfter = '120';
   const connector = client(() =>
     Promise.resolve(
@@ -137,36 +135,28 @@ test('connector failures use engine backoff despite timing headers and retain on
           connectorErrorCode: 'rate_limited',
           providerStatus: rateLimited,
           httpStatus: rateLimited,
-          failureCount: 1,
-          retryAfterMs: 30_000,
         },
       },
     ]);
     expect(JSON.stringify(events)).not.toContain(secret);
     const scope = { ...alpha, id: sync.id };
-    const firstDelay = 30_000;
-    const secondDelay = 60_000;
     expect(savedSync({ path: files.path, scope: scope })).toMatchObject({
       checkpoint: 0,
-      retryAt: now + firstDelay,
+      status: 'retrying',
     });
-    now += firstDelay;
     const providerDelay = 120_000;
-    retryAfter = new Date(now + providerDelay).toUTCString();
-    await engine.tick();
+    retryAfter = new Date(Date.now() + providerDelay).toUTCString();
+    await engine.runDue();
     expect(savedSync({ path: files.path, scope: scope })).toMatchObject({
       checkpoint: 0,
-      retryAt: now + secondDelay,
+      status: 'retrying',
     });
     expect(events.at(-1)?.fields).toMatchObject({
       httpStatus: rateLimited,
-      failureCount: 2,
-      retryAfterMs: secondDelay,
     });
     expect(JSON.stringify(events)).not.toContain(secret);
   } finally {
     await engine.close();
-    clock.mockRestore();
     files.close();
   }
 });

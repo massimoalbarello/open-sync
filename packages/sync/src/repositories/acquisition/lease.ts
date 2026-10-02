@@ -30,7 +30,7 @@ export function claimAcquisition({
         WHERE completed_at IS NULL AND EXISTS (SELECT 1 FROM syncs
           WHERE syncs.owner_id=sync_polls.owner_id AND syncs.id=sync_polls.sync_id
           AND enabled=1 AND expires_at<=?)`).run(now);
-      db.query(`UPDATE syncs SET retry_at=NULL,status='interrupted',error_code='lease_expired',expires_at=NULL
+      db.query(`UPDATE syncs SET status='ready',error_code='lease_expired',expires_at=NULL
       WHERE enabled=1 AND expires_at<=?`).run(now);
       const row = db
         .query<
@@ -39,13 +39,12 @@ export function claimAcquisition({
             owner_id: string;
             generation: number;
             resync: number;
-            failure_count: number;
           },
-          [number]
-        >(`SELECT id,owner_id,generation,resync,failure_count FROM syncs
-      WHERE enabled=1 AND status!='succeeded' AND expires_at IS NULL AND COALESCE(retry_at,0)<=?
-      ORDER BY COALESCE(retry_at,0),generation,id LIMIT 1`)
-        .get(now);
+          []
+        >(`SELECT id,owner_id,generation,resync FROM syncs
+      WHERE enabled=1 AND status='ready' AND expires_at IS NULL
+      ORDER BY generation,id LIMIT 1`)
+        .get();
       if (!row) {
         return;
       }
@@ -69,7 +68,6 @@ export function claimAcquisition({
         sync: readSync({ db, scope: { ...scope, id: row.id } }),
         generation: row.generation + 1,
         force: row.resync === 1,
-        failureCount: row.failure_count,
       };
     })
     .immediate();
@@ -88,15 +86,13 @@ export function finishAcquisition(
     lease.ownerId,
     lease.sync.id,
   );
-  db.query(`UPDATE syncs SET status=?,error_code=?,retry_at=?,expires_at=NULL,
+  db.query(`UPDATE syncs SET status=?,error_code=?,expires_at=NULL,
     enabled=CASE WHEN ? THEN 0 ELSE enabled END,
-    failure_count=COALESCE(?,failure_count),resync=CASE WHEN ? THEN 0 ELSE resync END
+    resync=CASE WHEN ? THEN 0 ELSE resync END
     WHERE owner_id=? AND id=?`).run(
     input.pause ? 'disabled' : input.state,
     input.errorCode ?? null,
-    input.delay > 0 ? now + input.delay : null,
     Number(input.pause ?? false),
-    input.failureCount ?? null,
     Number(input.state === 'succeeded'),
     lease.ownerId,
     lease.sync.id,

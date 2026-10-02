@@ -1,4 +1,4 @@
-import { expect, spyOn, test } from 'bun:test';
+import { expect, test } from 'bun:test';
 import { createSyncRuntime } from '../src/runtime';
 import { isolatedScheduler, runRegisteredCron } from './cron-support';
 import { accepted, alpha, beta, configure, fixture, runtime, storage } from './support';
@@ -199,9 +199,7 @@ async function until(check: () => boolean) {
   }
 }
 
-test('each cron round polls healthy syncs without bypassing source retry backoff', async () => {
-  let now = Date.now();
-  const clock = spyOn(Date, 'now').mockImplementation(() => now);
+test('each cron round attempts healthy and failed syncs exactly once', async () => {
   const calls: number[] = [];
   let failing = true;
   const f = runtime({
@@ -232,16 +230,16 @@ test('each cron round polls healthy syncs without bypassing source retry backoff
     await f.engine.runDue();
     await f.engine.runDue();
     expect(calls.filter((count) => count === 1)).toHaveLength(2);
-    expect(calls.filter((count) => count === 2)).toHaveLength(1);
+    expect(calls.filter((count) => count === 2)).toHaveLength(2);
     const scope = { ...alpha, id: syncs[1]!.id };
-    expect(f.engine.api.sync(scope).retryAt).toBe(now + f.options.timing.retryMs);
-    now += f.options.timing.retryMs;
+    expect(f.engine.api.sync(scope).status).toBe('retrying');
+    await f.engine.tick();
+    expect(calls.filter((count) => count === 2)).toHaveLength(2);
     failing = false;
     await f.engine.runDue();
-    expect(calls.filter((count) => count === 2)).toHaveLength(2);
-    expect(f.engine.api.sync(scope)).toMatchObject({ status: 'succeeded', retryAt: null });
+    expect(calls.filter((count) => count === 2)).toEqual([2, 2, 2]);
+    expect(f.engine.api.sync(scope).status).toBe('succeeded');
   } finally {
     await f.close();
-    clock.mockRestore();
   }
 });

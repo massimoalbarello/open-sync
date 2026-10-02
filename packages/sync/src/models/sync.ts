@@ -11,7 +11,6 @@ export interface Sync {
   destination: { type: string; config: JsonObject };
   enabled: boolean;
   checkpoint: JsonValue;
-  retryAt: number | null;
   status: SyncStatus;
   errorCode: string | null;
 }
@@ -49,7 +48,6 @@ export interface SyncSummary {
   destinationType: string;
   connection?: ConnectionRef;
   enabled: boolean;
-  retryAt: number | null;
   status: SyncStatus;
   errorCode: string | null;
 }
@@ -60,7 +58,6 @@ export function summarizeSync(sync: Sync): SyncSummary {
     destinationType: sync.destination.type,
     connection: sync.connection,
     enabled: sync.enabled,
-    retryAt: sync.retryAt,
     status: sync.status,
     errorCode: sync.errorCode,
   };

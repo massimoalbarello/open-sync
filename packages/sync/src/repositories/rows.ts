@@ -23,7 +23,6 @@ export function readSync(input: { db: Database; scope: Resource }): Sync {
     },
     enabled: row.enabled === 1,
     checkpoint: JSON.parse(String(row.checkpoint)),
-    retryAt: row.retry_at === null ? null : Number(row.retry_at),
     status: row.status as SyncStatus,
     errorCode: row.error_code === null ? null : String(row.error_code),
   };

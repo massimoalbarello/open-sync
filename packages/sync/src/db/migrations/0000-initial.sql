@@ -9,12 +9,14 @@ CREATE TABLE IF NOT EXISTS syncs (
   failure_count INTEGER NOT NULL DEFAULT 0, resync INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY(owner_id, id)
 );
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS record_state (
   owner_id TEXT NOT NULL, sync_id TEXT NOT NULL, kind TEXT NOT NULL, id TEXT NOT NULL,
   hash TEXT NOT NULL, revision INTEGER NOT NULL, deleted INTEGER NOT NULL,
   PRIMARY KEY(owner_id, sync_id, kind, id),
   FOREIGN KEY(owner_id, sync_id) REFERENCES syncs(owner_id, id)
 );
+--> statement-breakpoint
 -- Polling diagnostics only; execution leases and scheduling belong to syncs.
 CREATE TABLE IF NOT EXISTS sync_polls (
   id INTEGER PRIMARY KEY AUTOINCREMENT, owner_id TEXT NOT NULL, sync_id TEXT NOT NULL,
@@ -23,8 +25,11 @@ CREATE TABLE IF NOT EXISTS sync_polls (
   state TEXT NOT NULL, error_code TEXT,
   FOREIGN KEY(owner_id, sync_id) REFERENCES syncs(owner_id, id) ON DELETE CASCADE
 );
+--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS sync_poll_history ON sync_polls(owner_id,sync_id,id);
+--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS sync_poll_active ON sync_polls(owner_id,sync_id) WHERE completed_at IS NULL;
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS deliveries (
   sequence INTEGER PRIMARY KEY AUTOINCREMENT, owner_id TEXT NOT NULL, id TEXT NOT NULL,
   sync_id TEXT NOT NULL, body TEXT NOT NULL,
@@ -34,8 +39,11 @@ CREATE TABLE IF NOT EXISTS deliveries (
   UNIQUE(owner_id, id),
   FOREIGN KEY(owner_id, sync_id) REFERENCES syncs(owner_id, id)
 );
+--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS delivery_order ON deliveries(owner_id,sync_id,sequence);
+--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS deliveries_due ON deliveries(state, due_at);
+--> statement-breakpoint
 -- Staging, queued bytes, and pending cleanup share one delivery-owned ledger.
 -- No foreign keys: cleanup must survive deletion of the delivery or sync.
 CREATE TABLE IF NOT EXISTS delivery_assets (
@@ -46,5 +54,7 @@ CREATE TABLE IF NOT EXISTS delivery_assets (
   bytes INTEGER NOT NULL DEFAULT 0 CHECK(bytes>=0), delivery_id TEXT,
   UNIQUE(owner_id,sync_id,generation,asset_id,asset_version)
 );
+--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS delivery_asset_queue ON delivery_assets(owner_id,delivery_id);
+--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS delivery_asset_sync ON delivery_assets(owner_id,sync_id);

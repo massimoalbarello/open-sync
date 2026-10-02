@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { expect, test } from 'bun:test';
 import { openDatabase } from '../src/db/client';
-import releasedSchema from '../src/db/schema.sql' with { type: 'text' };
+import releasedSchema from '../src/db/migrations/0000-initial.sql' with { type: 'text' };
 import type { Deliverable } from '../src/models/delivery';
 import { defaultLimits } from '../src/models/limits';
 import { SqliteAcquisition } from '../src/repositories/acquisition/sqlite';
@@ -9,7 +9,7 @@ import { SqliteCatalog } from '../src/repositories/catalog/sqlite';
 import { SqliteDeliveries } from '../src/repositories/delivery/sqlite';
 import { alpha, fixture, storage } from './support';
 
-const migrationNames = ['0000-initial-schema', '0001-centralize-polling'];
+const migrationNames = ['0000-initial.sql', '0001-centralize-polling.sql'];
 const leaseMs = 60_000;
 const futureRetry = 9_000_000_000_000;
 const retryStates = ['retrying', 'interrupted', 'waiting_for_capacity'];
@@ -93,7 +93,7 @@ function history(db: Database) {
     .all();
 }
 
-test('released databases adopt migration history without losing progress, leases, retries or queued data', () => {
+test('released databases adopt migration history without losing progress, leases or queued data', () => {
   const files = storage();
   let db = legacyDatabase(files.path);
   const before = db.query('SELECT * FROM syncs ORDER BY id').all() as Record<string, unknown>[];
@@ -103,10 +103,9 @@ test('released databases adopt migration history without losing progress, leases
     db = openDatabase(files.path);
     const after = db.query('SELECT * FROM syncs ORDER BY id').all();
     expect(after).toEqual(
-      before.map(({ interval_ms: _interval, next_due_at, ...row }) => ({
-        ...row,
-        retry_at: retryStates.includes(String(row.status)) ? next_due_at : null,
-      })),
+      before.map(
+        ({ interval_ms: _interval, next_due_at: _due, failure_count: _failures, ...row }) => row,
+      ),
     );
     expect(db.query('PRAGMA foreign_key_check').all()).toEqual([]);
     expect(queuedState(db)).toEqual(queue);
@@ -123,8 +122,11 @@ test('released databases adopt migration history without losing progress, leases
     expect(acquisition.claim(leaseMs)?.sync.id).toBe('ready');
     expect(acquisition.claim(leaseMs)).toBeUndefined();
     acquisition.poll();
-    expect(acquisition.claim(leaseMs)?.sync.id).toBe('succeeded');
-    expect(acquisition.claim(leaseMs)).toBeUndefined();
+    const claimed = [];
+    for (let lease = acquisition.claim(leaseMs); lease; lease = acquisition.claim(leaseMs)) {
+      claimed.push(lease.sync.id);
+    }
+    expect(claimed.sort()).toEqual(['succeeded', ...retryStates].sort());
     expect(new SqliteDeliveries(db).claim(leaseMs)?.delivery).toEqual(delivery);
     expect(
       catalog.createSync({
@@ -133,8 +135,8 @@ test('released databases adopt migration history without losing progress, leases
         config: { count: 1 },
         destination: { type: 'local', config: {} },
         initialCheckpoint: 0,
-      }).retryAt,
-    ).toBeNull();
+      }).status,
+    ).toBe('ready');
   } finally {
     db.close();
     files.close();
@@ -148,7 +150,8 @@ test('fresh databases apply the same ordered migration history', () => {
     .query<{ name: string }, []>("SELECT name FROM pragma_table_info('syncs')")
     .all()
     .map(({ name }) => name);
-  expect(columns).toContain('retry_at');
+  expect(columns).not.toContain('retry_at');
+  expect(columns).not.toContain('failure_count');
   expect(columns).not.toContain('interval_ms');
   expect(columns).not.toContain('next_due_at');
 });
@@ -165,16 +168,14 @@ test.each([false, true])(
         '2026-10-01T00:00:00.000Z',
       );
     }
-    db.exec(
-      "CREATE TRIGGER fail_migration BEFORE UPDATE ON syncs BEGIN SELECT RAISE(ABORT,'injected'); END",
-    );
+    db.exec('CREATE INDEX fail_migration ON syncs(next_due_at)');
     const before = db.query('SELECT * FROM syncs ORDER BY id').all();
     const schemaBefore = db.query('SELECT * FROM sqlite_schema ORDER BY name').all();
     const queue = queuedState(db);
     const historyBefore = recorded ? history(db) : [];
     db.close();
     try {
-      expect(() => openDatabase(files.path)).toThrow('injected');
+      expect(() => openDatabase(files.path)).toThrow('fail_migration');
       db = new Database(files.path);
       expect(db.query('SELECT * FROM syncs ORDER BY id').all()).toEqual(before);
       expect(db.query('SELECT * FROM sqlite_schema ORDER BY name').all()).toEqual(schemaBefore);
@@ -182,7 +183,7 @@ test.each([false, true])(
       if (recorded) {
         expect(history(db)).toEqual(historyBefore);
       }
-      db.exec('DROP TRIGGER fail_migration');
+      db.exec('DROP INDEX fail_migration');
       db.close();
       db = openDatabase(files.path);
       expect(history(db).map(({ name }) => name)).toEqual(migrationNames);

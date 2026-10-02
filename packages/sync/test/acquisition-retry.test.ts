@@ -1,4 +1,4 @@
-import { expect, spyOn, test } from 'bun:test';
+import { expect, test } from 'bun:test';
 import type { SyncEvent } from '../src/execution/diagnostics';
 import type { SyncContext } from '../src/models/definition';
 import { SyncError } from '../src/models/error';
@@ -11,7 +11,6 @@ import { AcquisitionService } from '../src/services/acquisition';
 import {
   accepted,
   alpha,
-  beta,
   configure,
   fixture,
   page,
@@ -20,29 +19,14 @@ import {
   storage,
 } from './support';
 
-const retryMs = 30_000;
-const maxBackoff = 3_600_000;
-
 test.each(['paused', 'interrupted', 'timed_out', 'waiting_for_capacity'])(
-  '%s distinguishes source failures from intentional waits',
+  '%s waits for another poll instead of retrying during the drain',
   async (state) => {
     const f = repositories();
-    const previousFailures = 2;
     const events: SyncEvent[] = [];
-    const prior = f.acquisition.claim(defaultTiming.leaseMs)!;
-    f.acquisition.finish({
-      lease: prior,
-      state: 'retrying',
-      errorCode: 'connector_request_failed',
-      delay: 0,
-      failureCount: previousFailures,
-    });
     const service = new AcquisitionService({
       repository: f.acquisition,
-      assets: new SqliteAssets({
-        db: f.db,
-        maxBytes: defaultLimits.maxPendingAssetBytes,
-      }),
+      assets: new SqliteAssets({ db: f.db, maxBytes: defaultLimits.maxPendingAssetBytes }),
       files: new DirectoryAssets(`${f.files.path}.assets`),
       maxAssetBytes: defaultLimits.maxAssetBytes,
       registry: new Registry({
@@ -67,125 +51,29 @@ test.each(['paused', 'interrupted', 'timed_out', 'waiting_for_capacity'])(
               state === 'timed_out' ? new DOMException('deadline', 'TimeoutError') : state,
             );
       await service.execute({ lease: service.claim()!, signal });
-      const failureDelay = 120_000;
-      expect(events[0]).toMatchObject({
-        code: state,
-        fields: {
-          failureCount: state === 'timed_out' ? previousFailures + 1 : previousFailures,
-          retryAfterMs: state === 'timed_out' ? failureDelay : retryMs,
-        },
-      });
+      expect(events[0]?.code).toBe(state);
+      expect(f.catalog.sync({ ...alpha, id: f.sync.id }).status).toBe(
+        state === 'timed_out'
+          ? 'retrying'
+          : state === 'waiting_for_capacity'
+            ? state
+            : 'interrupted',
+      );
+      expect(service.claim()).toBeUndefined();
+      service.poll();
+      expect(service.claim()?.sync.id).toBe(f.sync.id);
     } finally {
       f.close();
     }
   },
 );
 
-test('source failures back off durably despite partial progress, then reset on success', async () => {
-  const files = storage();
-  const events: SyncEvent[] = [];
-  let now = Date.now();
-  const clock = spyOn(Date, 'now').mockImplementation(() => now);
-  let failing = true;
-  const options = {
-    databasePath: files.path,
-    definitions: [
-      {
-        ...fixture,
-        load: () => ({
-          // biome-ignore lint/suspicious/useAwait: The fixture implements the asynchronous execution boundary.
-          async step({ checkpoint }: SyncContext) {
-            if (checkpoint === 0) {
-              return page;
-            }
-            if (failing) {
-              throw new Error('private upstream payload');
-            }
-            return { ...page, complete: true };
-          },
-        }),
-      },
-    ],
-    destinationTypes: { local: accepted },
-    timing: { retryMs },
-    onEvent: (event: SyncEvent) => events.push(event),
-  };
-  let engine = createSyncRuntime(options);
-  try {
-    const sync = await configure(engine);
-    const scope = { ...alpha, id: sync.id };
-    const delays = Object.values({
-      first: 30_000,
-      second: 60_000,
-      third: 120_000,
-      fourth: 240_000,
-      fifth: 480_000,
-      sixth: 960_000,
-      seventh: 1_920_000,
-      eighth: maxBackoff,
-      ninth: maxBackoff,
-    });
-    await engine.tick();
-    for (const delay of delays) {
-      await engine.tick();
-      expect(savedSync({ path: files.path, scope: scope })).toMatchObject({
-        checkpoint: 1,
-        status: 'retrying',
-        errorCode: 'execution_failed',
-        retryAt: now + delay,
-      });
-      expect(events.at(-1)?.fields?.retryAfterMs).toBe(delay);
-      const attempts = events.length;
-      await engine.tick();
-      expect(events).toHaveLength(attempts);
-      now += delay - 1;
-      await engine.tick();
-      expect(events).toHaveLength(attempts);
-      now++;
-      // Reopen the actual SQLite database on each attempt, to verify persisted backoff.
-      await engine.close();
-      engine = createSyncRuntime(options);
-    }
-    expect(events.at(-1)?.fields?.failureCount).toBe(delays.length);
-    expect(JSON.stringify(events)).not.toContain('private upstream payload');
-
-    // A different owner starts at the base delay, even while the first source is backed off.
-    const destination = { type: 'local', input: {} };
-    const other = await engine.api.createSync({
-      ...beta,
-      definition: fixture.definition.id,
-      config: { count: 1 },
-      destination,
-    });
-    await engine.tick();
-    await engine.tick();
-    await engine.tick();
-    expect(engine.api.sync({ ...beta, id: other.id }).retryAt).toBe(now + retryMs);
-    await engine.api.setEnabled({ ...beta, id: other.id, enabled: false });
-
-    failing = false;
-    engine.api.runNow(scope);
-    await engine.tick();
-    expect(engine.api.sync(scope).status).toBe('succeeded');
-    failing = true;
-    engine.api.runNow(scope);
-    await engine.tick();
-    expect(engine.api.sync(scope).retryAt).toBe(now + retryMs);
-    expect(events.at(-1)?.fields?.failureCount).toBe(1);
-  } finally {
-    await engine.close();
-    clock.mockRestore();
-    files.close();
-  }
-});
-
 test.each(['records', 'assets'])(
-  'checkpoint yields preserve %s backoff across restarts',
+  '%s failures preserve the checkpoint across restarts and resume on the next cron or manual run',
   async (mode) => {
     const files = storage();
-    let now = Date.now();
-    const clock = spyOn(Date, 'now').mockImplementation(() => now);
     const events: SyncEvent[] = [];
+    const seen: unknown[] = [];
     let failing = true;
     const options = {
       databasePath: files.path,
@@ -194,6 +82,10 @@ test.each(['records', 'assets'])(
           ...fixture,
           load: () => ({
             async step(context: SyncContext) {
+              seen.push(context.checkpoint);
+              if (context.checkpoint === 0) {
+                return page;
+              }
               if (failing) {
                 const failure = new SyncError({
                   code: 'connector_request_failed',
@@ -212,43 +104,43 @@ test.each(['records', 'assets'])(
                   throw failure;
                 }
               }
-              return page;
+              return { ...page, complete: true };
             },
           }),
         },
       ],
       destinationTypes: { local: accepted },
-      timing: { retryMs },
       onEvent: (event: SyncEvent) => events.push(event),
     };
     let engine = createSyncRuntime(options);
     try {
       const sync = await configure(engine);
       const scope = { ...alpha, id: sync.id };
-      await engine.tick();
-      expect(engine.api.sync(scope).retryAt).toBe(now + retryMs);
-      expect(events.at(-1)?.fields).toMatchObject({ httpStatus: 429, retryAfterMs: retryMs });
-      expect(JSON.stringify(events)).not.toContain('private upstream payload');
-      now += retryMs;
-      await engine.tick();
-      const secondDelay = 60_000;
-      expect(engine.api.sync(scope).retryAt).toBe(now + secondDelay);
-      now += secondDelay;
-      failing = false;
-      await engine.tick();
-      expect(savedSync({ path: files.path, scope: scope })).toMatchObject({
-        status: 'ready',
-        retryAt: null,
+      await engine.runDue();
+      expect(seen).toEqual([0, 1]);
+      expect(savedSync({ path: files.path, scope })).toMatchObject({
+        checkpoint: 1,
+        status: 'retrying',
       });
+      await engine.tick();
+      expect(seen).toEqual([0, 1]);
       await engine.close();
       engine = createSyncRuntime(options);
-      failing = true;
       await engine.tick();
-      const thirdDelay = 120_000;
-      expect(engine.api.sync(scope).retryAt).toBe(now + thirdDelay);
+      expect(seen).toEqual([0, 1]);
+      await engine.runDue();
+      expect(seen).toEqual([0, 1, 1]);
+      expect(events.at(-1)?.fields).toEqual({ httpStatus: 429 });
+      expect(JSON.stringify(events)).not.toContain('private upstream payload');
+      failing = false;
+      engine.api.runNow(scope);
+      await engine.tick();
+      expect(seen).toEqual([0, 1, 1, 1]);
+      expect(engine.api.sync(scope).status).toBe('succeeded');
+      await engine.tick();
+      expect(seen).toEqual([0, 1, 1, 1]);
     } finally {
       await engine.close();
-      clock.mockRestore();
       files.close();
     }
   },

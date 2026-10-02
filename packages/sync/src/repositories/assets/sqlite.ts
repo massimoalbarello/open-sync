@@ -103,7 +103,7 @@ export class SqliteAssets implements AssetRepository {
     if (deleted) {
       this.input.db
         .query(
-          "UPDATE syncs SET retry_at=NULL WHERE enabled=1 AND status='waiting_for_capacity' AND NOT (owner_id=? AND id=?)",
+          "UPDATE syncs SET status='ready' WHERE enabled=1 AND status='waiting_for_capacity' AND NOT (owner_id=? AND id=?)",
         )
         .run(deleted.owner_id, deleted.sync_id);
     }

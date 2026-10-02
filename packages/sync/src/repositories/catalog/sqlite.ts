@@ -65,7 +65,7 @@ export class SqliteCatalog implements CatalogRepository {
         }
         this.db
           .query(`UPDATE syncs SET connection=?,enabled=1,
-        status='ready',error_code=NULL,retry_at=NULL WHERE owner_id=? AND id=?`)
+        status='ready',error_code=NULL WHERE owner_id=? AND id=?`)
           .run(canonicalJson(input.connection).json, input.ownerId, input.id);
         return this.sync(input);
       })
@@ -84,7 +84,7 @@ export class SqliteCatalog implements CatalogRepository {
           .run(input.enabled ? 'ready' : 'disabled', input.ownerId, input.id);
         this.db
           .query(
-            `UPDATE syncs SET enabled=?,status=?,error_code=NULL,retry_at=NULL,generation=generation+1,expires_at=NULL WHERE owner_id=? AND id=?`,
+            `UPDATE syncs SET enabled=?,status=?,error_code=NULL,generation=generation+1,expires_at=NULL WHERE owner_id=? AND id=?`,
           )
           .run(
             Number(input.enabled),
@@ -110,7 +110,7 @@ export class SqliteCatalog implements CatalogRepository {
           fail('busy');
         }
         this.db
-          .query(`UPDATE syncs SET status='ready',retry_at=NULL WHERE owner_id=? AND id=?`)
+          .query(`UPDATE syncs SET status='ready' WHERE owner_id=? AND id=?`)
           .run(input.ownerId, input.id);
       })
       .immediate();
@@ -127,7 +127,7 @@ export class SqliteCatalog implements CatalogRepository {
           .run(Date.now(), input.ownerId, input.id);
         this.db
           .query(
-            `UPDATE syncs SET checkpoint=?,status='ready',error_code=NULL,retry_at=NULL,resync=1,failure_count=0,generation=generation+1,expires_at=NULL WHERE owner_id=? AND id=?`,
+            `UPDATE syncs SET checkpoint=?,status='ready',error_code=NULL,resync=1,generation=generation+1,expires_at=NULL WHERE owner_id=? AND id=?`,
           )
           .run(canonicalJson(input.checkpoint).json, input.ownerId, input.id);
       })
@@ -145,7 +145,9 @@ export class SqliteCatalog implements CatalogRepository {
           .run(input.ownerId, input.id);
         this.db.query('DELETE FROM syncs WHERE owner_id=? AND id=?').run(input.ownerId, input.id);
         this.db
-          .query(`UPDATE syncs SET retry_at=NULL WHERE enabled=1 AND status='waiting_for_capacity'`)
+          .query(
+            `UPDATE syncs SET status='ready' WHERE enabled=1 AND status='waiting_for_capacity'`,
+          )
           .run();
       })
       .immediate();

@@ -70,7 +70,7 @@ test('download reservations account for other in-flight downloads and survive re
         'waiting for capacity',
       );
       // Only deletion of the actual file releases its charge, not completion of the source run.
-      f.acquisition.finish({ lease: first, state: 'interrupted', delay: leaseMs });
+      f.acquisition.finish({ lease: first, state: 'interrupted' });
       expect(() => restored.reserve({ lease: second, id: right, bytes: 5 })).toThrow(
         'waiting for capacity',
       );
