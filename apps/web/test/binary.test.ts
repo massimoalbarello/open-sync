@@ -108,3 +108,48 @@ test('a standalone host registers cron automatically and its task never initiali
   expect((await app.request({ path: '/api/health' })).status).toBe(HTTP_OK);
   await app.stop();
 });
+
+test('a standalone host never accepts connections when cron registration fails', async () => {
+  await using crontab = await isolatedCrontab();
+  const reservation = Bun.serve({ port: 0, fetch: () => new Response() });
+  const port = reservation.port!;
+  await reservation.stop(true);
+  await Bun.write(
+    crontab.executable,
+    `#!${process.execPath}
+if (process.argv[2] === '-') {
+  await Bun.stdin.text();
+  const acceptingConnections = await Bun.connect({
+    hostname: '127.0.0.1',
+    port: Number(process.env.PORT),
+    socket: { data() {} },
+  }).then(socket => { socket.end(); return true; }, () => false);
+  await Bun.write(import.meta.dir + '/accepting-connections', JSON.stringify(acceptingConnections));
+  console.error('cron registration unavailable');
+  process.exit(1);
+}
+`,
+  );
+  const startupTimeoutMs = 5_000;
+  const child = Bun.spawn([join(import.meta.dir, '../dist/app')], {
+    cwd: crontab.directory,
+    env: {
+      ...process.env,
+      PORT: String(port),
+      DATA_FOLDER: join(crontab.directory, 'data'),
+      PATH: `${crontab.directory}:${process.env.PATH}`,
+    },
+    stdout: 'pipe',
+    stderr: 'pipe',
+    timeout: startupTimeoutMs,
+  });
+  const [code, stdout, stderr] = await Promise.all([
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ]);
+  expect(code).toBe(1);
+  expect(stderr).toContain('cron registration unavailable');
+  expect(stdout).not.toContain('Open Sync listening');
+  expect(await Bun.file(join(crontab.directory, 'accepting-connections')).json()).toBe(false);
+});

@@ -75,6 +75,7 @@ try {
     onEvent: (event) => console.log(JSON.stringify({ event: 'sync.status', ...event })),
   });
   dashboard = new DashboardService(sync);
+  await sync.start();
   app = createApp({
     dashboard,
     auth,
@@ -83,7 +84,6 @@ try {
     syncFetch: sync.fetch,
     origins,
   }).listen({ port: env.PORT, hostname: '0.0.0.0' });
-  await sync.start();
   console.log(`Open Sync listening on http://0.0.0.0:${app.server!.port}`);
   process.once('SIGTERM', () => {
     void stop();
