@@ -32,6 +32,7 @@
     "proper-lockfile": "4.1.2"
   },
   "devDependencies": {
+    "open-sync-previous": "https://registry.npmjs.org/@context-use/open-sync/-/open-sync-0.3.1.tgz",
     "typescript": "catalog:"
   },
   "engines": {

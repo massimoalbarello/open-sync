@@ -156,6 +156,20 @@ test('fresh databases apply the same ordered migration history', () => {
   expect(columns).not.toContain('next_due_at');
 });
 
+test('in-memory databases retain migrated tables and stay isolated after startup', () => {
+  using first = openDatabase(':memory:');
+  using second = openDatabase(':memory:');
+  const sync = new SqliteCatalog(first).createSync({
+    ...alpha,
+    definition: fixture.definition.id,
+    config: { count: 1 },
+    destination: { type: 'local', config: {} },
+    initialCheckpoint: 0,
+  });
+  expect(new SqliteCatalog(first).sync({ ...alpha, id: sync.id })).toEqual(sync);
+  expect(new SqliteCatalog(second).syncs(alpha)).toEqual([]);
+});
+
 test.each([false, true])(
   'failed migration rolls back schema, data and history (baseline recorded: %s)',
   (recorded) => {
