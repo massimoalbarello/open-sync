@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS syncs (
   connection TEXT, config TEXT NOT NULL, destination_type TEXT NOT NULL, destination_config TEXT NOT NULL,
   enabled INTEGER NOT NULL,
   checkpoint TEXT NOT NULL,
-  retry_at INTEGER, status TEXT NOT NULL,
+  interval_ms INTEGER NOT NULL, next_due_at INTEGER NOT NULL, status TEXT NOT NULL,
   error_code TEXT,
   generation INTEGER NOT NULL DEFAULT 0, expires_at INTEGER,
   failure_count INTEGER NOT NULL DEFAULT 0, resync INTEGER NOT NULL DEFAULT 0,
