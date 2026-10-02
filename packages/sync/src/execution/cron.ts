@@ -1,6 +1,7 @@
 import { chmod, lstat, mkdir, unlink, writeFile } from 'node:fs/promises';
 import { request } from 'node:http';
 import { join, resolve } from 'node:path';
+import clientSource from './cron-client.ts' with { type: 'text' };
 import { Crontab } from './crontab';
 
 const PRIVATE_DIRECTORY_MODE = 0o700;
@@ -9,30 +10,6 @@ const HTTP_OK = 200;
 const HTTP_NOT_FOUND = 404;
 const HTTP_UNAVAILABLE = 503;
 const PROBE_TIMEOUT_MS = 1_000;
-
-// The compiled host already contains Bun. Run only this client through its documented CLI mode,
-// so embedding applications need no cron argument handler and no second database initialization.
-const CRON_CLIENT = `
-const { request } = require('node:http');
-const deadline = Date.now() + 30000;
-for (;;) {
-  try {
-    await new Promise((resolve, reject) => {
-      const client = request({socketPath: process.argv[2], path: '/run', method: 'POST', agent: false}, response => {
-        response.on('error', reject);
-        response.on('end', () => response.statusCode === 200 ? resolve() : reject(new Error('Open Sync cron failed: ' + response.statusCode)));
-        response.resume();
-      });
-      client.on('error', reject);
-      client.end();
-    });
-    break;
-  } catch (error) {
-    if (!['ECONNREFUSED', 'ENOENT'].includes(error.code) || Date.now() >= deadline) throw error;
-    await Bun.sleep(100);
-  }
-}
-`;
 
 /** One half-hourly check for every sync owned by this runtime. */
 export async function startCrontab(input: {
@@ -48,10 +25,12 @@ export async function startCrontab(input: {
   await chmod(directory, PRIVATE_DIRECTORY_MODE);
   const socket = join(directory, 'worker.sock');
   await removeStaleSocket(socket);
-  const client = join(directory, 'request.mjs');
-  await writeFile(client, CRON_CLIENT, { mode: PRIVATE_SOCKET_MODE });
+  const client = join(directory, 'request.ts');
+  // TypeScript 6 types this import as a module; Bun's text loader embeds its source as a string.
+  await writeFile(client, clientSource as unknown as string, { mode: PRIVATE_SOCKET_MODE });
   const table = new Crontab({
     id: directory,
+    // The compiled host's embedded Bun runs the client without initializing another app.
     command: [process.execPath, client, socket],
     executable: input.crontabExecutable,
   });
