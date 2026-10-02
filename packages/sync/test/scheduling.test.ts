@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import type { SyncRegistration } from '../src/models/definition';
 import { createSyncRuntime } from '../src/runtime';
-import { isolatedCrontab, runRegisteredCron } from './cron-support';
+import { isolatedScheduler, runRegisteredCron } from './cron-support';
 import {
   accepted,
   alpha,
@@ -25,7 +25,7 @@ async function until(check: () => boolean) {
 }
 
 test('waiting sources and deliveries do not stop other steps, even at the same destination', async () => {
-  await using table = await isolatedCrontab();
+  await using _table = await isolatedScheduler();
   const files = storage();
   const heldSource = Promise.withResolvers<void>();
   const heldDelivery = Promise.withResolvers<void>();
@@ -79,8 +79,8 @@ test('waiting sources and deliveries do not stop other steps, even at the same d
     }
     slowSource = installs[0]!.id;
     slowDelivery = installs[1]!.id;
-    await engine.start({ crontabExecutable: table.executable });
-    await engine.start({ crontabExecutable: table.executable });
+    await engine.start();
+    await engine.start();
     await until(() => delivered.filter((id) => id === installs[2]!.id).length === syncCount);
     expect(
       savedSync({ path: files.path, scope: { ...alpha, id: installs[0]!.id } }).checkpoint,
@@ -105,7 +105,7 @@ test('waiting sources and deliveries do not stop other steps, even at the same d
 });
 
 test('an uncooperative step times out, releases its slot, and cannot commit a late result', async () => {
-  await using table = await isolatedCrontab();
+  await using _table = await isolatedScheduler();
   const files = storage();
   const late = Promise.withResolvers<typeof page>();
   let held = '';
@@ -129,7 +129,7 @@ test('an uncooperative step times out, releases its slot, and cannot commit a la
     const first = await configure(engine);
     held = first.id;
     const other = await configure(engine);
-    await engine.start({ crontabExecutable: table.executable });
+    await engine.start();
     await until(
       () =>
         engine.api.sync({ ...alpha, id: other.id }).status === 'succeeded' &&
@@ -147,7 +147,7 @@ test('an uncooperative step times out, releases its slot, and cannot commit a la
 });
 
 test('new work starts immediately but a future retry waits for the next cron check', async () => {
-  await using table = await isolatedCrontab();
+  await using table = await isolatedScheduler();
   const files = storage();
   const times: number[] = [];
   const retryMs = 50;
@@ -169,7 +169,7 @@ test('new work starts immediately but a future retry waits for the next cron che
     },
   });
   try {
-    await engine.start({ crontabExecutable: table.executable });
+    await engine.start();
     await Bun.sleep(1);
     await configure(engine);
     await until(() => times.length === 1);

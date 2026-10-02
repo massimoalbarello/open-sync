@@ -4,7 +4,7 @@ const MAX_NIBRUN_BINARY_BYTES = 256_000_000;
 
 import { expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startBinary } from '@repo/build-tools/binary-check';
 import { SQL } from 'bun';
@@ -71,7 +71,9 @@ test('standalone binary embeds frontend and migrations and preserves state on re
       HTTP_NOT_FOUND,
     );
     await restarted.stop();
-    expect(await crontab.table.text()).toBe('');
+    if (process.platform === 'linux') {
+      expect(await crontab.table.text()).toBe('');
+    }
   } finally {
     await rm(folder, { recursive: true, force: true });
   }
@@ -89,14 +91,29 @@ test('a standalone host registers cron automatically and its task never initiali
       PATH: `${crontab.directory}:${process.env.PATH}`,
     },
   });
-  expect(await crontab.table.text()).toContain('*/30 * * * *');
   const taskTimeoutMs = 5_000;
   const unusedData = join(crontab.directory, 'must-not-be-created');
-  const fields = 5;
-  const entry = (await crontab.table.text())
-    .split('\n')
-    .find((line) => line && !line.startsWith('#'))!;
-  const child = Bun.spawn(['/bin/sh', '-c', entry.split(' ').slice(fields).join(' ')], {
+  const socket = join(dataFolder, 'sync.db.cron/worker.sock');
+  const title = `open-sync-${Buffer.from(socket).toString('base64url')}`;
+  let command: string;
+  if (process.platform === 'linux') {
+    expect(await crontab.table.text()).toContain('0,30 * * * *');
+    const fields = 5;
+    const entry = (await crontab.table.text())
+      .split('\n')
+      .find((line) => line && !line.startsWith('#'))!;
+    command = entry.split(' ').slice(fields).join(' ');
+  } else {
+    const plist = join(homedir(), `Library/LaunchAgents/bun.cron.${title}.plist`);
+    const reader = Bun.spawn(
+      ['/usr/bin/plutil', '-extract', 'ProgramArguments', 'json', '-o', '-', plist],
+      { stdout: 'pipe' },
+    );
+    const args = (await new Response(reader.stdout).json()) as string[];
+    expect(await reader.exited).toBe(0);
+    command = args.map((arg) => `'${arg.replaceAll("'", "'\\''")}'`).join(' ');
+  }
+  const child = Bun.spawn(['/bin/sh', '-c', command], {
     env: { DATA_FOLDER: unusedData, PORT: 'invalid' },
     stdout: 'pipe',
     stderr: 'pipe',
@@ -109,16 +126,17 @@ test('a standalone host registers cron automatically and its task never initiali
   await app.stop();
 });
 
-test('a standalone host never accepts connections when cron registration fails', async () => {
-  await using crontab = await isolatedCrontab();
-  const reservation = Bun.serve({ port: 0, fetch: () => new Response() });
-  const port = reservation.port!;
-  await reservation.stop(true);
-  await Bun.write(
-    crontab.executable,
-    `#!${process.execPath}
-if (process.argv[2] === '-') {
-  await Bun.stdin.text();
+test.skipIf(process.platform !== 'linux')(
+  'a standalone host never accepts connections when cron registration fails',
+  async () => {
+    await using crontab = await isolatedCrontab();
+    const reservation = Bun.serve({ port: 0, fetch: () => new Response() });
+    const port = reservation.port!;
+    await reservation.stop(true);
+    await Bun.write(
+      crontab.executable,
+      `#!${process.execPath}
+if (process.argv[2] !== '-l') {
   const acceptingConnections = await Bun.connect({
     hostname: '127.0.0.1',
     port: Number(process.env.PORT),
@@ -129,27 +147,28 @@ if (process.argv[2] === '-') {
   process.exit(1);
 }
 `,
-  );
-  const startupTimeoutMs = 5_000;
-  const child = Bun.spawn([join(import.meta.dir, '../dist/app')], {
-    cwd: crontab.directory,
-    env: {
-      ...process.env,
-      PORT: String(port),
-      DATA_FOLDER: join(crontab.directory, 'data'),
-      PATH: `${crontab.directory}:${process.env.PATH}`,
-    },
-    stdout: 'pipe',
-    stderr: 'pipe',
-    timeout: startupTimeoutMs,
-  });
-  const [code, stdout, stderr] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ]);
-  expect(code).toBe(1);
-  expect(stderr).toContain('cron registration unavailable');
-  expect(stdout).not.toContain('Open Sync listening');
-  expect(await Bun.file(join(crontab.directory, 'accepting-connections')).json()).toBe(false);
-});
+    );
+    const startupTimeoutMs = 5_000;
+    const child = Bun.spawn([join(import.meta.dir, '../dist/app')], {
+      cwd: crontab.directory,
+      env: {
+        ...process.env,
+        PORT: String(port),
+        DATA_FOLDER: join(crontab.directory, 'data'),
+        PATH: `${crontab.directory}:${process.env.PATH}`,
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: startupTimeoutMs,
+    });
+    const [code, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
+    expect(code).toBe(1);
+    expect(stderr).toContain('Process exited with code 1');
+    expect(stdout).not.toContain('Open Sync listening');
+    expect(await Bun.file(join(crontab.directory, 'accepting-connections')).json()).toBe(false);
+  },
+);

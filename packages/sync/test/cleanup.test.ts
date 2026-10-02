@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type { SyncRegistration } from '../src/models/definition';
 import { DirectoryAssets } from '../src/repositories/assets/filesystem';
 import { createSyncRuntime } from '../src/runtime';
-import { isolatedCrontab, runRegisteredCron } from './cron-support';
+import { isolatedScheduler, runRegisteredCron } from './cron-support';
 import { accepted, alpha, fixture, page, savedSync, storage } from './support';
 
 async function until(check: () => boolean | Promise<boolean>) {
@@ -20,7 +20,7 @@ async function until(check: () => boolean | Promise<boolean>) {
 }
 
 test('accepted files disappear while another source is still writing, and live files remain readable', async () => {
-  await using table = await isolatedCrontab();
+  await using _table = await isolatedScheduler();
   const files = storage();
   const finish = Promise.withResolvers<void>();
   let slow = '';
@@ -92,7 +92,7 @@ test('accepted files disappear while another source is still writing, and live f
       destination,
     });
     slow = second.id;
-    await engine.start({ crontabExecutable: table.executable });
+    await engine.start();
     const db = new Database(files.path);
     try {
       await until(
@@ -125,7 +125,7 @@ test('accepted files disappear while another source is still writing, and live f
 });
 
 test('the next cron retries failed orphan deletion even with no runnable syncs', async () => {
-  await using table = await isolatedCrontab();
+  await using table = await isolatedScheduler();
   const files = storage();
   const directory = `${files.path}.assets`;
   await mkdir(directory);
@@ -149,7 +149,7 @@ test('the next cron retries failed orphan deletion even with no runnable syncs',
     timing: { retryMs: 10 },
   });
   try {
-    await engine.start({ crontabExecutable: table.executable });
+    await engine.start();
     await until(() => failed);
     await engine.runDue().catch(() => undefined);
     await runRegisteredCron(table.table);
@@ -164,7 +164,7 @@ test('the next cron retries failed orphan deletion even with no runnable syncs',
 });
 
 test('a crash after releasing an asset reference retains its charge until recovery removes the file', async () => {
-  await using table = await isolatedCrontab();
+  await using _table = await isolatedScheduler();
   const files = storage();
   const source: SyncRegistration = {
     ...fixture,
@@ -208,7 +208,7 @@ test('a crash after releasing an asset reference retains its charge until recove
     expect(await readdir(`${files.path}.assets`)).toHaveLength(1);
     const restarted = createSyncRuntime(options);
     try {
-      await restarted.start({ crontabExecutable: table.executable });
+      await restarted.start();
       await until(
         () =>
           db.query<{ count: number }, []>('SELECT count(*) AS count FROM delivery_assets').get()!
@@ -226,7 +226,7 @@ test('a crash after releasing an asset reference retains its charge until recove
 });
 
 test('releasing partial captures does not spin a capacity retry; acceptance wakes it after unlink', async () => {
-  await using table = await isolatedCrontab();
+  await using _table = await isolatedScheduler();
   const files = storage();
   let accept = false;
   let reads = 0;
@@ -290,7 +290,7 @@ test('releasing partial captures does not spin a capacity retry; acceptance wake
       destination,
     });
     const scope = { ...alpha, id: waiting.id };
-    await engine.start({ crontabExecutable: table.executable });
+    await engine.start();
     await until(
       async () =>
         engine.api.sync(scope).status === 'waiting_for_capacity' &&

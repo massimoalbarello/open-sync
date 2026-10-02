@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { createSyncRuntime } from '../src/runtime';
-import { isolatedCrontab, runRegisteredCron } from './cron-support';
+import { isolatedScheduler, runRegisteredCron } from './cron-support';
 import { accepted, alpha, beta, configure, fixture, runtime, storage } from './support';
 
 const RECORD_COUNT = 3;
@@ -60,7 +60,7 @@ test('one host trigger drains all due syncs and deliveries, coalesces overlap, a
 });
 
 test('cron joins startup work and remains the only automatic polling trigger', async () => {
-  await using table = await isolatedCrontab();
+  await using table = await isolatedScheduler();
   const entered = Promise.withResolvers<void>();
   const release = Promise.withResolvers<void>();
   let steps = 0;
@@ -85,7 +85,7 @@ test('cron joins startup work and remains the only automatic polling trigger', a
       destination: { type: 'local', input: {} },
       intervalMs: POLL_INTERVAL_MS,
     });
-    await f.engine.start({ crontabExecutable: table.executable });
+    await f.engine.start();
     await entered.promise;
     const running = f.engine.runDue();
     expect(f.engine.runDue()).toBe(running);

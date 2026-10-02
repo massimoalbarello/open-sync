@@ -1,18 +1,20 @@
 // Copied into an isolated consumer by the package check; imports must resolve from the tarball.
 
-import { chmod, mkdir } from 'node:fs/promises';
-import { resolve } from 'node:path';
 import { createOpenSync, type OpenSyncOptions } from '@context-use/open-sync';
 import { assetPlaceholder, resolveAssetReference } from '@context-use/open-sync/assets';
+import { runOpenSyncCron } from '@context-use/open-sync/cron';
 import type { SyncRegistration } from '@context-use/open-sync/definition';
 import type { Deliverable } from '@context-use/open-sync/delivery';
+import { isolatedScheduler, runRegisteredCron } from './cron-support';
+
+if (await runOpenSyncCron()) {
+  process.exit(0);
+}
 
 // Keep the installed provider runtime and credential persistence real; simulate only GitHub.
 const providerFetch = globalThis.fetch;
 const okStatus = 200;
-const PRIVATE_EXECUTABLE_MODE = 0o700;
 const AFTER_INTERVAL_MS = 150;
-const CRON_FIELDS = 5;
 globalThis.fetch = Object.assign((input: RequestInfo | URL) => {
   const url = input instanceof Request ? input.url : String(input);
   if (url !== 'https://api.github.com/user') {
@@ -132,6 +134,7 @@ if (Bun.isStandaloneExecutable) {
   }
 }
 const empty = process.argv[2] === 'empty';
+await using scheduler = await isolatedScheduler();
 const sync = await createOpenSync({ ...options, definitions: empty ? [] : [definition] });
 try {
   if (empty) {
@@ -178,22 +181,7 @@ try {
     });
     // Exercise the installed API with a private crontab subprocess, including a compiled host
     // launched from outside its source tree. No system crontab or public server is involved.
-    const directory = resolve('consumer-state/cron');
-    await mkdir(directory, { recursive: true });
-    const table = `${directory}/table`;
-    const crontabExecutable = `${directory}/crontab`;
-    await Bun.write(
-      crontabExecutable,
-      `#!/bin/sh
-if [ "$1" = "-l" ]; then
-  if [ -f '${table}' ]; then /bin/cat '${table}'; else exit 0; fi
-else
-  /bin/cat > '${table}'
-fi
-`,
-    );
-    await chmod(crontabExecutable, PRIVATE_EXECUTABLE_MODE);
-    await sync.start({ crontabExecutable });
+    await sync.start();
     await sync.runDue();
     if (received.length !== 1 || sync.api.status(scope).queue.pendingRecords !== 0) {
       throw new Error('Independent consumer did not receive its record');
@@ -203,17 +191,8 @@ fi
     if (sync.api.polls({ ...scope, id: created.id }).polls.length !== pollCount) {
       throw new Error('An in-process timer bypassed the cron schedule');
     }
-    const entry = (await Bun.file(table).text())
-      .split('\n')
-      .find((line) => line && !line.startsWith('#'))!;
-    const child = Bun.spawn(['/bin/sh', '-c', entry.split(' ').slice(CRON_FIELDS).join(' ')], {
-      stdout: 'inherit',
-      stderr: 'inherit',
-    });
-    if (
-      (await child.exited) ||
-      sync.api.polls({ ...scope, id: created.id }).polls.length !== pollCount + 1
-    ) {
+    await runRegisteredCron(scheduler.table);
+    if (sync.api.polls({ ...scope, id: created.id }).polls.length !== pollCount + 1) {
       throw new Error('The headless host cron command did not execute due work');
     }
     const catalog = await sync.fetch(new Request('http://host/embedded/providers'));

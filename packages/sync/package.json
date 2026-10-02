@@ -9,6 +9,7 @@
     "./delivery": "./src/models/delivery.ts",
     "./json": "./src/models/json.ts",
     "./http": "./src/http/index.ts",
+    "./cron": "./src/cron.ts",
     "./engine": "./src/runtime.ts",
     "./build": "./src/build.ts",
     "./assets": "./src/models/asset.ts"

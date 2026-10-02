@@ -1,6 +1,6 @@
 import { syncApi } from './api';
 import { openDatabase } from './db/client';
-import { startCrontab } from './execution/cron';
+import { startCron } from './execution/cron';
 import { type Logger, safeLogger } from './execution/diagnostics';
 import type { ProviderGateway } from './execution/provider';
 import { Worker } from './execution/worker';
@@ -95,21 +95,20 @@ export function createSyncRuntime(options: SyncRuntimeOptions) {
       timeoutMs: timing.timeoutMs,
     });
     let starting: Promise<void> | undefined;
-    let cron: Awaited<ReturnType<typeof startCrontab>> | undefined;
+    let cron: Awaited<ReturnType<typeof startCron>> | undefined;
     let closing: Promise<void> | undefined;
     return {
       api: syncApi(api),
-      /** Requires a working Unix crontab service. Registration failures reject startup. */
-      start(input: { crontabExecutable?: string } = {}): Promise<void> {
+      /** Requires a working OS scheduler supported by Bun.cron. Registration failures reject startup. */
+      start(): Promise<void> {
         worker.ensureOpen();
         if (closing) {
           fail('closed');
         }
         starting ??= (async () => {
-          cron = await startCrontab({
+          cron = await startCron({
             runtime: worker,
             directory: `${options.databasePath}.cron`,
-            crontabExecutable: input.crontabExecutable,
             onError: () => log({ code: 'runtime_failed' }),
           });
           worker.start();

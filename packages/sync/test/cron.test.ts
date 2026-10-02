@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test';
 import { mkdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { startCrontab } from '../src/execution/cron';
-import { isolatedCrontab, runRegisteredCron } from './cron-support';
+import { startCron } from '../src/execution/cron';
+import { isolatedScheduler, runRegisteredCron } from './cron-support';
 import { alpha, configure, runtime } from './support';
 
 const CRON_FIELDS = 5;
@@ -10,20 +10,19 @@ const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_SOCKET_MODE = 0o600;
 
 test('a registered shell command invokes the existing headless runtime through its private socket', async () => {
-  await using table = await isolatedCrontab();
+  await using table = await isolatedScheduler();
   const f = runtime();
   const directory = join(table.directory, 'worker');
   const errors: unknown[] = [];
   try {
     const sync = await configure(f.engine);
-    await using cron = await startCrontab({
+    await using cron = await startCron({
       runtime: f.engine,
       directory,
-      crontabExecutable: table.executable,
       onError: (error) => errors.push(error),
     });
     const registered = await table.table.text();
-    expect(registered).toContain('*/30 * * * *');
+    expect(registered).toContain('0,30 * * * *');
     const entry = registered.split('\n').find((line) => line && !line.startsWith('#'))!;
     const command = entry.split(' ').slice(CRON_FIELDS).join(' ');
     const children = Array.from({ length: 2 }, () =>
@@ -38,10 +37,9 @@ test('a registered shell command invokes the existing headless runtime through i
     expect((await stat(directory)).mode & 0o777).toBe(PRIVATE_DIRECTORY_MODE);
     expect((await stat(join(directory, 'worker.sock'))).mode & 0o777).toBe(PRIVATE_SOCKET_MODE);
     await expect(
-      startCrontab({
+      startCron({
         runtime: f.engine,
         directory,
-        crontabExecutable: table.executable,
         onError: () => {},
       }),
     ).rejects.toThrow('already owns');
@@ -59,7 +57,7 @@ test('a registered shell command invokes the existing headless runtime through i
 });
 
 test('registration failure closes the socket and leaves unrelated crontab entries intact', async () => {
-  await using table = await isolatedCrontab();
+  await using table = await isolatedScheduler();
   const f = runtime();
   const directory = join(table.directory, 'worker');
   const retained = '0 1 * * * /existing/task\n';
@@ -67,13 +65,12 @@ test('registration failure closes the socket and leaves unrelated crontab entrie
   await Bun.write(join(table.directory, 'deny'), '');
   try {
     await expect(
-      startCrontab({
+      startCron({
         runtime: f.engine,
         directory,
-        crontabExecutable: table.executable,
         onError: () => {},
       }),
-    ).rejects.toThrow('permission denied');
+    ).rejects.toThrow();
     expect(
       await stat(join(directory, 'worker.sock')).then(
         () => true,
@@ -87,7 +84,7 @@ test('registration failure closes the socket and leaves unrelated crontab entrie
 });
 
 test('a restarted host recovers a socket left by a killed process', async () => {
-  await using table = await isolatedCrontab();
+  await using table = await isolatedScheduler();
   const f = runtime();
   const directory = join(table.directory, 'worker');
   await mkdir(directory);
@@ -106,10 +103,9 @@ test('a restarted host recovers a socket left by a killed process', async () => 
     reader.releaseLock();
     child.kill('SIGKILL');
     await child.exited;
-    await using cron = await startCrontab({
+    await using cron = await startCron({
       runtime: f.engine,
       directory,
-      crontabExecutable: table.executable,
       onError: () => {},
     });
     await runRegisteredCron(table.table);
@@ -125,13 +121,12 @@ test('a restarted host recovers a socket left by a killed process', async () => 
 });
 
 test('a failed or missed invocation leaves the next recurring wake-up available', async () => {
-  await using table = await isolatedCrontab();
+  await using table = await isolatedScheduler();
   const directory = join(table.directory, 'worker');
   const errors: unknown[] = [];
   let attempts = 0;
-  await using cron = await startCrontab({
+  await using cron = await startCron({
     directory,
-    crontabExecutable: table.executable,
     runtime: {
       runDue() {
         attempts++;
@@ -160,14 +155,12 @@ test('a failed or missed invocation leaves the next recurring wake-up available'
 });
 
 test('runtime startup reports cron registration failure before starting sync work', async () => {
-  await using table = await isolatedCrontab();
+  await using table = await isolatedScheduler();
   const f = runtime();
   try {
     const sync = await configure(f.engine);
     await Bun.write(join(table.directory, 'deny'), '');
-    await expect(f.engine.start({ crontabExecutable: table.executable })).rejects.toThrow(
-      'permission denied',
-    );
+    await expect(f.engine.start()).rejects.toThrow();
     expect(f.engine.api.polls({ ...alpha, id: sync.id }).polls).toHaveLength(0);
     await f.engine.close();
     expect(await table.table.exists()).toBe(false);

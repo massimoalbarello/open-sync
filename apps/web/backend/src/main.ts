@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { createOpenSync, type OpenSyncRuntime } from '@context-use/open-sync';
+import { runOpenSyncCron } from '@context-use/open-sync/cron';
 import { localDestination } from '@open-sync/examples/destinations/local';
 import { granolaClientRegistration } from '@open-sync/examples/providers/granola';
 import { createApp } from '#backend/app.ts';
@@ -15,6 +16,10 @@ import { DashboardService } from '#backend/services/dashboard/service.ts';
 import { FrontendAssetsService } from '#backend/services/frontend-assets/service.ts';
 import { ReceiverService } from '#backend/services/receiver/service.ts';
 import { syncDefinitions } from '#backend/sync-definitions.ts';
+
+if (await runOpenSyncCron()) {
+  process.exit(0);
+}
 
 const env = loadEnv();
 const secret = await loadAuthSecret({

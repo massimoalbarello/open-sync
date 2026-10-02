@@ -137,8 +137,10 @@ than a compiler invocation — assets embedded, constants substituted at build t
 compiled first — and a hand-rolled command silently skips all of it, producing something that links
 and then dies on boot. This repository uses `bun run build:linux` to produce `apps/web/dist/app` with the frontend and migrations embedded.
 Use `bun run deploy --new <name>` for the first deployment and `bun run deploy --app <exact-slug>` thereafter.
-Open Sync registers one half-hourly crontab job at startup, including when embedded in another
-Bun binary. Ordinary Unix hosts require an installed and running cron service.
+Open Sync uses Bun.cron to register one half-hourly OS job at startup. Compiled embedding hosts
+call `runOpenSyncCron()` from `@context-use/open-sync/cron` before loading configuration or services,
+then await `sync.start()` before accepting requests. Ordinary Linux hosts require a running cron
+service; Bun uses launchd on macOS.
 The application defaults to `PORT` 3000, and persists its database and generated auth secret under `/app/data` on nibrun.
 
 A Bun repo with nothing to inherit compiles one itself with `bun build --compile`, targeting

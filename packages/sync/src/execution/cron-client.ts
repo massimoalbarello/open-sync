@@ -45,11 +45,3 @@ function run(socketPath: string): Promise<void> {
     client.end();
   });
 }
-
-if (import.meta.main) {
-  const socketPath = process.argv[2];
-  if (!socketPath) {
-    throw new Error('The Open Sync cron client requires a worker socket path.');
-  }
-  await requestCron(socketPath);
-}

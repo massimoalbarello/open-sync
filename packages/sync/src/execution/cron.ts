@@ -1,8 +1,8 @@
 import { chmod, lstat, mkdir, unlink, writeFile } from 'node:fs/promises';
 import { request } from 'node:http';
 import { join, resolve } from 'node:path';
-import clientSource from './cron-client.ts' with { type: 'text' };
-import { Crontab } from './crontab';
+import { cronTitle } from './cron-invocation';
+import { updateSchedule } from './schedule';
 
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_SOCKET_MODE = 0o600;
@@ -12,11 +12,10 @@ const HTTP_UNAVAILABLE = 503;
 const PROBE_TIMEOUT_MS = 1_000;
 
 /** One half-hourly check for every sync owned by this runtime. */
-export async function startCrontab(input: {
+export async function startCron(input: {
   runtime: { runDue(): Promise<void> };
   /** A private, stable directory owned by this runtime. */
   directory: string;
-  crontabExecutable?: string;
   /** Report a failed run; the recurring job remains registered for the next invocation. */
   onError(error: unknown): void;
 }) {
@@ -25,15 +24,19 @@ export async function startCrontab(input: {
   await chmod(directory, PRIVATE_DIRECTORY_MODE);
   const socket = join(directory, 'worker.sock');
   await removeStaleSocket(socket);
-  const client = join(directory, 'request.ts');
-  // TypeScript 6 types this import as a module; Bun's text loader embeds its source as a string.
-  await writeFile(client, clientSource as unknown as string, { mode: PRIVATE_SOCKET_MODE });
-  const table = new Crontab({
-    id: directory,
-    // The compiled host's embedded Bun runs the client without initializing another app.
-    command: [process.execPath, client, socket],
-    executable: input.crontabExecutable,
-  });
+  const title = cronTitle(socket);
+  let entrypoint = Bun.main;
+  if (!Bun.isStandaloneExecutable) {
+    // Bun consumes cron arguments in source mode and invokes default.scheduled().
+    // Only the absolute import and socket path are generated; the client remains ordinary code.
+    entrypoint = join(directory, 'scheduled.ts');
+    await writeFile(
+      entrypoint,
+      `import requestCron from ${JSON.stringify(import.meta.resolve('./cron-client.ts'))};\n` +
+        `export default { scheduled: () => requestCron(${JSON.stringify(socket)}) };\n`,
+      { mode: PRIVATE_SOCKET_MODE },
+    );
+  }
   let closed = false;
   const server = Bun.serve({
     unix: socket,
@@ -63,7 +66,7 @@ export async function startCrontab(input: {
     closing ??= (async () => {
       closed = true;
       try {
-        await table.remove();
+        await updateSchedule(() => Bun.cron.remove(title));
       } finally {
         await server.stop(true);
       }
@@ -72,10 +75,10 @@ export async function startCrontab(input: {
   };
   try {
     await chmod(socket, PRIVATE_SOCKET_MODE);
-    await table.install();
+    await updateSchedule(() => Bun.cron(entrypoint, '*/30 * * * *', title));
     return { close, [Symbol.asyncDispose]: close };
   } catch (error) {
-    await close();
+    await server.stop(true);
     throw error;
   }
 }

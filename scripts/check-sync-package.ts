@@ -45,6 +45,10 @@ try {
     join(temporary, 'consumer.ts'),
     await readFile(join(root, 'packages/sync/test/package-consumer.ts')),
   );
+  await copyFile(
+    join(root, 'packages/sync/test/cron-support.ts'),
+    join(temporary, 'cron-support.ts'),
+  );
   await copyFile(join(root, 'packages/typescript-config/base.json'), join(temporary, 'base.json'));
   await writeFile(
     join(temporary, 'tsconfig.json'),
