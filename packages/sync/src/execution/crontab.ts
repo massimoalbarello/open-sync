@@ -81,15 +81,17 @@ export class Crontab {
     if (code === 0) {
       return stdout;
     }
+    const error = stderr.trim();
     if (
       input.allowMissing &&
       code === NO_CRONTAB_EXIT_CODE &&
       !stdout &&
-      /no crontab for /i.test(stderr)
+      (/^no crontab for [^\r\n]+$/i.test(error) ||
+        /^crontab: can't open '[^/'\r\n]+': No such file or directory$/.test(error))
     ) {
       return '';
     }
-    throw new Error(`crontab ${input.args.join(' ')} failed: ${stderr.trim() || `exit ${code}`}`);
+    throw new Error(`crontab ${input.args.join(' ')} failed: ${error || `exit ${code}`}`);
   }
 }
 

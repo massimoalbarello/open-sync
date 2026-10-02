@@ -19,7 +19,8 @@ if (await Bun.file(directory + '/deny').exists()) {
 const table = Bun.file(directory + '/table');
 if (process.argv[2] === '-l') {
   if (!(await table.exists())) {
-    console.error('no crontab for test');
+    const missing = Bun.file(directory + '/missing-table-error');
+    console.error(await missing.exists() ? await missing.text() : 'no crontab for test');
     process.exit(1);
   }
   process.stdout.write(await table.text());

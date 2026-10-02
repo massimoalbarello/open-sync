@@ -3,6 +3,32 @@ import { join } from 'node:path';
 import { Crontab } from '../src/execution/crontab';
 import { isolatedCrontab } from './cron-support';
 
+test.each(['no crontab for test', "crontab: can't open 'test': No such file or directory"])(
+  'a missing user table permits registration: %s',
+  async (diagnostic) => {
+    await using f = await isolatedCrontab();
+    await Bun.write(join(f.directory, 'missing-table-error'), diagnostic);
+    const cron = new Crontab({ id: 'test', command: ['/app/host'], executable: f.executable });
+    await cron.install();
+    expect(await f.table.text()).toContain("*/30 * * * * BUN_BE_BUN=1 '/app/host'\n");
+    await cron.remove();
+    expect(await f.table.text()).toBe('');
+  },
+);
+
+test.each([
+  "crontab: can't open 'test': Permission denied",
+  "crontab: can't change directory to '/var/spool/cron/crontabs': No such file or directory",
+  "crontab: can't open '/etc/crontabs/test': No such file or directory",
+  'no crontab for test\npermission denied',
+])('read failures are not mistaken for an empty user table: %s', async (diagnostic) => {
+  await using f = await isolatedCrontab();
+  await Bun.write(join(f.directory, 'missing-table-error'), diagnostic);
+  const cron = new Crontab({ id: 'test', command: ['/app/host'], executable: f.executable });
+  await expect(cron.install()).rejects.toThrow(diagnostic);
+  expect(await f.table.exists()).toBe(false);
+});
+
 test('one recurring crontab entry preserves other hosts and unrelated jobs', async () => {
   await using f = await isolatedCrontab();
   const unrelated = '# retained exactly\nCRON_TZ=Europe/London\n0 1 * * * /existing/task\n';
