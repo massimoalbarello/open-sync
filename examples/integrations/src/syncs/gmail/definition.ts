@@ -1,6 +1,6 @@
 import type { SyncRegistration } from '@context-use/open-sync/definition';
 import { jsonSchema } from '../../schema';
-import { historyConfigSchema } from '../history';
+import { configSchema } from './labels';
 import { checkpointSchema, initialCheckpoint, threadSchema } from './models';
 import { step } from './threads';
 
@@ -15,12 +15,13 @@ export const gmailThreads = {
       actions: ['gmail.download_attachment'],
       proxyPaths: [
         '/users/me/profile',
+        '/users/me/labels',
         '/users/me/threads',
         '/users/me/threads/:id',
         '/users/me/history',
       ],
     },
-    configSchema: jsonSchema(historyConfigSchema),
+    configSchema: jsonSchema(configSchema),
     checkpointSchema: jsonSchema(checkpointSchema),
     initialCheckpoint,
     kinds: { thread: jsonSchema(threadSchema) },

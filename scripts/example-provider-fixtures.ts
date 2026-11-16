@@ -49,7 +49,6 @@ export async function exampleProviderResponse(request: Request): Promise<Respons
 
 function gmailResponse(request: Request) {
   const url = new URL(request.url);
-  const millisecondsPerSecond = 1000;
   if (url.pathname.endsWith('/profile')) {
     return Response.json({
       emailAddress: request.headers.get('authorization')?.includes('gmail-work-fixture-token')
@@ -69,16 +68,24 @@ function gmailResponse(request: Request) {
   if (url.pathname.endsWith('/history')) {
     return Response.json({ historyId: '1' });
   }
-  if (url.pathname.endsWith('/threads')) {
-    const query = url.searchParams.get('q') ?? '';
-    const oldest = Number(query.match(/after:(\d+)/)?.[1] ?? 0);
-    const latest = Number(query.match(/before:(\d+)/)?.[1] ?? Infinity);
-    const lastActivity = Date.parse('2020-01-02T12:00:00.000Z') / millisecondsPerSecond;
+  if (url.pathname.endsWith('/labels')) {
     return Response.json({
-      threads: lastActivity > oldest && lastActivity < latest ? [{ id: 'thread-1' }] : [],
+      labels: [
+        { id: 'Label_clients', name: 'Clients' },
+        { id: 'Label_research', name: 'Research' },
+      ],
     });
   }
+  if (url.pathname.endsWith('/threads')) {
+    return gmailThreadListing(url);
+  }
   if (url.pathname.endsWith('/threads/thread-1')) {
+    if (url.searchParams.get('format') === 'minimal') {
+      return Response.json({
+        id: 'thread-1',
+        messages: [{ labelIds: ['INBOX', 'Label_clients'] }, { labelIds: ['INBOX'] }],
+      });
+    }
     return Response.json({
       id: 'thread-1',
       messages: [
@@ -94,11 +101,25 @@ function gmailResponse(request: Request) {
   throw new Error(`Unexpected Gmail fixture path: ${url.pathname}`);
 }
 
+function gmailThreadListing(url: URL) {
+  const millisecondsPerSecond = 1000;
+  const query = url.searchParams.get('q') ?? '';
+  const oldest = Number(query.match(/after:(\d+)/)?.[1] ?? 0);
+  const latest = Number(query.match(/before:(\d+)/)?.[1] ?? Infinity);
+  const lastActivity = Date.parse('2020-01-02T12:00:00.000Z') / millisecondsPerSecond;
+  const selected = url.searchParams.getAll('labelIds');
+  const matchesLabels = !selected.length || selected.includes('Label_clients');
+  return Response.json({
+    threads:
+      matchesLabels && lastActivity > oldest && lastActivity < latest ? [{ id: 'thread-1' }] : [],
+  });
+}
+
 function gmailMessage(input: { id: string; date: string; text: string }) {
   return {
     id: input.id,
     threadId: 'thread-1',
-    labelIds: ['INBOX'],
+    labelIds: input.id === 'email-1' ? ['INBOX', 'Label_clients'] : ['INBOX'],
     internalDate: String(Date.parse(input.date)),
     snippet: input.text,
     payload: {
