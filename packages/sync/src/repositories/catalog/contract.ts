@@ -13,7 +13,7 @@ export interface CatalogRepository {
   sync(input: Resource): Sync;
   syncs(scope: Scope): Sync[];
   polls(input: Resource & { before?: number }): { polls: SyncPoll[]; nextCursor: number | null };
-  connectSync(input: Resource & { connection: ConnectionRef }): Sync;
+  connectSync(input: Resource & { connection: ConnectionRef; checkpoint: JsonValue }): Sync;
   setEnabled(input: Resource & { enabled: boolean }): Sync;
   runNow(input: Resource): void;
   resync(input: Resource & { checkpoint: JsonValue }): void;
