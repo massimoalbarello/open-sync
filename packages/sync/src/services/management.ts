@@ -104,10 +104,13 @@ export class SyncManagement {
     validateCursor(input.before);
     return this.input.catalog.polls(input);
   }
+  /** Bind a waiting sync, or replace a paused sync's connection and restart acquisition.
+   * Replacement keeps the sync paused and preserves delivered records and queued deliveries.
+   */
   async connectSync(input: Resource & { connection: ConnectionRef }) {
     this.guard(input);
     const sync = this.input.catalog.sync(input);
-    if (sync.connection || sync.enabled) {
+    if (sync.enabled) {
       fail('already_connected');
     }
     const { definition } = this.input.registry.definition(sync.definition);
@@ -121,7 +124,10 @@ export class SyncManagement {
       signal: AbortSignal.timeout(this.input.timeoutMs),
     });
     this.guard(input);
-    const connected = this.input.catalog.connectSync(input);
+    const connected = this.input.catalog.connectSync({
+      ...input,
+      checkpoint: definition.initialCheckpoint,
+    });
     this.input.worker.wake();
     return summarizeSync(connected);
   }

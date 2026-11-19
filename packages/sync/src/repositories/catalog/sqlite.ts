@@ -56,17 +56,28 @@ export class SqliteCatalog implements CatalogRepository {
     const polls = rows.slice(0, pageSize);
     return { polls, nextCursor: rows.length > pageSize ? polls.at(-1)!.id : null };
   }
-  connectSync(input: Resource & { connection: ConnectionRef }) {
+  connectSync(input: Resource & { connection: ConnectionRef; checkpoint: JsonValue }) {
     return this.db
       .transaction(() => {
         const sync = this.sync(input);
-        if (sync.connection || sync.enabled) {
+        if (sync.enabled) {
           fail('already_connected');
         }
         this.db
-          .query(`UPDATE syncs SET connection=?,enabled=1,
-        status='ready',error_code=NULL WHERE owner_id=? AND id=?`)
-          .run(canonicalJson(input.connection).json, input.ownerId, input.id);
+          .query(`UPDATE sync_polls SET state='interrupted',error_code='connection_changed',completed_at=?
+          WHERE owner_id=? AND sync_id=? AND completed_at IS NULL`)
+          .run(Date.now(), input.ownerId, input.id);
+        this.db
+          .query(`UPDATE syncs SET connection=?,checkpoint=?,enabled=?,
+        status=?,error_code=NULL,generation=generation+1,expires_at=NULL WHERE owner_id=? AND id=?`)
+          .run(
+            canonicalJson(input.connection).json,
+            canonicalJson(input.checkpoint).json,
+            Number(!sync.connection),
+            sync.connection ? 'disabled' : 'ready',
+            input.ownerId,
+            input.id,
+          );
         return this.sync(input);
       })
       .immediate();
