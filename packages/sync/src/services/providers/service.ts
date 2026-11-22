@@ -124,7 +124,13 @@ export class ProviderService {
       ),
     };
   }
-  async configure(input: ProviderScope & { service: string; values: Record<string, string> }) {
+  async configure(
+    input: ProviderScope & {
+      service: string;
+      values: Record<string, string>;
+      requestedScopes?: string[];
+    },
+  ) {
     this.guard(input);
     if (!(await this.input.canConfigure(input))) {
       fail('forbidden');
@@ -143,7 +149,10 @@ export class ProviderService {
         await this.input.connector.call({
           path: `/api/oauth/configs/${encodeURIComponent(input.service)}`,
           method: 'PUT',
-          body: oauthClientValues({ auth, values: input.values }),
+          body: {
+            ...oauthClientValues({ auth, values: input.values }),
+            requestedScopes: input.requestedScopes,
+          },
         });
       },
     });
