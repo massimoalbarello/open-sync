@@ -22,6 +22,9 @@ export const checkpointSchema = z.strictObject({
   query: z.string().nullable(),
   // Native page position within either listing; cleared when that listing completes.
   pageToken: z.string().nullable(),
+  // Position in the configured label union during backfill; absent for unfiltered/history scans.
+  // Each label has its own native pages. Old checkpoints omit this and start at the first label.
+  labelIndex: z.number().int().nonnegative().optional(),
   // Durable change token, captured BEFORE backfill and advanced only after history is exhausted.
   // Unlike pageToken, this survives completed polls and catches changes during the backfill.
   historyId: z.string().regex(/^\d+$/).nullable(),

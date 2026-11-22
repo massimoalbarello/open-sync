@@ -68,7 +68,10 @@ async function connectSource(input: {
       body: '<h1>Example consent boundary</h1>',
     }),
   );
-  const syncId = await createSync({ ...input, source: source.id });
+  const syncId =
+    source.service === 'gmail'
+      ? await createLabelledGmailSync(input)
+      : await createSync({ ...input, source: source.id });
   assert.equal(await page.getByRole('button', { name: 'API key', exact: true }).count(), 0);
   if (source.service === 'granola') {
     assert.equal(await page.getByLabel('Client ID', { exact: true }).count(), 0);
@@ -117,6 +120,26 @@ async function connectSource(input: {
   await drainDeliveries({ ...input, syncId });
   await inspectReceivedJourney({ ...input, syncId, service: source.service, kind: source.kind });
   console.log(`${source.name}: OAuth and local delivery passed.`);
+}
+
+async function createLabelledGmailSync({ page, origin }: Journey) {
+  await page.goto(`${origin}/syncs/new?source=gmail.threads`);
+  await page.getByLabel('Labels', { exact: true }).fill('Research');
+  await page.getByRole('button', { name: 'Create sync', exact: true }).click();
+  await page.getByText('Enter a valid labels.', { exact: true }).waitFor();
+  await page.getByLabel('Labels', { exact: true }).fill('["Research", "Clients"]');
+  await capture({ page, name: 'gmail-labels' });
+  const submitted = page.waitForRequest(
+    (request) => request.url().endsWith('/api/dashboard/syncs') && request.method() === 'POST',
+  );
+  await page.getByRole('button', { name: 'Create sync', exact: true }).click();
+  assert.deepEqual((await submitted).postDataJSON().config, {
+    history: 'All',
+    labels: ['Research', 'Clients'],
+  });
+  await page.waitForURL(/\/(syncs\/sync_|providers\/[^/]+\?syncId=)/);
+  const url = new URL(page.url());
+  return url.searchParams.get('syncId') ?? url.pathname.split('/').at(-1)!;
 }
 
 // A catalog fixture proves that rendering and submission depend on schemas, not destination names.
