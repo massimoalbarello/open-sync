@@ -51,7 +51,12 @@ export function createProviderController(input: {
         await input.providers.configure({ ...(await scope(request)), ...params, ...body }),
       {
         params: t.Object({ service }),
-        body: t.Object({ values }),
+        body: t.Object({
+          values,
+          requestedScopes: t.Optional(
+            t.Array(t.String({ minLength: 1, maxLength: 256 }), { minItems: 1, maxItems: 128 }),
+          ),
+        }),
       },
     )
     .post(

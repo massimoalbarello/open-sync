@@ -111,3 +111,40 @@ test('failed engine initialization releases the embedded provider runtime for th
     files.close();
   }
 });
+
+test('OAuth client configuration narrows consent to the scopes requested by the host', async () => {
+  const files = storage();
+  const publicUrl = 'http://host/sync';
+  const options = {
+    dataDirectory: files.dir,
+    publicUrl,
+    definitions: [],
+    destinationTypes: {},
+    authorize: () => alice,
+    canConfigureProviders: () => Promise.resolve(true),
+  };
+  const values = { clientId: 'test-client', clientSecret: 'test-secret' };
+  const scope = 'https://www.googleapis.com/auth/gmail.readonly';
+  let runtime = await createOpenSync(options);
+  try {
+    const configured = await runtime.fetch(
+      new Request(`${publicUrl}/providers/gmail/oauth-client`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ values, requestedScopes: [scope] }),
+      }),
+    );
+    expect(configured.status).toBe(http.ok);
+    await runtime.close();
+    runtime = await createOpenSync(options);
+    const provider = { ...alice, service: 'gmail' };
+    const consent = await runtime.providers.start(provider);
+    expect(new URL(consent.authorizationUrl).searchParams.get('scope')).toBe(scope);
+    await expect(
+      runtime.providers.configure({ ...provider, values, requestedScopes: ['undeclared-scope'] }),
+    ).rejects.toThrow('Provider could not complete');
+  } finally {
+    await runtime.close();
+    files.close();
+  }
+});
